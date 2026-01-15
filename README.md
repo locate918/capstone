@@ -1,4 +1,3 @@
-# locate918
 # Event Discovery Aggregator
 
 An AI-powered event aggregator that pulls from multiple public sources, uses an LLM to normalize and summarize event information, and matches users to events through natural language preferences. It links back to original sources rather than reproducing content, driving traffic to organizers while giving users a unified discovery experience.
@@ -23,7 +22,7 @@ An AI-powered event aggregator that pulls from multiple public sources, uses an 
 **For** people looking for local events  
 **Who** are frustrated by scattered, incomplete, and algorithm-gated event information  
 **The** Event Discovery Aggregator  
-**Is a** mobile application  
+**Is a** web and mobile application  
 **That** unifies event data from multiple sources and uses AI to provide personalized, natural language search  
 **Unlike** Eventbrite or Facebook Events which optimize for promoters  
 **Our product** optimizes for attendees, surfacing relevant events without requiring users to check multiple platforms
@@ -32,13 +31,21 @@ An AI-powered event aggregator that pulls from multiple public sources, uses an 
 
 ## Tech Stack
 
+### Current (MVP)
+
 | Layer | Technology |
 |-------|------------|
 | Backend | Rust (Axum) |
 | Database | PostgreSQL |
 | LLM Integration | Anthropic Claude API |
-| Mobile (Android) | Kotlin / Jetpack Compose |
-| Mobile (iOS) | Swift (future) |
+| Frontend | React / JavaScript / HTML / CSS |
+
+### Future (Mobile)
+
+| Layer | Technology |
+|-------|------------|
+| Android | Kotlin / Jetpack Compose |
+| iOS | Swift / SwiftUI |
 
 ---
 
@@ -59,7 +66,9 @@ flowchart TB
     end
     
     subgraph Client
-        F[Android App]
+        F[React Web App]
+        G[Android App - Future]
+        H[iOS App - Future]
     end
     
     A1 --> C
@@ -69,6 +78,8 @@ flowchart TB
     C --> D
     D --> E
     F <-->|HTTPS| B
+    G <-->|HTTPS| B
+    H <-->|HTTPS| B
     B --> E
     B --> D
 ```
@@ -97,8 +108,18 @@ event-discovery/
 │   │   ├── services/
 │   │   └── scraper/
 │   └── migrations/
+├── frontend/
+│   ├── package.json
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   └── App.jsx
+│   └── public/
 ├── android/
-│   └── app/
+│   └── app/ (future)
+├── ios/
+│   └── (future)
 └── .gitignore
 ```
 
@@ -109,8 +130,8 @@ event-discovery/
 ### Prerequisites
 
 - Rust (latest stable)
+- Node.js (v18+)
 - Docker (for PostgreSQL)
-- Android Studio (for mobile development)
 - Anthropic API key
 
 ### Backend Setup
@@ -132,11 +153,28 @@ echo "ANTHROPIC_API_KEY=your_key_here" >> .env
 cargo run
 ```
 
-### Android Setup
+### Frontend Setup
+```bash
+# Navigate to frontend
+cd frontend
 
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+### Mobile Setup (Future)
+
+**Android:**
 1. Open `android/` folder in Android Studio
 2. Sync Gradle
 3. Run on emulator or device
+
+**iOS:**
+1. Open `ios/` folder in Xcode
+2. Run on simulator or device
 
 ---
 
@@ -154,7 +192,7 @@ cargo run
 | 1 | Backend scaffolding, database schema, basic API endpoints |
 | 2 | Event ingestion pipeline, initial scraper |
 | 3 | LLM integration for normalization and summarization |
-| 4 | Android app scaffolding, event list UI |
+| 4 | React frontend scaffolding, event list UI |
 | 5 | Natural language search, user preferences |
 | 6 | Polish, testing, documentation |
 
