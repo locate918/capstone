@@ -38,9 +38,9 @@ Copy this for each new meeting:
 
 ## Meetings
 
-### Week 1 - January 20, 2026
+### Week 1 - January 16, 2026
 
-**Attendees:** Will, Ben, Skylar, Malachi, Jordi
+**Attendees:** Will, Ben, Skylar, Malachi.....Abe, lol
 
 **Duration:** 
 
