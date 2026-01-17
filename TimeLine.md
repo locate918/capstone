@@ -58,7 +58,7 @@ gantt
 
 ## Parallel Work Summary
 
-| Week | Coordinator | Data Engineer | AI/LLM Engineer | Frontend Dev | Full Stack/QA |
+| Week | Coordinator - Will | Data Engineer - Skylar | AI/LLM Engineer - Ben | Frontend Dev - Malachi | Full Stack/QA - Jordi |
 |------|-------------|---------------|-----------------|--------------|---------------|
 | 1-2 | Docs + Start backend | Docs + Research sources | Docs + Claude research | Docs + Wireframes | Docs + CI/CD |
 | 3-4 | DB schema + API endpoints | Scraper architecture + prototype | Prompt prototyping | React setup + mock UI | Testing framework + OpenAPI spec |
