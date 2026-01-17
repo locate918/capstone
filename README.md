@@ -99,7 +99,8 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 | **Will** | Coordinator / Backend Lead | Rust backend, database, API endpoints, code review |
 | **Ben** | AI Engineer | Python LLM service, Gemini integration, natural language processing |
 | **Skylar** | Data Engineer | Web scrapers, data ingestion pipeline, event normalization |
-| **TBD** | Frontend Developer | React UI, user experience |
+| **Malachi** | Frontend Developer | React UI, user experience |
+| **Jordi** | Fullstack Developer | Cross-stack support, integration, features as needed |
 
 ---
 
