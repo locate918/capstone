@@ -1,127 +1,106 @@
-# Event Discovery Aggregator
+# Locate918 - Event Discovery Aggregator
 
-An AI-powered event aggregator that pulls from multiple public sources, uses an LLM to normalize and summarize event information, and matches users to events through natural language preferences. It links back to original sources rather than reproducing content, driving traffic to organizers while giving users a unified discovery experience.
+An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple public sources, uses an LLM to normalize and summarize event information, and matches users to events through natural language preferences.
 
 ---
 
 ## Table of Contents
 
-- [Product Vision](#product-vision)
+- [Project Overview](#project-overview)
+- [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
-- [Architecture Overview](#architecture-overview)
-- [Project Structure](#project-structure)
+- [Team Roles](#team-roles)
 - [Getting Started](#getting-started)
-- [Development Methodology](#development-methodology)
-- [Team](#team)
-- [License](#license)
+  - [Prerequisites](#prerequisites)
+  - [Database Setup](#database-setup)
+  - [Rust Backend Setup](#rust-backend-setup)
+  - [Python LLM Service Setup](#python-llm-service-setup)
+  - [Frontend Setup](#frontend-setup)
+- [Project Structure](#project-structure)
+- [API Endpoints](#api-endpoints)
+- [Development Tasks by Role](#development-tasks-by-role)
+- [Environment Variables](#environment-variables)
+- [Running the Full Stack](#running-the-full-stack)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Product Vision
+## Project Overview
 
-**For** people looking for local events  
-**Who** are frustrated by scattered, incomplete, and algorithm-gated event information  
-**The** Event Discovery Aggregator  
-**Is a** web and mobile application  
-**That** unifies event data from multiple sources and uses AI to provide personalized, natural language search  
-**Unlike** Eventbrite or Facebook Events which optimize for promoters  
-**Our product** optimizes for attendees, surfacing relevant events without requiring users to check multiple platforms
+**Problem:** Event discovery is fragmented. People miss events because information is scattered across multiple platforms (Eventbrite, Facebook, venue websites), each optimized for promoters rather than attendees.
+
+**Solution:** A unified platform that:
+1. Aggregates events from multiple public sources
+2. Uses AI (Google Gemini) to normalize and summarize event data
+3. Lets users search with natural language ("What's happening downtown this weekend?")
+4. Links back to original sources, driving traffic to organizers
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              LOCATE918 ARCHITECTURE                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+    │ Eventbrite  │     │   Venue     │     │    City     │
+    │    API      │     │  Websites   │     │  Calendars  │
+    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+           │                   │                   │
+           └───────────────────┼───────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   RUST BACKEND      │
+                    │   (Axum) :3000      │
+                    │                     │
+                    │  • /api/events      │
+                    │  • /api/users       │
+                    │  • /api/chat        │
+                    │  • Scraper module   │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
+    │   PostgreSQL    │ │ Python LLM  │ │  React Frontend │
+    │   Database      │ │ Service     │ │                 │
+    │                 │ │ :8001       │ │                 │
+    └─────────────────┘ └──────┬──────┘ └─────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   Google Gemini     │
+                    │       API           │
+                    └─────────────────────┘
+```
 
 ---
 
 ## Tech Stack
 
-### Current (MVP)
-
-| Layer | Technology |
-|-------|------------|
-| Backend | Rust (Axum) |
-| Database | PostgreSQL |
-| LLM Integration | Anthropic Claude API |
-| Frontend | React / JavaScript / HTML / CSS |
-
-### Future (Mobile)
-
-| Layer | Technology |
-|-------|------------|
-| Android | Kotlin / Jetpack Compose |
-| iOS | Swift / SwiftUI |
+| Component | Technology | Owner |
+|-----------|------------|-------|
+| Backend API | Rust (Axum framework) | Will |
+| Database | PostgreSQL | Will |
+| LLM Service | Python (FastAPI) + Google Gemini | Ben |
+| Event Scrapers | Rust (in backend) or Python (standalone) | Skylar |
+| Frontend | React / JavaScript | TBD |
 
 ---
 
-## Architecture Overview
-```mermaid
-flowchart TB
-    subgraph Data Sources
-        A1[Eventbrite API]
-        A2[Public Calendars]
-        A3[Venue Websites]
-    end
-    
-    subgraph Backend
-        B[Axum REST API]
-        C[Scraper / Ingestion Service]
-        D[LLM Service]
-        E[(PostgreSQL)]
-    end
-    
-    subgraph Client
-        F[React Web App]
-        G[Android App - Future]
-        H[iOS App - Future]
-    end
-    
-    A1 --> C
-    A2 --> C
-    A3 --> C
-    C --> E
-    C --> D
-    D --> E
-    F <-->|HTTPS| B
-    G <-->|HTTPS| B
-    H <-->|HTTPS| B
-    B --> E
-    B --> D
-```
+## Team Roles
 
----
-
-## Project Structure
-```
-event-discovery/
-├── README.md
-├── docs/
-│   ├── requirements/
-│   │   └── system-requirements.md
-│   ├── design/
-│   │   ├── architecture.md
-│   │   └── uml-diagrams.md
-│   ├── reports/
-│   │   └── sprint-reports/
-│   └── meeting-notes/
-├── backend/
-│   ├── Cargo.toml
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── routes/
-│   │   ├── models/
-│   │   ├── services/
-│   │   └── scraper/
-│   └── migrations/
-├── frontend/
-│   ├── package.json
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   └── App.jsx
-│   └── public/
-├── android/
-│   └── app/ (future)
-├── ios/
-│   └── (future)
-└── .gitignore
-```
+| Name | Role | Responsibilities |
+|------|------|------------------|
+| **Will** | Coordinator / Backend Lead | Rust backend, database, API endpoints, code review |
+| **Ben** | AI Engineer | Python LLM service, Gemini integration, natural language processing |
+| **Skylar** | Data Engineer | Web scrapers, data ingestion pipeline, event normalization |
+| **Malachi** | Frontend Developer | React UI, user experience |
+| **Jordi** | Fullstack Developer | Cross-stack support, integration, features as needed |
 
 ---
 
@@ -129,103 +108,378 @@ event-discovery/
 
 ### Prerequisites
 
-- Rust (latest stable)
-- Node.js (v18+)
-- Docker (for PostgreSQL)
-- Anthropic API key
+Install these tools (all platforms):
 
-### Backend Setup
+| Tool | Purpose | Install |
+|------|---------|---------|
+| Git | Version control | https://git-scm.com/downloads |
+| Docker | Run PostgreSQL | https://www.docker.com/products/docker-desktop |
+| Rust | Backend (Will, Skylar if using Rust) | https://rustup.rs |
+| Python 3.11+ | LLM Service (Ben) | https://www.python.org/downloads |
+| Node.js 18+ | Frontend | https://nodejs.org |
+
+### Clone the Repository
+
 ```bash
-# Start PostgreSQL
-docker run --name event-discovery-db \
+git clone https://github.com/BentNail86/locate918.git
+cd locate918
+```
+
+---
+
+### Database Setup
+
+**All team members** need the database running to work on the project.
+
+```bash
+# Start PostgreSQL in Docker
+docker run --name locate918-db \
   -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=event_discovery \
-  -p 5432:5432 -d postgres:16
+  -e POSTGRES_DB=locate918 \
+  -p 5432:5432 \
+  -d postgres:16
+```
 
-# Navigate to backend
+**Windows PowerShell:**
+```powershell
+docker run --name locate918-db -e POSTGRES_PASSWORD=password -e POSTGRES_DB=locate918 -p 5432:5432 -d postgres:16
+```
+
+**Verify it's running:**
+```bash
+docker ps
+```
+
+**Stop/Start later:**
+```bash
+docker stop locate918-db
+docker start locate918-db
+```
+
+---
+
+### Rust Backend Setup
+
+**Required for:** Will, Skylar (if writing scrapers in Rust)
+
+1. **Install Rust** (if not already):
+   ```bash
+   # macOS/Linux
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   
+   # Windows: Download from https://rustup.rs
+   ```
+
+2. **Navigate to backend:**
+   ```bash
+   cd backend
+   ```
+
+3. **Create environment file:**
+   ```bash
+   # macOS/Linux
+   cp .env.example .env
+   
+   # Windows PowerShell
+   Copy-Item .env.example .env
+   ```
+   
+   Or create `backend/.env` manually:
+   ```
+   DATABASE_URL=postgres://postgres:password@localhost:5432/locate918
+   LLM_SERVICE_URL=http://localhost:8001
+   ```
+
+4. **Build and run:**
+   ```bash
+   cargo build
+   cargo run
+   ```
+
+5. **Verify:** Open http://localhost:3000/api/events — should return `[]`
+
+---
+
+### Python LLM Service Setup
+
+**Required for:** Ben
+
+1. **Navigate to LLM service:**
+   ```bash
+   cd llm-service
+   ```
+
+2. **Create virtual environment:**
+   ```bash
+   # macOS/Linux
+   python3 -m venv venv
+   source venv/bin/activate
+   
+   # Windows PowerShell
+   python -m venv venv
+   .\venv\Scripts\Activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install fastapi uvicorn google-generativeai pydantic python-dotenv
+   ```
+
+4. **Create environment file** (`llm-service/.env`):
+   ```
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+   
+   Get your API key at: https://makersuite.google.com/app/apikey
+
+5. **Run the service:**
+   ```bash
+   uvicorn app.main:app --reload --port 8001
+   ```
+
+6. **Verify:** Open http://localhost:8001/health
+
+---
+
+### Frontend Setup
+
+**Required for:** Frontend developer
+
+1. **Navigate to frontend:**
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Run development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Verify:** Open http://localhost:5173
+
+---
+
+## Project Structure
+
+```
+locate918/
+├── backend/                    # Rust API Server (Will)
+│   ├── src/
+│   │   ├── main.rs            # Entry point
+│   │   ├── routes/
+│   │   │   ├── mod.rs         # Route registration
+│   │   │   ├── events.rs      # GET/POST /api/events
+│   │   │   ├── users.rs       # GET/POST /api/users
+│   │   │   └── chat.rs        # POST /api/chat (calls LLM service)
+│   │   ├── models/
+│   │   │   └── mod.rs         # Event, User, UserPreference structs
+│   │   ├── services/
+│   │   │   ├── mod.rs
+│   │   │   └── llm.rs         # HTTP client for Python LLM service
+│   │   ├── scraper/
+│   │   │   └── mod.rs         # Event scrapers (Skylar)
+│   │   └── db/
+│   │       └── mod.rs         # Database utilities
+│   ├── migrations/
+│   │   └── 001_initial.sql    # Database schema
+│   ├── Cargo.toml
+│   └── .env
+│
+├── llm-service/                # Python LLM Service (Ben)
+│   └── app/
+│       ├── main.py            # FastAPI entry point
+│       ├── models/
+│       │   └── schemas.py     # Pydantic models
+│       ├── routes/
+│       │   └── chat.py        # /api/parse-intent, /api/chat
+│       └── services/
+│           └── gemini.py      # Gemini API integration
+│
+├── frontend/                   # React App
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   └── App.jsx
+│   └── package.json
+│
+└── docs/                       # Documentation
+```
+
+---
+
+## API Endpoints
+
+### Rust Backend (`:3000`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/events` | List all events |
+| POST | `/api/events` | Create an event |
+| GET | `/api/events/:id` | Get event by ID |
+| GET | `/api/events/search?q=&category=` | Search events |
+| POST | `/api/users` | Create user |
+| GET | `/api/users/:id` | Get user |
+| GET | `/api/users/:id/profile` | Get full profile (for LLM) |
+| POST | `/api/users/:id/preferences` | Add preference |
+| POST | `/api/users/:id/interactions` | Record interaction |
+| POST | `/api/chat` | Natural language search (coming soon) |
+
+### Python LLM Service (`:8001`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| POST | `/api/parse-intent` | Natural language → search params |
+| POST | `/api/chat` | Generate conversational response |
+| POST | `/api/normalize` | Normalize scraped event data |
+
+---
+
+## Development Tasks by Role
+
+### Ben (AI Engineer) — Python LLM Service
+
+**Your files:**
+- `llm-service/app/models/schemas.py` — Pydantic models
+- `llm-service/app/routes/chat.py` — API endpoints
+- `llm-service/app/services/gemini.py` — Gemini integration
+
+**Tasks:**
+1. Implement `parse_user_intent()` — Convert "jazz concerts this weekend" → `{category: "music", query: "jazz", date_from: "..."}`
+2. Implement `generate_chat_response()` — Take events + message, return friendly response
+3. Implement `normalize_events()` — Clean up messy scraped data
+
+**Language:** Python (FastAPI + google-generativeai)
+
+---
+
+### Skylar (Data Engineer) — Event Scrapers
+
+**Your files:**
+- `backend/src/scraper/mod.rs` (if Rust)
+- OR create `scrapers/` folder at project root (if Python)
+
+**Tasks:**
+1. Build scrapers for 2-3 event sources (Eventbrite, local venues, city calendar)
+2. Store events via `POST /api/events` or directly in database
+3. Optionally call `/api/normalize` to clean data with LLM
+
+**Language:** Your choice!
+- **Rust** — Work in `backend/src/scraper/`. Will can help map your logic to Rust.
+- **Python** — Create a separate `scrapers/` folder. Use `requests` + `beautifulsoup4`.
+
+---
+
+### Frontend Developer — React UI
+
+**Your files:**
+- Everything in `frontend/`
+
+**Tasks:**
+1. Event list/search page
+2. Event detail page
+3. Chat interface for natural language search
+4. User preferences page
+
+**Language:** JavaScript/React
+
+---
+
+### Will (Coordinator) — Rust Backend
+
+**Current status:** Core API complete. Ready for integration.
+
+**Remaining:**
+1. Uncomment chat routes when Ben's service is ready
+2. Review PRs, help team with Rust questions
+3. Deploy when ready
+
+---
+
+## Environment Variables
+
+### `backend/.env`
+```
+DATABASE_URL=postgres://postgres:password@localhost:5432/locate918
+LLM_SERVICE_URL=http://localhost:8001
+```
+
+### `llm-service/.env`
+```
+GEMINI_API_KEY=your_key_here
+```
+
+---
+
+## Running the Full Stack
+
+**Terminal 1 — Database:**
+```bash
+docker start locate918-db
+```
+
+**Terminal 2 — Rust Backend:**
+```bash
 cd backend
-
-# Create .env file
-echo "DATABASE_URL=postgres://postgres:password@localhost:5432/event_discovery" > .env
-echo "ANTHROPIC_API_KEY=your_key_here" >> .env
-
-# Run the server
 cargo run
 ```
 
-### Frontend Setup
+**Terminal 3 — Python LLM Service:**
 ```bash
-# Navigate to frontend
+cd llm-service
+source venv/bin/activate  # Windows: .\venv\Scripts\Activate
+uvicorn app.main:app --reload --port 8001
+```
+
+**Terminal 4 — Frontend:**
+```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
 npm run dev
 ```
 
-### Mobile Setup (Future)
+---
 
-**Android:**
-1. Open `android/` folder in Android Studio
-2. Sync Gradle
-3. Run on emulator or device
+## Troubleshooting
 
-**iOS:**
-1. Open `ios/` folder in Xcode
-2. Run on simulator or device
+### "Connection refused" on database
+```bash
+docker start locate918-db
+```
+
+### Rust build errors
+```bash
+rustup update
+cargo clean
+cargo build
+```
+
+### Python import errors
+```bash
+cd llm-service
+source venv/bin/activate
+pip install -r requirements.txt  # (if you create one)
+```
+
+### Port already in use
+```bash
+# Find what's using the port (macOS/Linux)
+lsof -i :3000
+
+# Windows
+netstat -ano | findstr :3000
+```
 
 ---
 
-## Development Methodology
+## Questions?
 
-- **Framework:** Agile/Scrum with 2-week sprints
-- **Documentation:** UML diagrams for system design
-- **Version Control:** GitHub with feature branches
-- **CI/CD:** TBD
+- **Rust help:** Ask Will
+- **Python/AI help:** Ask Ben
+- **Scraper strategy:** Ask Skylar
 
-### Sprint Milestones
-
-| Sprint | Goals |
-|--------|-------|
-| 1 | Backend scaffolding, database schema, basic API endpoints |
-| 2 | Event ingestion pipeline, initial scraper |
-| 3 | LLM integration for normalization and summarization |
-| 4 | React frontend scaffolding, event list UI |
-| 5 | Natural language search, user preferences |
-| 6 | Polish, testing, documentation |
-
----
-
-## Capstone Deliverables
-
-- [ ] **Task 1:** Problem Statement and Initial Project Timeline
-- [ ] **Task 2:** System Requirements Specification
-- [ ] **Task 3:** Architectural Design and System Modeling
-- [ ] **Task 4:** Midcourse Project Presentation
-
----
-
-## Team
-
-| Name | Role |
-|------|------|
-| TBD | TBD |
-| TBD | TBD |
-| TBD | TBD |
-| TBD | TBD |
-
----
-
-## Ethical Considerations
-
-- **Web Scraping:** Focuses on publicly posted information; generates original summaries rather than reproducing content; links back to sources
-- **User Privacy:** Clear data policies; minimal data collection
-- **Algorithmic Bias:** Analysis of how discovery algorithms might create filter bubbles or exclude communities
-
----
-
-## License
-
-TBD
+Let's build something great! 🚀
