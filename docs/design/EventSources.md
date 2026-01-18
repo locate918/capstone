@@ -7,10 +7,7 @@ This document tracks potential data sources for the Locate918 event aggregator.
 
 ---
 
-## Priority Levels
-- **P1** — Must have for MVP (pick 2-3)
-- **P2** — Nice to have
-- **P3** — Future/stretch goal
+
 
 ---
 
@@ -291,24 +288,8 @@ This document tracks potential data sources for the Locate918 event aggregator.
 
 ---
 
-## Recommended Starting Points
 
- Prioritize these sources:
 
-### Tier 1 (Start here)
-1. **Eventbrite** - Has API, many events, structured data
-2. **Visit Tulsa** - Official tourism site, clean listings
-3. **Cain's Ballroom** - Well-structured website, iconic venue
-
-### Tier 2 (Add next)
-4. **Tulsa PAC** - Broadway, symphony, major events
-5. **The Vanguard** - Indie/emerging artists
-6. **BOK Center** - Major concerts
-
-### Tier 3 (If time permits)
-7. Mercury Lounge
-8. Oklahoma Jazz Hall of Fame
-9. Downtown Tulsa events
 
 ---
 
