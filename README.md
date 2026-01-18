@@ -88,8 +88,8 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 | Database | PostgreSQL | Will |
 | LLM Service | Python (FastAPI) + Google Gemini | Ben |
 | Event Scrapers | Rust (in backend) or Python (standalone) | Skylar |
-| Frontend | React / JavaScript | TBD |
-
+| Frontend | React / JavaScript | Malachi |
+| FullStack/QA | Rust, Python, React | Jordi |
 ---
 
 ## Team Roles
