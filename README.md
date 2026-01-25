@@ -1,3 +1,10 @@
+<p align="center">
+  <img src="./logo.png" alt="locate 918" width="400">
+</p>
+
+# locate 918
+
+
 # Locate918 - Event Discovery Aggregator
 
 An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple public sources, uses an LLM to normalize and summarize event information, and matches users to events through natural language preferences.
