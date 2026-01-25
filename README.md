@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="locate 918" width="400">
+  <img src="./Screenshot2026-01-25120643" alt="locate 918" width="400">
 </p>
 
 # locate 918
