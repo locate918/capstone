@@ -250,7 +250,7 @@ docker start locate918-db
 
 ### Frontend Setup
 
-**Required for:** Frontend developer
+**Required for:** Malachi
 
 1. **Navigate to frontend:**
    ```bash
