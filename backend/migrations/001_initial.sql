@@ -10,7 +10,7 @@
 -- EVENTS TABLE
 -- =============================================================================
 -- Core table storing all scraped events. Populated by Skylar's scrapers
--- via the /api/normalize endpoint.
+-- via the /api/events endpoint.
 
 CREATE TABLE IF NOT EXISTS events (
                                       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
