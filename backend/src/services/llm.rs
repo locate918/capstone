@@ -81,9 +81,12 @@ fn get_llm_service_url() -> String {
 /// ```json
 /// {
 ///   "query": "jazz",
-///   "category": "music",
+///   "category": "concerts",
 ///   "location": "downtown",
-///   "date_from": "2026-01-24"
+///   "date_from": "2026-01-24",
+///   "price_max": 30.0,
+///   "outdoor": false,
+///   "family_friendly": true
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -91,7 +94,7 @@ pub struct SearchParams {
     /// Text to search for in event titles/descriptions
     pub query: Option<String>,
 
-    /// Category filter (e.g., "music", "sports", "food")
+    /// Category filter (e.g., "concerts", "sports", "family")
     pub category: Option<String>,
 
     /// Start of date range (YYYY-MM-DD)
@@ -100,8 +103,17 @@ pub struct SearchParams {
     /// End of date range (YYYY-MM-DD)
     pub date_to: Option<String>,
 
-    /// Location filter (e.g., "downtown", "midtown")
+    /// Location filter (e.g., "downtown", "Broken Arrow")
     pub location: Option<String>,
+
+    /// Maximum price filter
+    pub price_max: Option<f64>,
+
+    /// Only outdoor events
+    pub outdoor: Option<bool>,
+
+    /// Only family-friendly events
+    pub family_friendly: Option<bool>,
 }
 
 // -----------------------------------------------------------------------------
@@ -133,6 +145,7 @@ struct ChatResponse {
     reply: String,
     #[allow(dead_code)]
     events: Vec<Event>,
+    #[allow(dead_code)]
     search_params: Option<SearchParams>,
 }
 
@@ -210,7 +223,7 @@ impl LlmClient {
     /// # Example
     /// ```rust
     /// let params = client.parse_intent("Any jazz concerts downtown this Friday?").await?;
-    /// // params.category = Some("music")
+    /// // params.category = Some("concerts")
     /// // params.query = Some("jazz")
     /// // params.location = Some("downtown")
     /// // params.date_from = Some("2026-01-24")
@@ -333,78 +346,98 @@ pub async fn process_chat_message(
     Ok((reply, events))
 }
 
+// =============================================================================
+// DATABASE QUERY HELPER
+// =============================================================================
+
+/// All columns to select from events table (matches Event struct)
+const EVENT_COLUMNS: &str = r#"
+    id, title, description, venue, venue_address, location,
+    source_url, source_name, start_time, end_time, categories,
+    price_min, price_max, outdoor, family_friendly, image_url,
+    created_at, updated_at
+"#;
+
 /// Search events using the extracted parameters.
 ///
-/// Mirrors the logic in `routes/events.rs` search_events handler.
+/// Builds a dynamic query based on which parameters are present.
+/// Matches the logic in `routes/events.rs` search_events handler.
 async fn search_events_with_params(
     params: &SearchParams,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<Event>, sqlx::Error> {
-    match (&params.query, &params.category) {
-        // Both query text and category
-        (Some(q), Some(cat)) => {
-            let search = format!("%{}%", q);
-            sqlx::query_as::<_, Event>(
-                r#"
-                SELECT id, title, description, location, venue, source_url,
-                       start_time, end_time, category, created_at
-                FROM events
-                WHERE (title ILIKE $1 OR description ILIKE $1) AND category = $2
-                ORDER BY start_time ASC
-                "#,
-            )
-                .bind(&search)
-                .bind(cat)
-                .fetch_all(pool)
-                .await
-        }
+    // Build dynamic WHERE conditions
+    let mut conditions: Vec<String> = vec![];
 
-        // Only query text
-        (Some(q), None) => {
-            let search = format!("%{}%", q);
-            sqlx::query_as::<_, Event>(
-                r#"
-                SELECT id, title, description, location, venue, source_url,
-                       start_time, end_time, category, created_at
-                FROM events
-                WHERE title ILIKE $1 OR description ILIKE $1
-                ORDER BY start_time ASC
-                "#,
-            )
-                .bind(&search)
-                .fetch_all(pool)
-                .await
-        }
-
-        // Only category
-        (None, Some(cat)) => {
-            sqlx::query_as::<_, Event>(
-                r#"
-                SELECT id, title, description, location, venue, source_url,
-                       start_time, end_time, category, created_at
-                FROM events
-                WHERE category = $1
-                ORDER BY start_time ASC
-                "#,
-            )
-                .bind(cat)
-                .fetch_all(pool)
-                .await
-        }
-
-        // No filters - return recent events
-        (None, None) => {
-            sqlx::query_as::<_, Event>(
-                r#"
-                SELECT id, title, description, location, venue, source_url,
-                       start_time, end_time, category, created_at
-                FROM events
-                ORDER BY start_time ASC
-                LIMIT 20
-                "#,
-            )
-                .fetch_all(pool)
-                .await
-        }
+    // Text search in title/description
+    if let Some(ref q) = params.query {
+        conditions.push(format!(
+            "(title ILIKE '%{}%' OR description ILIKE '%{}%')",
+            q.replace('\'', "''"),
+            q.replace('\'', "''")
+        ));
     }
+
+    // Category filter (check if category is in the categories array)
+    if let Some(ref cat) = params.category {
+        conditions.push(format!(
+            "'{}' = ANY(categories)",
+            cat.replace('\'', "''")
+        ));
+    }
+
+    // Date range filters
+    if let Some(ref date_from) = params.date_from {
+        conditions.push(format!("start_time >= '{}'", date_from));
+    } else {
+        // Default: only future events
+        conditions.push("start_time >= NOW()".to_string());
+    }
+
+    if let Some(ref date_to) = params.date_to {
+        conditions.push(format!("start_time <= '{}'", date_to));
+    }
+
+    // Location filter
+    if let Some(ref loc) = params.location {
+        conditions.push(format!(
+            "location ILIKE '%{}%'",
+            loc.replace('\'', "''")
+        ));
+    }
+
+    // Price filter
+    if let Some(max_price) = params.price_max {
+        conditions.push(format!(
+            "(price_min IS NULL OR price_min <= {})",
+            max_price
+        ));
+    }
+
+    // Outdoor filter
+    if let Some(outdoor) = params.outdoor {
+        conditions.push(format!("outdoor = {}", outdoor));
+    }
+
+    // Family-friendly filter
+    if let Some(ff) = params.family_friendly {
+        conditions.push(format!("family_friendly = {}", ff));
+    }
+
+    // Build WHERE clause
+    let where_clause = if conditions.is_empty() {
+        "WHERE start_time >= NOW()".to_string()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    // Build and execute query
+    let query = format!(
+        "SELECT {} FROM events {} ORDER BY start_time ASC LIMIT 20",
+        EVENT_COLUMNS, where_clause
+    );
+
+    sqlx::query_as::<_, Event>(&query)
+        .fetch_all(pool)
+        .await
 }
