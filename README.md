@@ -13,6 +13,7 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 ## Table of Contents
 
 - [Project Overview](#project-overview)
+- [How It Works](#how-it-works)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
 - [Team Roles](#team-roles)
@@ -25,6 +26,7 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 - [Project Structure](#project-structure)
 - [API Endpoints](#api-endpoints)
 - [Development Tasks by Role](#development-tasks-by-role)
+- [User Preferences & Machine Learning](#user-preferences--machine-learning)
 - [Environment Variables](#environment-variables)
 - [Running the Full Stack](#running-the-full-stack)
 - [Troubleshooting](#troubleshooting)
@@ -38,8 +40,73 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 **Solution:** A unified platform that:
 1. Aggregates events from multiple public sources
 2. Uses AI (Google Gemini) to normalize and summarize event data
-3. Lets users search with natural language ("What's happening downtown this weekend?")
-4. Links back to original sources, driving traffic to organizers
+3. Lets users search with natural language via an **AI chat interface**
+4. Answers contextual questions (weather, directions, venue info)
+5. Links back to original sources, driving traffic to organizers
+
+---
+
+## How It Works
+
+### The AI Interface
+
+Users don't browse lists—they **chat**. The AI is the search interface:
+
+> "What concerts are happening this weekend?"  
+> "Any free family events near downtown?"  
+> "Will it rain Saturday?"  
+> "How do I get to Gathering Place?"
+
+The AI calls **our custom tools** to search the event database, then uses web search for contextual info (weather, directions), and responds conversationally.
+
+### Two Separate Systems
+
+| System | Purpose | When It Runs | Owner |
+|--------|---------|--------------|-------|
+| **Data Pipeline** | Scrape, normalize, store events | Background (cron job) | Skylar |
+| **Chat Interface** | User queries via AI + tools | On-demand per request | Ben |
+
+They share the **database**—that's the connection point.
+
+### Chat Flow
+
+```
+1. User: "What concerts are happening this weekend?"
+                    │
+                    ▼
+2. /api/chat sends message to Gemini with tool definitions
+                    │
+                    ▼
+3. Gemini calls: search_events({
+     category: "concerts",
+     startDate: "2026-01-30",
+     endDate: "2026-02-01"
+   })
+                    │
+                    ▼
+4. Our backend executes query against PostgreSQL
+                    │
+                    ▼
+5. Returns results to Gemini
+                    │
+                    ▼
+6. Gemini formats response:
+   "I found 3 concerts this weekend! Friday night, 
+   Band X is playing at Cain's Ballroom..."
+                    │
+                    ▼
+7. User sees friendly response with event details
+```
+
+### Weather, Directions, Venue Info
+
+For contextual questions beyond events, the AI uses **web search** or built-in knowledge—we don't need to build custom tools for everything:
+
+- "Will it rain Saturday?" → AI uses web search
+- "How do I get to Gathering Place?" → AI uses web search
+- "Is Cain's Ballroom loud?" → AI uses built-in knowledge
+
+We only build **one custom tool** for MVP: `search_events`. Everything else comes free.
 
 ---
 
@@ -47,41 +114,64 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              LOCATE918 ARCHITECTURE                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-    │ Eventbrite  │     │   Venue     │     │    City     │
-    │    API      │     │  Websites   │     │  Calendars  │
-    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-           │                   │                   │
-           └───────────────────┼───────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   RUST BACKEND      │
-                    │   (Axum) :3000      │
-                    │                     │
-                    │  • /api/events      │
-                    │  • /api/users       │
-                    │  • /api/chat        │
-                    │  • Scraper module   │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              │                │                │
-              ▼                ▼                ▼
-    ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
-    │   PostgreSQL    │ │ Python LLM  │ │  React Frontend │
-    │   Database      │ │ Service     │ │                 │
-    │                 │ │ :8001       │ │                 │
-    └─────────────────┘ └──────┬──────┘ └─────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   Google Gemini     │
-                    │       API           │
-                    └─────────────────────┘
+│                         DATA PIPELINE (Background)                          │
+│                                                                             │
+│    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                 │
+│    │ Eventbrite  │     │   Venue     │     │    City     │                 │
+│    │    API      │     │  Websites   │     │  Calendars  │                 │
+│    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘                 │
+│           │                   │                   │                         │
+│           └───────────────────┼───────────────────┘                         │
+│                               │                                             │
+│                               ▼                                             │
+│                    ┌─────────────────────┐                                  │
+│                    │   Scraper Service   │                                  │
+│                    │     (Skylar)        │                                  │
+│                    └──────────┬──────────┘                                  │
+│                               │                                             │
+│                               ▼                                             │
+│                    ┌─────────────────────┐                                  │
+│                    │   /api/normalize    │                                  │
+│                    │   (LLM cleans data) │                                  │
+│                    └──────────┬──────────┘                                  │
+│                               │                                             │
+│                               ▼                                             │
+│                    ┌─────────────────────┐                                  │
+│                    │     PostgreSQL      │◀──────────────────────┐         │
+│                    │     Database        │                       │         │
+│                    └─────────────────────┘                       │         │
+│                                                                  │         │
+└──────────────────────────────────────────────────────────────────┼─────────┘
+                                                                   │
+┌──────────────────────────────────────────────────────────────────┼─────────┐
+│                         CHAT INTERFACE (On-Demand)               │         │
+│                                                                  │         │
+│    ┌─────────────┐     ┌─────────────────────┐                  │         │
+│    │    User     │     │   RUST BACKEND      │                  │         │
+│    │   Message   │────▶│   (Axum) :3000      │                  │         │
+│    └─────────────┘     │                     │                  │         │
+│                        │  • /api/chat        │                  │         │
+│                        │  • /api/events      │                  │         │
+│                        │  • /api/users       │                  │         │
+│                        └──────────┬──────────┘                  │         │
+│                                   │                             │         │
+│                                   ▼                             │         │
+│                        ┌─────────────────────┐                  │         │
+│                        │   Python LLM        │                  │         │
+│                        │   Service :8001     │                  │         │
+│                        │                     │                  │         │
+│                        │  Gemini + Tools:    │                  │         │
+│                        │  • search_events    │──────────────────┘         │
+│                        │  • get_preferences  │                            │
+│                        └──────────┬──────────┘                            │
+│                                   │                                       │
+│                                   ▼                                       │
+│                        ┌─────────────────────┐                            │
+│                        │   Formatted         │                            │
+│                        │   Response to User  │                            │
+│                        └─────────────────────┘                            │
+│                                                                           │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -96,6 +186,7 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 | Event Scrapers | Rust (in backend) or Python (standalone) | Skylar |
 | Frontend | React / JavaScript | Malachi |
 | FullStack/QA | Rust, Python, React | Jordi |
+
 ---
 
 ## Team Roles
@@ -103,9 +194,9 @@ An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple
 | Name | Role | Responsibilities |
 |------|------|------------------|
 | **Will** | Coordinator / Backend Lead | Rust backend, database, API endpoints, code review |
-| **Ben** | AI Engineer | Python LLM service, Gemini integration, natural language processing |
-| **Skylar** | Data Engineer | Web scrapers, data ingestion pipeline, event normalization |
-| **Malachi** | Frontend Developer | React UI, user experience |
+| **Ben** | AI Engineer | Python LLM service, Gemini integration, **chat with tool calling**, natural language processing |
+| **Skylar** | Data Engineer | Web scrapers, data ingestion pipeline, **cron scheduling** |
+| **Malachi** | Frontend Developer | React UI, **chat interface**, user experience |
 | **Jordi** | Fullstack Developer | Cross-stack support, integration, features as needed |
 
 ---
@@ -302,18 +393,31 @@ locate918/
 │       ├── models/
 │       │   └── schemas.py     # Pydantic models
 │       ├── routes/
-│       │   └── chat.py        # /api/parse-intent, /api/chat
-│       └── services/
-│           └── gemini.py      # Gemini API integration
+│       │   ├── chat.py        # /api/chat with tool calling
+│       │   └── normalize.py   # /api/normalize for scrapers
+│       ├── services/
+│       │   └── gemini.py      # Gemini API integration
+│       └── tools/
+│           └── definitions.py # Tool schemas for Gemini
 │
-├── frontend/                   # React App
+├── frontend/                   # React App (Malachi)
 │   ├── src/
 │   │   ├── components/
+│   │   │   ├── ChatInterface.jsx
+│   │   │   ├── EventCard.jsx
+│   │   │   └── PreferencesForm.jsx
 │   │   ├── pages/
 │   │   └── App.jsx
 │   └── package.json
 │
-└── docs/                       # Documentation
+├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md
+│   └── EVENT_SOURCES.md
+│
+└── scrapers/                   # Standalone scrapers (Skylar, if Python)
+    ├── eventbrite.py
+    ├── visit_tulsa.py
+    └── cains.py
 ```
 
 ---
@@ -327,22 +431,56 @@ locate918/
 | GET | `/api/events` | List all events |
 | POST | `/api/events` | Create an event |
 | GET | `/api/events/:id` | Get event by ID |
-| GET | `/api/events/search?q=&category=` | Search events |
+| GET | `/api/events/search?q=&category=&startDate=&endDate=` | Search events |
 | POST | `/api/users` | Create user |
 | GET | `/api/users/:id` | Get user |
-| GET | `/api/users/:id/profile` | Get full profile (for LLM) |
-| POST | `/api/users/:id/preferences` | Add preference |
-| POST | `/api/users/:id/interactions` | Record interaction |
-| POST | `/api/chat` | Natural language search (coming soon) |
+| GET | `/api/users/:id/preferences` | Get user preferences |
+| PUT | `/api/users/:id/preferences` | Update preferences |
+| POST | `/api/users/:id/interactions` | Record interaction (click/save/dismiss) |
+| POST | `/api/chat` | Forwards to LLM service |
 
 ### Python LLM Service (`:8001`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check |
-| POST | `/api/parse-intent` | Natural language → search params |
-| POST | `/api/chat` | Generate conversational response |
-| POST | `/api/normalize` | Normalize scraped event data |
+| POST | `/api/chat` | **Main endpoint** — User message → Gemini with tools → Response |
+| POST | `/api/normalize` | Raw HTML → LLM → Normalized Event objects |
+
+### Tool Definitions (Used by Gemini)
+
+```python
+tools = [
+    {
+        "name": "search_events",
+        "description": "Search local Tulsa events by category, date, location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "category": {"type": "string", "enum": ["concerts", "sports", "family", "nightlife", "comedy", "all"]},
+                "startDate": {"type": "string", "format": "date"},
+                "endDate": {"type": "string", "format": "date"},
+                "priceMax": {"type": "number"},
+                "outdoor": {"type": "boolean"},
+                "familyFriendly": {"type": "boolean"}
+            }
+        }
+    },
+    {
+        "name": "get_user_preferences",
+        "description": "Get user's saved preferences and interaction history",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "userId": {"type": "string"}
+            }
+        }
+    }
+]
+```
+
+When Gemini calls a tool, Ben's service executes it (queries DB via Rust backend) and returns results to Gemini for formatting.
 
 ---
 
@@ -351,59 +489,166 @@ locate918/
 ### Ben (AI Engineer) — Python LLM Service
 
 **Your files:**
-- `llm-service/app/models/schemas.py` — Pydantic models
-- `llm-service/app/routes/chat.py` — API endpoints
+- `llm-service/app/routes/chat.py` — Main chat endpoint with tool calling
+- `llm-service/app/routes/normalize.py` — Normalize scraped data
 - `llm-service/app/services/gemini.py` — Gemini integration
+- `llm-service/app/tools/definitions.py` — Tool schemas
 
 **Tasks:**
-1. Implement `parse_user_intent()` — Convert "jazz concerts this weekend" → `{category: "music", query: "jazz", date_from: "..."}`
-2. Implement `generate_chat_response()` — Take events + message, return friendly response
-3. Implement `normalize_events()` — Clean up messy scraped data
+1. **`/api/chat` with tool calling** — Send user message + tools to Gemini, handle tool calls, return response
+2. **`search_events` tool execution** — When Gemini calls this, query the Rust backend's `/api/events/search`
+3. **`/api/normalize`** — Take raw HTML from scrapers, use Gemini to extract Event objects
+4. **Pass user preferences** — Include in system prompt so Gemini personalizes responses
 
-**Language:** Python (FastAPI + google-generativeai)
+**Key concept:** Gemini is the interface. It decides when to call `search_events`. Your code executes the tool and returns results to Gemini.
+
+```python
+# Simplified flow
+async def chat(message: str, user_id: str):
+    # 1. Get user preferences
+    prefs = await get_user_preferences(user_id)
+    
+    # 2. Send to Gemini with tools
+    response = gemini.generate(
+        messages=[{"role": "user", "content": message}],
+        tools=tool_definitions,
+        system=f"User preferences: {prefs}"
+    )
+    
+    # 3. If Gemini wants to call a tool
+    if response.tool_calls:
+        tool_call = response.tool_calls[0]
+        if tool_call.name == "search_events":
+            # Execute against our database
+            events = await search_events(tool_call.arguments)
+            # Send results back to Gemini
+            final = gemini.generate(
+                messages=[...previous..., {"role": "tool", "content": events}]
+            )
+            return final.text
+    
+    return response.text
+```
 
 ---
 
 ### Skylar (Data Engineer) — Event Scrapers
 
 **Your files:**
-- `backend/src/scraper/mod.rs` (if Rust)
-- OR create `scrapers/` folder at project root (if Python)
+- `scrapers/` folder (Python) OR `backend/src/scraper/` (Rust)
 
 **Tasks:**
-1. Build scrapers for 2-3 event sources (Eventbrite, local venues, city calendar)
-2. Store events via `POST /api/events` or directly in database
-3. Optionally call `/api/normalize` to clean data with LLM
+1. **API Integrations** (no scraping needed):
+   - Eventbrite API — Sign up, fetch Tulsa events, store directly
+   - Bandsintown API — Fetch concerts
+   - (Optional) Ticketmaster API
 
-**Language:** Your choice!
-- **Rust** — Work in `backend/src/scraper/`. Will can help map your logic to Rust.
-- **Python** — Create a separate `scrapers/` folder. Use `requests` + `beautifulsoup4`.
+2. **Scrapers for local sites**:
+   - Visit Tulsa (visittulsa.com/events)
+   - Cain's Ballroom (cainsballroom.com)
+   - Tulsa World calendar
+   
+3. **Send to normalize** — Raw HTML → `POST /api/normalize` → Clean Event objects
+
+4. **Cron scheduling** — Run scrapers every few hours automatically
+
+**Scraper template (Python):**
+```python
+import requests
+
+def scrape_visit_tulsa():
+    # 1. Fetch HTML
+    html = requests.get("https://visittulsa.com/events").text
+    
+    # 2. Send to normalize endpoint
+    response = requests.post(
+        "http://localhost:8001/api/normalize",
+        json={
+            "raw_html": html,
+            "source_url": "https://visittulsa.com/events",
+            "source_name": "Visit Tulsa"
+        }
+    )
+    events = response.json()
+    
+    # 3. Store each event
+    for event in events:
+        requests.post("http://localhost:3000/api/events", json=event)
+
+# Run with cron or schedule library
+```
+
+See `docs/EVENT_SOURCES.md` for full list of sources to target.
 
 ---
 
-### Frontend Developer — React UI
+### Malachi (Frontend) — React UI
 
 **Your files:**
 - Everything in `frontend/`
 
-**Tasks:**
-1. Event list/search page
-2. Event detail page
-3. Chat interface for natural language search
-4. User preferences page
+**Key components:**
+1. **ChatInterface.jsx** — Message input, history, event cards in responses
+2. **EventCard.jsx** — Display event with save/dismiss buttons
+3. **PreferencesForm.jsx** — Set favorite categories, price range, location
 
-**Language:** JavaScript/React
+**Tasks:**
+1. Build chat UI that calls `/api/chat`
+2. Display events returned in responses
+3. Track interactions (clicks, saves) via `/api/users/:id/interactions`
 
 ---
 
 ### Will (Coordinator) — Rust Backend
 
-**Current status:** Core API complete. Ready for integration.
+**Current status:** Core API complete.
 
 **Remaining:**
-1. Uncomment chat routes when Ben's service is ready
-2. Review PRs, help team with Rust questions
-3. Deploy when ready
+1. Add `/api/events/search` endpoint with filters (category, date range, etc.)
+2. Ensure events endpoint returns data in format Ben's tools expect
+3. Review PRs, help team integrate
+
+---
+
+## User Preferences & Machine Learning
+
+### Phase 1: Explicit Preferences (MVP)
+
+User sets in profile:
+```json
+{
+  "favorite_categories": ["concerts", "comedy"],
+  "price_range_max": 50,
+  "location": "downtown",
+  "radius_miles": 10,
+  "family_friendly_only": false
+}
+```
+
+Passed to Gemini in system prompt — it naturally factors them into responses.
+
+### Phase 2: Behavior Tracking (MVP)
+
+Log interactions:
+```sql
+CREATE TABLE interactions (
+    id UUID PRIMARY KEY,
+    user_id UUID,
+    event_id UUID,
+    action VARCHAR(20),  -- 'clicked', 'saved', 'dismissed'
+    event_category TEXT,
+    event_venue TEXT,
+    created_at TIMESTAMP
+);
+```
+
+### Phase 3: ML Recommendations (Future)
+
+- Analyze patterns in interaction data
+- Build taste profiles / embeddings
+- "Users who liked X also liked Y"
+- Gemini uses `get_user_preferences` tool to personalize:
+  > "Based on your history, you like rock shows at Cain's—there's one Friday you might enjoy."
 
 ---
 
@@ -418,6 +663,7 @@ LLM_SERVICE_URL=http://localhost:8001
 ### `llm-service/.env`
 ```
 GEMINI_API_KEY=your_key_here
+BACKEND_URL=http://localhost:3000
 ```
 
 ---
@@ -468,7 +714,7 @@ cargo build
 ```bash
 cd llm-service
 source venv/bin/activate
-pip install -r requirements.txt  # (if you create one)
+pip install -r requirements.txt
 ```
 
 ### Port already in use
@@ -482,10 +728,22 @@ netstat -ano | findstr :3000
 
 ---
 
+## Cost Estimates
+
+| Item | Cost |
+|------|------|
+| Gemini API (normalization ~500 events/week) | $5-15/week |
+| Gemini API (chat queries) | ~$0.001-0.01 per query |
+| 1000 user chats/month | ~$10-20/month |
+| **Total MVP** | ~$30-50/month |
+
+---
+
 ## Questions?
 
 - **Rust help:** Ask Will
 - **Python/AI help:** Ask Ben
 - **Scraper strategy:** Ask Skylar
+- **Frontend:** Ask Malachi
 
 Let's build something great! 🚀
