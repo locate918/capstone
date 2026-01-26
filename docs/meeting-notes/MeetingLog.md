@@ -79,7 +79,6 @@ Copy this for each new meeting:
 
 ---
 
-```
 ### January 25, 2025
 
 **Attendees: Will ,Ben, Skylar, Malachi, Jordi** 
@@ -87,6 +86,9 @@ Copy this for each new meeting:
 **Duration: start 6:30 end ** 
 
 #### Progress Since Last Meeting
+- Api is built * changes to the database structure- normalize first
+- FrontEnd- Mock up in production
+- LLm structure is started
 - 
 
 #### Blockers / Issues
