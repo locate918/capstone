@@ -1,284 +1,257 @@
-# Task Assignments
+# Locate918 Task Assignments
 
-## Overview
+## Team Roles
 
-Skylar has two core systems that share a database:
-
-1. **Data Pipeline** - Collects and normalizes events (background)
-2. **Chat Interface** - AI-powered user interaction (on-demand)
+| Member | Role | Primary Responsibilities |
+|--------|------|-------------------------|
+| **Will** | Coordinator / Backend Lead | Database, Rust API, integration, code review |
+| **Ben** | AI/LLM Engineer | Chat endpoint, search endpoint, Gemini integration |
+| **Skylar** | Data Engineer | Scrapers, API integrations, cron jobs |
+| **Jordi** | Frontend Developer | React UI, search bar, chat interface |
+| **Malachi** | Full Stack / Business | Features, UX, monetization |
 
 ---
 
-## Skylar's Tasks (Data Pipeline)
+## Current Sprint Tasks
 
-### Sprint 1-2: API Integrations
+### Will (Backend Lead)
+- [x] Set up PostgreSQL database
+- [x] Create database schema with migrations
+- [x] Implement Events CRUD endpoints
+- [x] Implement Users/Preferences endpoints
+- [x] Implement `/api/events/search` endpoint
+- [ ] Review and merge team PRs
+- [ ] Set up production deployment
 
-- [ ] **Eventbrite API**
+### Ben (AI/LLM Engineer)
+- [ ] **Implement `/api/search`** - Smart search endpoint
+  - Parse natural language query with Gemini Flash
+  - Extract parameters (category, date, price, etc.)
+  - Call existing search endpoint
+  - Return formatted results
+- [ ] **Implement `/api/chat`** - Chat with Tully
+  - Set up Gemini Pro with tool calling
+  - Define `search_events` tool
+  - Handle multi-turn conversation
+  - Integrate user preferences into system prompt
+- [ ] Create `services/gemini.rs` client
+
+### Skylar (Data Engineer)
+- [ ] **Eventbrite API integration**
   - Sign up for API key
-  - Fetch Tulsa-area events
-  - Map response to Event schema
-  - Store directly (already JSON)
+  - Fetch Tulsa area events
+  - POST to `/api/events`
+- [ ] **Build 2-3 local scrapers**
+  - Visit Tulsa events page
+  - Cain's Ballroom calendar
+  - Tulsa World events
+- [ ] **Set up cron scheduling**
+  - Eventbrite: every 6 hours
+  - Local scrapers: every 4 hours
+- [ ] Test data pipeline end-to-end
 
-- [ ] **Bandsintown API**
-  - Sign up for API key
-  - Fetch concerts by Tulsa venue list
-  - Map to Event schema
-  - Store directly
+### Jordi (Frontend)
+- [ ] Set up React project with Tailwind
+- [ ] **Smart Search Bar component**
+  - Input field with search icon
+  - Calls `/api/search`
+  - Displays results as cards
+- [ ] **Chat Interface component**
+  - Message list
+  - Input field
+  - Calls `/api/chat`
+  - Typing indicator
+- [ ] Event card component
+- [ ] Mobile responsive layout
 
-- [ ] **Ticketmaster API** (optional)
-  - Covers major venues (BOK Center, etc.)
+### Malachi (Full Stack / Business)
+- [ ] Logo and branding finalization
+- [ ] Sponsored events feature design
+- [ ] User onboarding flow
+- [ ] Help with frontend/backend as needed
 
-### Sprint 2-3: Local Site Scrapers
+---
 
-- [ ] **Visit Tulsa** (visittulsa.com/events)
-  - Scrape event listings
-  - Extract: name, date, venue, description, link
-  - Send raw HTML to `/api/normalize`
+## API Contract
 
-- [ ] **Cain's Ballroom** (cainsballroom.com)
-  - Scrape show calendar
-  - Send to `/api/normalize`
+### Smart Search (Ben → Jordi)
 
-- [ ] **Tulsa World Calendar** (tulsaworld.com/calendar)
-  - Scrape events
-  - Send to `/api/normalize`
+**Request:**
+```
+POST /api/search
+Content-Type: application/json
 
-### Sprint 3: Scheduling
-
-- [ ] **Cron Job Setup**
-  - Run API fetches every 6 hours
-  - Run scrapers every 12 hours
-  - Use Tokio scheduled tasks or system cron
-
-- [ ] **Error Handling**
-  - Log failed scrapes
-  - Retry logic
-  - Alert on repeated failures
-
-### Scraper Template
-
-```rust
-async fn scrape_source(source: &str) -> Result<Vec<RawEvent>> {
-    // 1. Fetch HTML
-    let html = reqwest::get(source).await?.text().await?;
-    
-    // 2. Send to normalize endpoint
-    let events = client
-        .post("/api/normalize")
-        .json(&NormalizeRequest { 
-            raw_html: html, 
-            source_url: source.to_string(),
-            source_name: "Visit Tulsa".to_string()
-        })
-        .send()
-        .await?
-        .json::<Vec<Event>>()
-        .await?;
-    
-    // 3. Store in database
-    for event in events {
-        db.insert_event(event).await?;
-    }
-    
-    Ok(())
+{
+  "query": "rock concerts this weekend under $30"
 }
 ```
 
----
-
-## Ben's Tasks (Chat Interface)
-
-### Sprint 2-3: Normalize Endpoint
-
-- [ ] **POST /api/normalize**
-  - Receives raw HTML + source info
-  - Sends to Claude/Gemini with prompt
-  - Returns normalized Event objects
-
-```rust
-async fn normalize(payload: NormalizeRequest) -> Json<Vec<Event>> {
-    let prompt = format!(
-        "Extract events from this HTML. Return JSON array with fields: 
-        name, description, venue_name, venue_address, start_time, 
-        end_time, category, price_min, price_max, outdoor, family_friendly.
-        
-        Source: {}
-        HTML: {}",
-        payload.source_name,
-        payload.raw_html
-    );
-    
-    let response = llm_client.complete(prompt).await?;
-    let events: Vec<Event> = serde_json::from_str(&response)?;
-    
-    Json(events)
+**Response:**
+```json
+{
+  "events": [
+    {
+      "id": "uuid",
+      "title": "Rock Night at Cain's",
+      "venue": "Cain's Ballroom",
+      "start_time": "2026-02-01T20:00:00Z",
+      "price_min": 15,
+      "price_max": 25,
+      "image_url": "https://...",
+      "source_url": "https://..."
+    }
+  ],
+  "parsed": {
+    "category": "concerts",
+    "genre": "rock",
+    "date_range": "this weekend",
+    "price_max": 30
+  }
 }
 ```
 
-### Sprint 4: Chat Endpoint
+### Chat (Ben → Jordi)
 
-- [ ] **POST /api/chat**
-  - Receives user message + userId
-  - Loads user preferences
-  - Sends to Claude with tool definitions
-  - Handles tool calls (search_events)
-  - Returns formatted response
+**Request:**
+```
+POST /api/chat
+Content-Type: application/json
 
-- [ ] **Tool: search_events**
-  - Query PostgreSQL with filters
-  - Return matching events to Claude
-
-```rust
-// Tool definition sent to Claude
-let tools = vec![
-    Tool {
-        name: "search_events",
-        description: "Search local Tulsa events",
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "category": { "type": "string" },
-                "startDate": { "type": "string" },
-                "endDate": { "type": "string" },
-                "priceMax": { "type": "number" },
-                "outdoor": { "type": "boolean" }
-            }
-        })
-    }
-];
+{
+  "user_id": "uuid",
+  "message": "What family events are happening this weekend?",
+  "conversation_id": "uuid"  // optional, for multi-turn
+}
 ```
 
-### Sprint 5-6: User Preferences
-
-- [ ] **User Preferences Table**
-  ```sql
-  CREATE TABLE user_preferences (
-      user_id UUID PRIMARY KEY,
-      favorite_categories TEXT[],
-      price_range_min DECIMAL,
-      price_range_max DECIMAL,
-      location TEXT,
-      radius_miles INT,
-      family_friendly_only BOOLEAN
-  );
-  ```
-
-- [ ] **Interactions Table**
-  ```sql
-  CREATE TABLE interactions (
-      id UUID PRIMARY KEY,
-      user_id UUID,
-      event_id UUID,
-      action VARCHAR(20),  -- 'clicked', 'saved', 'dismissed'
-      event_category TEXT,
-      event_venue TEXT,
-      created_at TIMESTAMP
-  );
-  ```
-
-- [ ] **GET/PUT /api/users/:id/preferences**
-- [ ] **POST /api/users/:id/interactions**
-- [ ] **Tool: get_user_preferences**
-  - Returns user's preferences + recent interactions
-  - Claude uses for personalized responses
-
----
-
-## Shared: Database Schema
-
-### Events Table
-```sql
-CREATE TABLE events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(500) NOT NULL,
-    description TEXT,
-    venue_name VARCHAR(255),
-    venue_address TEXT,
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP,
-    categories TEXT[],
-    price_min DECIMAL,
-    price_max DECIMAL,
-    source_url TEXT NOT NULL,
-    source_name VARCHAR(100),
-    outdoor BOOLEAN DEFAULT false,
-    family_friendly BOOLEAN DEFAULT false,
-    image_url TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    UNIQUE(source_url)  -- Prevent duplicates
-);
-
-CREATE INDEX idx_events_start_time ON events(start_time);
-CREATE INDEX idx_events_categories ON events USING GIN(categories);
+**Response:**
+```json
+{
+  "message": "Here are some great family events this weekend:\n\n🎪 **Tulsa State Fair**...",
+  "events": [...],  // referenced events
+  "conversation_id": "uuid"
+}
 ```
 
----
+### Events (Skylar → Database)
 
-## Frontend Tasks (TBD)
+**Request:**
+```
+POST /api/events
+Content-Type: application/json
 
-### Sprint 5-6: Chat UI
-
-- [ ] **ChatInterface component**
-  - Message input
-  - Message history display
-  - Event card rendering in responses
-
-- [ ] **EventCard component**
-  - Name, date, venue, price
-  - Save/dismiss buttons
-  - Link to source
-
-- [ ] **PreferencesForm component**
-  - Category checkboxes
-  - Price range slider
-  - Location input
-
----
-
-## MVP Checklist
-
-### Data Pipeline (Skylar)
-- [ ] Eventbrite API working
-- [ ] 2+ scrapers working
-- [ ] Cron job running
-- [ ] Events populating database
-
-### Chat Interface (Ben)
-- [ ] `/api/normalize` working
-- [ ] `/api/chat` working with tool calls
-- [ ] `search_events` returns results
-- [ ] User preferences stored and passed to AI
-
-### Frontend
-- [ ] Chat interface functional
-- [ ] Events display correctly
-- [ ] Preferences can be set
+{
+  "title": "Concert Name",
+  "source_url": "https://original-source.com/event",
+  "source_name": "Eventbrite",
+  "start_time": "2026-02-01T20:00:00Z",
+  "venue": "Venue Name",
+  "venue_address": "123 Main St, Tulsa, OK",
+  "location": "Downtown Tulsa",
+  "categories": ["concerts", "rock"],
+  "price_min": 15.00,
+  "price_max": 25.00,
+  "outdoor": false,
+  "family_friendly": false,
+  "image_url": "https://..."
+}
+```
 
 ---
 
 ## Dependencies
 
 ```
-Skylar depends on:
-  - Ben's /api/normalize endpoint (to clean scraped data)
-  - Database schema (shared)
-
-Ben depends on:
-  - Database populated with events (to have data to search)
-  - Event schema finalized (to build queries)
-
-Frontend depends on:
-  - /api/chat working (to display responses)
-  - Event schema (to render cards)
+Skylar (scrapers) ──► Database ◄── Ben (AI endpoints)
+                          │
+                          ▼
+                   Jordi (frontend)
 ```
 
-### Suggested Order
+- **Jordi** needs Ben's endpoints to be defined (can mock initially)
+- **Ben** needs database populated (can use test data initially)
+- **Skylar** needs nothing—can start immediately
 
-1. **Week 1:** Finalize Event schema, set up database
-2. **Week 2:** Ben builds `/api/normalize`, Skylar builds first scraper
-3. **Week 3:** Skylar sends data to normalize, events in DB
-4. **Week 4:** Ben builds `/api/chat` with tools
-5. **Week 5:** Frontend chat UI
-6. **Week 6:** User preferences, polish
+---
+
+## Getting Started
+
+### Ben - AI Endpoints
+
+1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/)
+2. Add to `.env`: `GEMINI_API_KEY=your_key`
+3. Create `src/services/gemini.rs`:
+
+```rust
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+pub struct GeminiClient {
+    client: Client,
+    api_key: String,
+}
+
+impl GeminiClient {
+    pub fn new(api_key: String) -> Self {
+        Self {
+            client: Client::new(),
+            api_key,
+        }
+    }
+
+    pub async fn chat(&self, messages: Vec<Message>, tools: Vec<Tool>) -> Result<Response, Error> {
+        // Implementation here
+    }
+}
+```
+
+4. Implement `/api/search` in `src/routes/search.rs`
+5. Implement `/api/chat` in `src/routes/chat.rs`
+
+### Skylar - Scrapers
+
+1. Sign up for [Eventbrite API](https://www.eventbrite.com/platform/api)
+2. Create `src/scraper/eventbrite.rs`:
+
+```rust
+pub async fn fetch_tulsa_events() -> Result<Vec<CreateEvent>, Error> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://www.eventbriteapi.com/v3/events/search/")
+        .query(&[
+            ("location.address", "Tulsa, OK"),
+            ("location.within", "25mi"),
+        ])
+        .bearer_auth(&api_key)
+        .send()
+        .await?;
+    
+    // Parse and convert to CreateEvent structs
+}
+```
+
+3. Create scraper for Visit Tulsa (HTML parsing)
+4. Set up cron job to run scrapers
+
+### Jordi - Frontend
+
+1. Create React app:
+```bash
+npx create-react-app frontend
+cd frontend
+npm install tailwindcss axios
+```
+
+2. Create components:
+   - `SearchBar.jsx` - Smart search input
+   - `ChatInterface.jsx` - Tully chat
+   - `EventCard.jsx` - Event display
+   - `EventList.jsx` - Results grid
+
+3. Mock API responses while waiting for Ben
+
+---
+
+## Questions?
+
+Ask in Discord or tag the relevant person in GitHub issues.
