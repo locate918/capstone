@@ -29,7 +29,7 @@ Copy this for each new meeting:
 |  |  |  |
 
 #### Notes
-- 
+- We have decided to make a hybrid search engine featuring an AI interface that will power the search or double as a chat bot when needed.
 
 ---
 ```
@@ -105,9 +105,14 @@ Copy this for each new meeting:
 #### Action Items
 | Task | Owner | Due Date |
 |------|-------|----------|
-|  |  |  |
+| Will | Update backend for normalizing data |  2/1/26 |
+| Malachi | Continue developing frontend features, UML design docs/user stories/requirements | 2/15/26 |
+| Jordi | UML designs/requirements docs/testing pipeline | 2/15/26 |
+| Ben | UML design, Begin research into AI API needs for Gemini/Claude | 2/15/26
+| Skylar | UML design, Find free API keys for EventBrite, and other large search engines, begin developing scrapers | 2/15/26 |
+
 
 #### Notes
-- 
+Create AI powered search engine along with chatbot
 
 ---

@@ -1,333 +1,223 @@
-# Event Sources for Scraping
+# Event Sources for Locate918
 
-This document tracks potential data sources for the Locate918 event aggregator.
+## Overview
 
-**Owner:** Skylar (Data Engineer)  
-**Last Updated:** January 2026
-
----
-
-## Priority Levels
-- **P1** — Must have for MVP (pick 2-3)
-- **P2** — Nice to have
-- **P3** — Future/stretch goal
+This document catalogs all event sources for the Tulsa metro area. Sources are categorized by:
+- **API** - Structured data, no scraping needed
+- **Scraper** - Requires HTML parsing
+- **Priority** - MVP (must have) vs Future (nice to have)
 
 ---
 
-## Music Venues - Large
+## Structured APIs (Priority: MVP)
 
-| Name | URL | Capacity | Notes |
-|------|-----|----------|-------|
-| BOK Center | https://www.bokcenter.com | 19,199 | Major concerts, sports, events |
-| Tulsa Theater | https://tulsatheater.com | 2,800 | Historic venue (formerly Brady Theater) |
-| Tulsa PAC | https://tulsapac.com | 2,365 | Broadway, symphony, ballet |
-| Mabee Center | https://www.mabeecenter.com | 10,575 | ORU campus, concerts |
+These return clean JSON and should be implemented first.
 
-## Music Venues - Medium
-
-| Name | URL | Capacity | Notes |
-|------|-----|----------|-------|
-| Cain's Ballroom | https://www.cainsballroom.com | 1,800 | Historic, "Home of Bob Wills" |
-| The Vanguard | https://www.thevanguardtulsa.com | 450 | Emerging artists, indie |
-| Oklahoma Jazz Hall of Fame | https://jazzdepotlive.com | ~500 | Jazz, blues, gospel |
-| Paradise Cove at River Spirit | https://www.riverspirittulsa.com | 2,500 | Casino venue |
-
-## Music Venues - Small / Bars
-
-| Name | URL | Capacity | Notes |
-|------|-----|----------|-------|
-| Mercury Lounge | https://www.mercuryloungetulsa.com | ~200 | Converted gas station, live music 7 nights/week |
-| The Shrine | | ~150 | Dive bar, local music, low prices |
-| The Colony | https://www.thecolonytulsa.com | ~200 | Local bands, intimate setting |
-| The Fur Shop | | ~150 | Taproom + concert venue, craft beer |
-| Soundpony | | ~100 | Dive bar, DJ nights |
-| LowDown | | ~150 | Jazz club, Arts District |
-| Maggie's Music Box | https://www.maggiesmusicbox.com | ~150 | Jenks, gastropub + live music |
-| The Yeti | | ~100 | Bar with live local bands |
-
-## Theaters / Performing Arts
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Tulsa PAC - Chapman Music Hall | https://tulsapac.com | 2,365 seats, Broadway tours |
-| Tulsa PAC - Williams Theatre | https://tulsapac.com | 430 seats |
-| Tulsa PAC - Doenges Theatre | https://tulsapac.com | 150 seats |
-| Circle Cinema | https://www.circlecinema.org | Art house films, special events |
-| Tulsa Ballet | https://tulsaballet.org | Performs at PAC |
-| Tulsa Opera | https://tulsaopera.com | Performs at PAC |
-
-## Sports Venues
-
-| Name | URL | Notes |
-|------|-----|-------|
-| ONEOK Field | https://www.tulsadrillers.com | Tulsa Drillers (baseball) |
-| BOK Center | https://www.bokcenter.com | Tulsa Oilers (hockey) |
-| H.A. Chapman Stadium | | TU football |
-| FC Tulsa | https://www.fctulsa.com | Soccer |
-
-## Museums / Cultural (with events)
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Philbrook Museum | https://philbrook.org | Art museum, hosts events |
-| Gilcrease Museum | https://gilcrease.org | Western art, events |
-| Woody Guthrie Center | https://woodyguthriecenter.org | Music history, concerts |
-| Bob Dylan Center | https://bobdylancenter.com | Music history, events |
-
-## Aggregators / Platforms
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Eventbrite (Tulsa) | https://www.eventbrite.com/d/ok--tulsa/events | Has API - GOOD STARTING POINT |
-| Visit Tulsa | https://www.visittulsa.com/events | Official tourism, clean listing |
-| Bandsintown (Tulsa) | https://www.bandsintown.com/c/tulsa-ok | Concert aggregator |
-| Songkick | https://www.songkick.com/metro-areas/29587-us-tulsa | Concert aggregator |
-| Downtown Tulsa | https://downtowntulsa.com/events | Downtown events |
-| Tulsa People | https://www.tulsapeople.com/about-town | Local magazine listings |
-| Tulsa World Calendar | https://www.tulsaworld.com/calendar | Newspaper calendar |
-
-## Community / Local
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Meetup (Tulsa) | https://www.meetup.com/find/?location=tulsa--ok | Tech, hobby groups |
-| Gathering Place | https://www.gatheringplace.org | Park events |
-| Tulsa Library | https://www.tulsalibrary.org | Free events |
-| Philbrook Downtown | https://philbrook.org | Art events |
-
-## Casinos (with event venues)
-
-| Name | URL | Notes |
-|------|-----|-------|
-| River Spirit Casino | https://www.riverspirittulsa.com | Paradise Cove venue |
-| Hard Rock Tulsa | https://www.hardrockcasinotulsa.com | The Joint venue |
-| Osage Casino | https://www.osagecasinos.com | Skyline Event Center |
-
-## Family Events / Attractions
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Gathering Place | https://www.gatheringplace.org/parkcalendar | World-class park, free events, festivals, concerts |
-| Tulsa Zoo | https://tulsazoo.org/events | Zoo Nights, HallowZOOeen, ZooRun, seasonal events |
-| Guthrie Green | https://www.guthriegreen.com/events | Free outdoor concerts, movies, Food Truck Wednesdays |
-| Discovery Lab | https://www.discoverylab.org | Children's museum at Gathering Place, STEAM |
-| Oklahoma Aquarium | https://www.okaquarium.org/31/Events | Jenks, sharks, Aquarium Run, holiday events |
-| Tulsa Air & Space Museum | https://www.tulsamuseum.org | Planetarium shows, aviation exhibits |
-| Philbrook Museum | https://philbrook.org | Art museum, outdoor events, family programs |
-| Gilcrease Museum | https://gilcrease.org | Western art, outdoor trails, events |
-
-## Parks / Outdoor Events
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Gathering Place | https://www.gatheringplace.org | Award-winning riverfront park |
-| Guthrie Green | https://www.guthriegreen.com | Arts District park, stage, splash pad |
-| River Parks | https://www.riverparks.org | Trails, Turkey Mountain, events |
-| Tulsa State Fair | https://www.tulsastatefair.com | Annual fair (September/October) |
-| Tulsa Botanic Garden | https://www.tulsabotanic.org | Gardens, seasonal events |
-
-## Adult Events / 21+ (Breweries, Bars, Nightlife)
-
-### Breweries & Taprooms
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Marshall Brewing | https://www.marshallbrewing.com | Tulsa's first craft brewery, live music, trivia |
-| Cabin Boys Brewery | https://www.cabinboysbrewery.com | Tours, trivia, beer yoga, BrewPub |
-| Nothing's Left Brewing | https://www.nothingsleftbrewingco.com | Creative beers, slushies, patio |
-| NEFF Brewing | https://neffbrewing.com | 100% gluten-free brewery & restaurant |
-| Heirloom Rustic Ales | https://heirloomrusticales.com | Belgian-style ales |
-| American Solera | https://www.americansolera.com | Sour & wild ales, hard seltzers |
-| Dead Armadillo | https://www.deadarmadillobrewing.com | "Best Breweries in the South" |
-| Welltown Brewing | https://www.welltownbrewing.com | Rooftop views, festivals, events |
-| Hop the Griffin | https://www.hopthegriffin.com | South Tulsa, live music, trivia |
-| Renaissance Brewing | https://renaissancebrewingco.com | Neighborhood brewery, bingo nights |
-| Elgin Park | https://elginparkbrewery.com | Brewery + restaurant, sports TVs |
-| The Cape Brewing | https://thecapebrewing.com | Jenks, bingo, trivia, live music |
-| Pearl Beach Brew Pub | https://pearlbeachbrewpub.com | Beach volleyball, craft drinks |
-| Eerie Abbey Ales | https://eerieabbeyales.com | Belgian-style brewery |
-
-### Bars / Nightlife / Lounges
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Valkyrie | https://www.vfrcocktails.com | Award-winning craft cocktails |
-| Saturn Room | https://saturnroom.bar | Tiki bar, skyline views |
-| MixCo | https://mixco.bar | Speakeasy-style |
-| Cellar Dweller | https://cellardwellertulsa.com | Underground bar |
-| Roof Sixty-Six | https://roofsixty-six.com | Rooftop bar, panoramic views |
-| Penthouse Bar (Mayo Hotel) | https://themayohotel.com | Art deco, historic |
-| St. Vitus | https://www.stvitusbar.com | Gothic dance club, DJs |
-| Whiskey 918 | https://www.whiskey918.com | Country dance hall, nightclub |
-| The Hunt Club | https://thehuntclubtulsa.com | Arts District, live music, rooftop |
-| Soundpony Lounge | https://soundpony.com | Dive bar, local music scene |
-| The Colony | https://thecolonytulsa.com | Dive bar, indie music |
-| Max Retropub | https://maxretropub.com | 80s/90s arcade bar |
-| Kilkenny's Irish Pub | https://kilkennysirishpub.com | Cherry Street, Irish pub |
-
-### Wine Bars / Wineries
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Vintage Wine Bar | https://www.winebartulsa.com | Downtown, 400+ wines |
-| Tulsa Hills Wine Cellar | https://www.tulsahillswinecellar.com | Wine shop, tastings |
-| Sidecar Barley & Wine | https://sidecartulsa.com | Wine bar, rooftop, fire pit |
-| Van The Wine Man Events | https://vanthewineman.com/tulsa-wine-events | Wine event calendar/aggregator |
-
-### Comedy Clubs
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Tulsa Comedy Club | https://www.tulsacomedyclub.org | Stand-up, open mic |
-| Loony Bin Comedy Club | https://loonybincomedy.com | National touring comedians |
-| Bricktown Comedy Club Tulsa | https://bricktowncomedy.com | Stand-up shows |
-
-### Adult-Only Special Events
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Zoo Nights (Tulsa Zoo) | https://tulsazoo.org/zoo-nights | 21+, themed nights, drinks, music |
-| Conservation on Tap | https://tulsazoo.org/tap | Beer festival at the zoo, 21+ |
-| WildBrew | https://wildbrew.org | Annual beer/wine festival (August) |
-| Tulsa Tequila Fest | Eventbrite | Annual tequila tasting |
+| Source | Coverage | API Docs | Notes |
+|--------|----------|----------|-------|
+| **Eventbrite** | Major events, festivals | [API Docs](https://www.eventbrite.com/platform/api) | Free tier available |
+| **Bandsintown** | Concerts only | [API Docs](https://artists.bandsintown.com/support/api-installation) | Artist-focused |
+| **Ticketmaster** | Large venues (BOK, etc) | [API Docs](https://developer.ticketmaster.com/) | 5000 calls/day free |
+| **Songkick** | Concerts | [API Docs](https://www.songkick.com/developer) | Good for smaller venues |
 
 ---
 
-## Tulsa Metro Suburbs
+## Local Scrapers (Priority: MVP)
+
+No APIs available. Need HTML scraping.
+
+### Tier 1 - Build First
+
+| Source | URL | Event Types | Difficulty |
+|--------|-----|-------------|------------|
+| **Visit Tulsa** | visitulsa.com/events | All types | Medium |
+| **Tulsa World Events** | tulsaworld.com/calendar | All types | Medium |
+| **Cain's Ballroom** | cainsballroom.com | Concerts | Easy |
+
+### Tier 2 - Build Next
+
+| Source | URL | Event Types | Difficulty |
+|--------|-----|-------------|------------|
+| Tulsa PAC | tulsapac.com | Theater, concerts | Medium |
+| BOK Center | bokcenter.com | Major concerts, sports | Easy |
+| Cox Business Center | coxcentertulsa.com | Expos, conventions | Easy |
+
+---
+
+## Venues by Category
+
+### 🎸 Concert Venues
+
+| Venue | Capacity | Location | Website |
+|-------|----------|----------|---------|
+| BOK Center | 19,199 | Downtown | bokcenter.com |
+| Cain's Ballroom | 1,800 | Downtown | cainsballroom.com |
+| Tulsa Theater | 1,200 | Downtown | tulsatheater.com |
+| The Vanguard | 700 | Downtown | thevanguardtulsa.com |
+| Mercury Lounge | 400 | Downtown | mercuryloungetulsa.com |
+| The Shrine | 300 | Downtown | shrineok.com |
+| Soundpony | 200 | Downtown | soundpony.com |
+| The Colony | 350 | Downtown | thecolonytulsa.com |
+
+### 🎭 Performing Arts
+
+| Venue | Type | Location | Website |
+|-------|------|----------|---------|
+| Tulsa PAC | Theater, Symphony | Downtown | tulsapac.com |
+| Circle Cinema | Independent Film | Downtown | circlecinema.org |
+| Tulsa Ballet | Ballet | Brookside | tulsaballet.org |
+| Theatre Tulsa | Community Theater | Downtown | theatretulsa.org |
+| American Theatre | Historic | Downtown | americantheatretulsa.com |
+
+### 🏟️ Sports Venues
+
+| Venue | Teams/Sports | Location | Website |
+|-------|--------------|----------|---------|
+| BOK Center | Oilers (hockey) | Downtown | bokcenter.com |
+| ONEOK Field | Drillers (baseball) | Downtown | tulsadrillers.com |
+| Skelly Stadium | TU Football | TU Campus | tulsahurricane.com |
+| Expo Square | Rodeos, Racing | Expo | exposquare.com |
+
+### 👨‍👩‍👧‍👦 Family-Friendly
+
+| Venue | Type | Location | Website |
+|-------|------|----------|---------|
+| Tulsa Zoo | Zoo | Midtown | tulsazoo.org |
+| Gathering Place | Park | Riverside | gatheringplace.org |
+| Oklahoma Aquarium | Aquarium | Jenks | okaquarium.org |
+| Discovery Lab | Children's Museum | Downtown | discoverylab.org |
+| Safari Joe's H2O | Water Park | Tulsa | safarijoes.com |
+| Incredible Pizza | Entertainment | Various | incrediblepizza.com |
+
+### 🍺 Nightlife & Bars
+
+| Venue | Type | Location | Website |
+|-------|------|----------|---------|
+| The Max | Retro Bar | Downtown | themaxretropub.com |
+| Inner Circle Vodka Bar | Craft Cocktails | Downtown | innercirclevodkabar.com |
+| Valkyrie | Cocktail Lounge | Downtown | valkyrietulsa.com |
+| Hodges Bend | Wine Bar | Downtown | hodgesbend.com |
+| Roosevelt's | Gastropub | Cherry Street | rooseveltstulsa.com |
+| McNellie's | Irish Pub | Downtown | mcnellies.com |
+| Arnie's Bar | Dive Bar | Downtown | arniesbar.com |
+
+### 😂 Comedy
+
+| Venue | Type | Location | Website |
+|-------|------|----------|---------|
+| Loony Bin | Comedy Club | Downtown | loonybincomedy.com |
+| The Fur Shop | Variety | Downtown | thefurshop.com |
+
+### 🍽️ Food & Drink Events
+
+| Source | Event Types | Location |
+|--------|-------------|----------|
+| Cherry Street Farmers Market | Markets | Cherry Street |
+| Kendall Whittier Market | Markets | Kendall Whittier |
+| Mother Road Market | Food Hall Events | Route 66 |
+| Tulsa Food Tours | Tours | Various |
+
+---
+
+## Suburban Coverage
 
 ### Broken Arrow
-
-| Name | URL | Notes |
-|------|-----|-------|
-| City of Broken Arrow Events | https://www.brokenarrowok.gov | Official city calendar |
-| Broken Arrow Brewing Company | https://www.brokenarrowbrewingco.com/events-page | Taproom, open mic, events |
-| BA Performing Arts Center | https://www.baperformingartscenter.com | 1,500-seat venue, Broadway tours |
-| The Rose District | https://www.rosedistrict.com | Downtown shopping/dining district |
-| Rhema Christmas Lights | https://rhema.org | 3 million lights, annual display |
-| Visit Broken Arrow | https://www.visitbrokenarrow.com | Tourism calendar |
-
-**Annual Events:** Rooster Days Festival, Hops Bops & Bites, Chalk It Up, BA Ice Rink, Taste of Summer
-
-### Owasso
-
-| Name | URL | Notes |
-|------|-----|-------|
-| City of Owasso Events | https://www.cityofowasso.com/611/Annual-Events | Official city calendar |
-| Owasso Chamber Events | https://business.owassochamber.com/events | Chamber calendar |
-| Redbud Festival Park | https://www.cityofowasso.com | Main event venue |
-| Owasso Community Center | https://www.cityofowasso.com | Indoor events |
-| Mary Glass Performing Arts Center | | High school/community performances |
-
-**Annual Events:** Owasso Harvest Festival, Lights On Owasso, Red White & Boom, Spring Fling, Community Movie Nights
+| Source | URL | Notes |
+|--------|-----|-------|
+| Visit Broken Arrow | visitbrokenarrow.com | City events |
+| BA Performing Arts | brokenarrowpac.com | Theater |
+| Central Park | baparks.org | Outdoor events |
 
 ### Jenks
+| Source | URL | Notes |
+|--------|-----|-------|
+| Oklahoma Aquarium | okaquarium.org | Family events |
+| Jenks Riverwalk | jenksriverwalk.com | Festivals |
 
-| Name | URL | Notes |
-|------|-----|-------|
-| Oklahoma Aquarium | https://www.okaquarium.org/31/Events | Sharks, family events, runs |
-| Jenks Riverwalk Events | https://jenksriverwalk.com/events | Riverfront entertainment |
-| Jenks Chamber Events | https://www.jenkschamber.com/community-events | Community calendar |
-| The Cape Brewing Company | https://thecapebrewing.com | Brewery, bingo, trivia |
-| Maggie's Music Box | https://www.maggiesmusicbox.com | Live music venue |
-| Flying Tee | https://www.flyingtee.com | Golf entertainment |
-| Riverwalk Amphitheater | | Free outdoor concerts |
-| Discover Jenks | https://discoverjenks.com/events | Event aggregator |
-
-**Annual Events:** Sharklahoma, Aquarium Run, Christmas on the Riverwalk, Sharks in the Park, Food Truck Festival
+### Owasso
+| Source | URL | Notes |
+|--------|-----|-------|
+| Owasso Community Center | owassops.org | Local events |
+| Redbud Festival | rebudfestival.org | Annual festival |
 
 ### Bixby
-
-| Name | URL | Notes |
-|------|-----|-------|
-| City of Bixby Events | https://www.bixbyok.gov/calendar.aspx | Official city calendar |
-| Bixby Chamber Events | https://www.bixbychamber.com | Chamber calendar |
-| Charley Young Event Park | | City event venue |
-| Washington Irving Park | | Festival venue |
-
-**Annual Events:** BBQ & Blues Festival, Green Corn Festival, Fireworks on the 4th, Bettering the Community Chili Cook-Off
+| Source | URL | Notes |
+|--------|-----|-------|
+| Bixby Community Center | bixbyok.gov | Local events |
+| Green Corn Festival | bixbychamber.com | Annual festival |
 
 ### Sand Springs
+| Source | URL | Notes |
+|--------|-----|-------|
+| Case Community Center | sandspringsok.org | Events |
+| Herbal Affair | herbalaffair.org | Annual festival |
 
-| Name | URL | Notes |
-|------|-----|-------|
-| City of Sand Springs Events | https://www.sandspringsok.gov | Official city calendar |
-| Sandite Pride Events | https://sanditepride.com/sand-springs-events | Community calendar |
-| Case Community Center/Park | | Main event venue |
-| Osage Casino Sand Springs | https://www.osagecasinos.com | Casino, slots |
-| Keystone Ancient Forest | https://www.sandspringsok.gov | 500-year-old trees, hiking |
-| See Sand Springs | https://www.seesandsprings.com | Tourism site |
-
-**Annual Events:** Herbal Affair Festival, Chillin' & Grillin', Great Raft Race (Labor Day), Festival of Lights, Euro Motor Extravaganza
-
-### Bartlesville
-
-| Name | URL | Notes |
-|------|-----|-------|
-| Visit Bartlesville Events | https://www.visitbartlesville.com/calendar-of-events | Official tourism calendar |
-| Bartlesville Monthly Events | https://www.bartlesvillemonthly.com/calendar-of-events | Community magazine |
-| Bartlesville Chamber | https://business.bartlesville.com/community-calendar | Chamber calendar |
-| Cooper & Mill Brewing | https://www.cooperandmillbrewing.com | Local brewery |
-| Woolaroc Museum | https://www.woolaroc.org | Western art, wildlife preserve |
-| Frank Phillips Home | https://www.frankphillipshome.org | Historic home tours |
-| Bartlesville Community Center | | Theater, events |
-| Osage Hills State Park | | Outdoor recreation |
-
-**Annual Events:** OKM Music Festival, SunFest, KidsFest (Woolaroc), Christmas in the 'Ville, Fantasy Land of Lights, Broadway in Bartlesville
+### Sapulpa
+| Source | URL | Notes |
+|--------|-----|-------|
+| Sapulpa Main Street | sapulpamainstreet.com | Downtown events |
+| Route 66 Blowout | sapulpaok.gov | Annual festival |
 
 ### Claremore
+| Source | URL | Notes |
+|--------|-----|-------|
+| Will Rogers Memorial | willrogers.com | Museum events |
+| Claremore Expo | claremorecity.com | Rodeos |
 
-| Name | URL | Notes |
+---
+
+## Aggregator Sites
+
+These compile events from multiple sources:
+
+| Site | URL | Notes |
 |------|-----|-------|
-| Visit Claremore Events | https://visitclaremore.com/events | Tourism calendar |
-| Claremore Chamber | https://www.claremore.org/visit | Chamber events |
-| Will Rogers Memorial Museum | https://www.willrogers.com | Museum events, movie nights |
-| Claremore Expo Center | https://www.claremoreexpocenter.com | Concerts, rodeos, trade shows |
-| Will Rogers Downs | https://www.cherokeecasino.com | Horse racing, casino |
-| Claremore Lake | | Outdoor events, lights display |
-| Discover Rogers County | https://discoverrogerscounty.com/events | County events |
-| Claremore Main Street | https://claremoremainstreet.com | Downtown events |
-
-**Annual Events:** Will Rogers Days, Rogers County Fair, Dickens on the Boulevard, Will Rogers Stampede Rodeo, Route 66 Cruiser's Car Show, Food Truck Thursdays
+| Visit Tulsa | visitulsa.com/events | Official tourism |
+| Tulsa World | tulsaworld.com/calendar | Newspaper |
+| Tulsa People | tulsapeople.com | Magazine |
+| What's Up Tulsa | facebook.com/groups/whatuptulsa | Community |
+| Do918 | do918.com | Event discovery |
 
 ---
 
-## Recommended Starting Points
+## Implementation Priority
 
-For MVP, Skylar should prioritize these sources:
+### MVP (Week 1-2)
+1. ✅ Eventbrite API
+2. ✅ Bandsintown API  
+3. ✅ Visit Tulsa scraper
+4. ✅ Cain's Ballroom scraper
+5. ✅ Tulsa World scraper
 
-### Tier 1 (Start here)
-1. **Eventbrite** - Has API, many events, structured data
-2. **Visit Tulsa** - Official tourism site, clean listings
-3. **Cain's Ballroom** - Well-structured website, iconic venue
+### Phase 2 (Week 3-4)
+1. Ticketmaster API
+2. BOK Center scraper
+3. Tulsa PAC scraper
+4. Gathering Place scraper
 
-### Tier 2 (Add next)
-4. **Tulsa PAC** - Broadway, symphony, major events
-5. **The Vanguard** - Indie/emerging artists
-6. **BOK Center** - Major concerts
-
-### Tier 3 (If time permits)
-7. Mercury Lounge
-8. Oklahoma Jazz Hall of Fame
-9. Downtown Tulsa events
+### Phase 3 (Week 5+)
+1. Suburban sources
+2. Smaller venue scrapers
+3. Facebook Events integration
+4. Community submissions
 
 ---
 
-## Notes for Skylar
+## Scraping Notes
 
-When evaluating a source, check:
-1. Does it have a clean events listing page?
-2. Is there an API available? (easier than scraping)
-3. Does robots.txt allow scraping?
-4. How often is it updated?
-5. What event types does it cover?
+### Rate Limiting
+- Be respectful: 1 request per second max
+- Cache responses for 1 hour minimum
+- Use appropriate User-Agent
 
-### API Priority
-- Eventbrite has a public API - USE THIS FIRST
-- Bandsintown has an API
-- Most venue sites require HTML scraping
+### Legal Considerations
+- Always link back to source
+- Don't store full content, just metadata
+- Check robots.txt before scraping
+- APIs are always preferred over scraping
 
-### Scraping Tips
-- Start with ONE source, get it working end-to-end
-- Use the LLM `/api/normalize` endpoint to parse messy data
-- Store `source_url` for every event - we link back to organizers
-- Check for duplicates (same event on multiple sites)
+### Data Quality
+- Deduplicate by source_url (UNIQUE constraint)
+- Normalize venue names
+- Validate dates (reject past events)
+- Flag missing required fields

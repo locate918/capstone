@@ -1,301 +1,333 @@
-# Skylar (Locate918) Architecture
+# Locate918 Architecture
 
 ## Overview
 
-Skylar is an AI-powered local event assistant. Users interact with an AI chat interface that queries our event database and can answer contextual questions about weather, directions, and venues.
+Locate918 uses a **two-tier architecture**:
+
+1. **Data Pipeline** - Background processes that collect, normalize, and store events
+2. **User Interface** - Two ways to query: Smart Search (quick) and Chat (conversational)
+
+Both interfaces query the same pre-populated database. The AI doesn't scrape the web per request—it queries our normalized data.
 
 ---
 
-## System Architecture
+## System Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         DATA PIPELINE                               │
-│                    (Background - Scheduled)                         │
-│                                                                     │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐         │
-│   │  Eventbrite  │    │   Scraper    │    │    LLM       │         │
-│   │  Bandsintown │───▶│   Service    │───▶│  Normalize   │         │
-│   │  Local Sites │    │  (Skylar)    │    │    (Ben)     │         │
-│   └──────────────┘    └──────────────┘    └──────────────┘         │
-│                                                  │                  │
-│                                                  ▼                  │
-│                                           ┌──────────────┐         │
-│                                           │  PostgreSQL  │         │
-│                                           │   Database   │         │
-│                                           └──────────────┘         │
-│                                                  │                  │
-└──────────────────────────────────────────────────┼──────────────────┘
-                                                   │
-┌──────────────────────────────────────────────────┼──────────────────┐
-│                         CHAT INTERFACE                              │
-│                    (On-Demand - User Request)                       │
-│                                                  │                  │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐         │
-│   │    User      │    │  /api/chat   │    │   Claude/    │         │
-│   │   Request    │───▶│   Endpoint   │───▶│   Gemini     │         │
-│   └──────────────┘    │    (Ben)     │    │     API      │         │
-│                       └──────────────┘    └──────────────┘         │
-│                                                  │                  │
-│                                                  ▼                  │
-│                                           ┌──────────────┐         │
-│                              ┌────────────│  Tool Calls  │         │
-│                              │            └──────────────┘         │
-│                              ▼                   │                  │
-│                       ┌─────────────┐            │                  │
-│                       │search_events│◀───────────┘                  │
-│                       │ (our tool)  │                               │
-│                       └─────────────┘                               │
-│                              │                                      │
-│                              ▼                                      │
-│                       ┌─────────────┐                               │
-│                       │  Query DB   │                               │
-│                       └─────────────┘                               │
-│                              │                                      │
-│                              ▼                                      │
-│                       ┌─────────────┐    ┌──────────────┐          │
-│                       │  Results    │───▶│   Claude     │          │
-│                       │  to Claude  │    │  Formats     │          │
-│                       └─────────────┘    │  Response    │          │
-│                                          └──────────────┘          │
-│                                                  │                  │
-│                                                  ▼                  │
-│                                          ┌──────────────┐          │
-│                                          │    User      │          │
-│                                          │   Response   │          │
-│                                          └──────────────┘          │
-└─────────────────────────────────────────────────────────────────────┘
+                           ┌─────────────────────────────────────┐
+                           │           USER INTERFACES           │
+                           ├──────────────────┬──────────────────┤
+                           │   Smart Search   │   Chat (Tully)   │
+                           │   "concerts $30" │   "what's fun?"  │
+                           └────────┬─────────┴────────┬─────────┘
+                                    │                  │
+                                    ▼                  ▼
+                              /api/search         /api/chat
+                              (lightweight)      (full Gemini)
+                                    │                  │
+                                    └────────┬─────────┘
+                                             │
+                                             ▼
+                           ┌─────────────────────────────────────┐
+                           │        search_events(params)        │
+                           │         Database Query              │
+                           └──────────────────┬──────────────────┘
+                                              │
+                                              ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              POSTGRESQL DATABASE                              │
+├──────────────────┬──────────────────┬───────────────────┬───────────────────┤
+│      events      │      users       │  user_preferences │ user_interactions │
+│  (50+ sources)   │   (accounts)     │    (explicit)     │    (implicit)     │
+└──────────────────┴──────────────────┴───────────────────┴───────────────────┘
+                                              ▲
+                                              │
+                           ┌──────────────────┴──────────────────┐
+                           │          DATA PIPELINE              │
+                           │         (runs on cron)              │
+                           ├─────────────────────────────────────┤
+                           │  Eventbrite API  │  Local Scrapers  │
+                           │  Bandsintown API │  (Visit Tulsa,   │
+                           │  Ticketmaster    │   Cain's, etc)   │
+                           └──────────────────┴──────────────────┘
 ```
 
 ---
 
-## Two Separate Systems
+## User Interfaces
 
-| System | Purpose | When It Runs | Owner |
-|--------|---------|--------------|-------|
-| **Data Pipeline** | Scrape, normalize, store events | Background cron (hourly/daily) | Skylar |
-| **Chat Interface** | User queries, AI responses | On-demand per user request | Ben |
+### Smart Search (`/api/search`)
 
-They share the **database**—that's the connection point.
+For users who know what they want. Quick, no conversation.
+
+**Input:**
+```
+"rock concerts this weekend under $30"
+```
+
+**Process:**
+1. Lightweight AI parses query → extracts: category=concerts, genre=rock, date=weekend, price_max=30
+2. Builds database query
+3. Returns JSON array of events
+
+**Output:**
+```json
+[
+  {"title": "Rock Night at Cain's", "price_max": 25, "start_time": "..."},
+  {"title": "Indie Rock Showcase", "price_max": 20, "start_time": "..."}
+]
+```
+
+**Characteristics:**
+- Single request/response
+- No conversation history
+- Fast (~200ms)
+- Uses smaller/cheaper AI model
 
 ---
 
-## Data Pipeline (Skylar's Responsibilities)
+### Chat Interface (`/api/chat`)
 
-### Data Sources
+For exploration and discovery. Full conversational AI named **Tully**.
 
-**Structured APIs (no scraping needed):**
+**Input:**
+```
+User: "I'm new to Tulsa with my family. What should we do this weekend?"
+```
+
+**Process:**
+1. Full Gemini API with system prompt + user preferences
+2. AI calls `search_events` tool (family_friendly=true, date=weekend)
+3. AI may also use web search for weather, directions
+4. Formats natural language response
+
+**Output:**
+```
+"Welcome to Tulsa! Here are some great family activities this weekend:
+
+🎪 **Tulsa State Fair** - Saturday 10am at Expo Square
+   Perfect for all ages! Rides, food, and live entertainment. $15/person.
+
+🦁 **Zoo Day** - Open daily 9am-5pm
+   The Tulsa Zoo has a new elephant exhibit! $12 adults, $8 kids.
+
+The weather looks great—sunny and 72°F. Would you like directions to any of these?"
+```
+
+**Characteristics:**
+- Multi-turn conversation
+- Maintains context
+- Can ask clarifying questions
+- Uses Gemini with tool calling
+- More expensive but better UX for discovery
+
+---
+
+## Data Pipeline
+
+Events are collected in the background, NOT triggered by user requests.
+
+### Sources
+
+**Structured APIs (clean JSON, no scraping):**
 - Eventbrite API
 - Bandsintown API
 - Ticketmaster API
 
-**Local Sites (scraping required):**
+**Web Scrapers (for local sources without APIs):**
 - Visit Tulsa
 - Cain's Ballroom
-- Tulsa World calendar
-- Other local venues
+- Tulsa World Events
+- BOK Center
+- Local venue websites
 
-### Scraper Flow
+### Flow
 
 ```
-1. Cron job triggers scraper (e.g., every 6 hours)
-2. API sources: Fetch JSON → store directly
-3. Scraped sources: Fetch HTML → send to /api/normalize
-4. /api/normalize: LLM converts to Event schema
-5. Store normalized events in PostgreSQL
+Raw Data → /api/normalize → PostgreSQL
+   │            │
+   │            └── LLM extracts: title, date, venue, 
+   │                categories, price, family_friendly, etc.
+   │
+   └── HTML from scraper OR JSON from API
 ```
 
-### Event Schema
+### Schedule
 
-```rust
-struct Event {
-    id: Uuid,
-    name: String,
-    description: String,
-    venue_name: String,
-    venue_address: String,
-    start_time: DateTime,
-    end_time: Option<DateTime>,
-    category: Vec<String>,      // ["concerts", "rock", "live music"]
-    price_min: Option<f32>,
-    price_max: Option<f32>,
-    source_url: String,         // Link back to original
-    source_name: String,        // "Eventbrite", "Cain's Ballroom"
-    outdoor: bool,
-    family_friendly: bool,
-    image_url: Option<String>,
-    created_at: DateTime,
-    updated_at: DateTime,
-}
+| Source | Frequency | Method |
+|--------|-----------|--------|
+| Eventbrite | Every 6 hours | API |
+| Bandsintown | Daily | API |
+| Local venues | Every 4 hours | Scraper |
+| Visit Tulsa | Daily | Scraper |
+
+---
+
+## Database Schema
+
+### events
+```sql
+CREATE TABLE events (
+    id UUID PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    venue TEXT,
+    venue_address TEXT,
+    location TEXT,              -- "Downtown Tulsa", "Broken Arrow"
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ,
+    categories TEXT[],          -- ['concerts', 'rock', 'live music']
+    price_min DOUBLE PRECISION,
+    price_max DOUBLE PRECISION,
+    outdoor BOOLEAN DEFAULT FALSE,
+    family_friendly BOOLEAN DEFAULT FALSE,
+    source_url TEXT NOT NULL UNIQUE,
+    source_name TEXT,           -- "Eventbrite", "Cain's Ballroom"
+    image_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### users
+```sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT,
+    location_preference TEXT,
+    radius_miles INTEGER,
+    price_max DOUBLE PRECISION,
+    family_friendly_only BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### user_preferences (explicit)
+```sql
+CREATE TABLE user_preferences (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    category TEXT NOT NULL,
+    weight INTEGER,  -- -5 (hate) to +5 (love)
+    UNIQUE(user_id, category)
+);
+```
+
+### user_interactions (implicit)
+```sql
+CREATE TABLE user_interactions (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    event_id UUID REFERENCES events(id),
+    interaction_type TEXT,  -- 'clicked', 'saved', 'dismissed'
+    event_category TEXT,    -- denormalized for ML
+    event_venue TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ---
 
-## Chat Interface (Ben's Responsibilities)
+## AI Tool Definition
 
-### The AI as Interface
-
-The AI chat is the search interface. When a user asks a question:
-
-1. `/api/chat` sends message to Claude/Gemini API
-2. AI calls our custom tools (e.g., `search_events`)
-3. Our code executes the tool (queries DB)
-4. Results return to AI
-5. AI formats natural language response
-
-### Tool Definitions
+The AI calls this tool to query our database:
 
 ```javascript
-const tools = [
-  {
-    name: "search_events",
-    description: "Search local Tulsa events by category, date, location",
-    input_schema: {
-      type: "object",
-      properties: {
-        query: { type: "string" },
-        category: { 
-          type: "string", 
-          enum: ["concerts", "sports", "family", "nightlife", "comedy", "all"] 
-        },
-        startDate: { type: "string", format: "date" },
-        endDate: { type: "string", format: "date" },
-        priceMax: { type: "number" },
-        outdoor: { type: "boolean" },
-        familyFriendly: { type: "boolean" }
-      }
-    }
-  },
-  {
-    name: "get_user_preferences",
-    description: "Get this user's saved preferences and interaction history",
-    input_schema: {
-      type: "object",
-      properties: {
-        userId: { type: "string" }
+{
+  name: "search_events",
+  description: "Search for local events in the Tulsa area",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Text to search in title/description"
+      },
+      category: {
+        type: "string",
+        enum: ["concerts", "sports", "family", "nightlife", "comedy", "festivals", "theater", "food"]
+      },
+      start_date: {
+        type: "string",
+        description: "Start of date range (ISO 8601)"
+      },
+      end_date: {
+        type: "string",
+        description: "End of date range (ISO 8601)"
+      },
+      price_max: {
+        type: "number",
+        description: "Maximum ticket price"
+      },
+      outdoor: {
+        type: "boolean",
+        description: "Only outdoor events"
+      },
+      family_friendly: {
+        type: "boolean",
+        description: "Only family-friendly events"
+      },
+      location: {
+        type: "string",
+        description: "Area filter (Downtown, Broken Arrow, etc)"
+      },
+      limit: {
+        type: "integer",
+        description: "Max results to return (default 10)"
       }
     }
   }
-];
-```
-
-### Example Chat Flow
-
-```
-User: "What concerts are happening this weekend?"
-                    │
-                    ▼
-Claude receives message + tool definitions
-                    │
-                    ▼
-Claude calls: search_events({
-  category: "concerts",
-  startDate: "2026-01-30",
-  endDate: "2026-02-01"
-})
-                    │
-                    ▼
-Our backend executes query against PostgreSQL
-                    │
-                    ▼
-Returns: [{ name: "Band X at Cain's", ... }, ...]
-                    │
-                    ▼
-Claude formats response:
-"I found 3 concerts this weekend! Friday night, Band X 
-is playing at Cain's Ballroom. Saturday has..."
-                    │
-                    ▼
-User sees friendly response with event details
-```
-
-### Weather, Directions, Venue Info
-
-For contextual questions beyond events, the AI uses **web search** or built-in knowledge:
-
-```
-User: "Will it rain Saturday?"
-→ AI uses web search → returns forecast
-
-User: "How do I get to Gathering Place?"  
-→ AI uses web search or built-in knowledge → provides directions
-
-User: "Is Cain's Ballroom loud?"
-→ AI uses built-in knowledge → answers directly
-```
-
-We only build **one custom tool** for MVP (`search_events`). Everything else comes free through AI capabilities.
-
----
-
-## User Preferences
-
-### Phase 1: Explicit Preferences (MVP)
-
-User profile stores:
-```rust
-struct UserPreferences {
-    favorite_categories: Vec<String>,
-    price_range: PriceRange,
-    location: String,
-    radius_miles: i32,
-    family_friendly_only: bool,
 }
 ```
-
-Passed to Claude in system prompt with every query.
-
-### Phase 2: Behavior Tracking (MVP)
-
-Log interactions:
-```rust
-struct Interaction {
-    user_id: Uuid,
-    event_id: Uuid,
-    action: ActionType,  // Clicked, Saved, Dismissed, Attended
-    event_category: String,
-    event_venue: String,
-    timestamp: DateTime,
-}
-```
-
-### Phase 3: ML Recommendations (Future)
-
-- Analyze interaction patterns
-- Build taste profiles / embeddings
-- "Users who liked X also liked Y"
-- Claude uses `get_user_preferences` tool to personalize responses
 
 ---
 
 ## API Endpoints
 
-### Chat
-```
-POST /api/chat
-Body: { "message": "string", "userId": "string" }
-Response: { "response": "string", "events": [...] }
-```
+### Events
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/events` | List upcoming events |
+| GET | `/api/events/:id` | Get single event |
+| POST | `/api/events` | Create event (scrapers use this) |
+| GET | `/api/events/search` | Search with filters |
 
-### Normalize (Internal)
-```
-POST /api/normalize
-Body: { "rawHtml": "string", "sourceUrl": "string", "sourceName": "string" }
-Response: { "events": [Event, ...] }
-```
+### Users
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/users` | Create user |
+| GET | `/api/users/:id` | Get user |
+| GET | `/api/users/:id/profile` | Full profile for AI |
+| POST | `/api/users/:id/preferences` | Set category preference |
+| PUT | `/api/users/:id/preferences` | Update settings |
+| POST | `/api/users/:id/interactions` | Log interaction |
 
-### Events (Direct Access)
-```
-GET /api/events?category=concerts&date=2026-01-30
-GET /api/events/:id
-```
+### AI
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/search` | Smart search (quick) |
+| POST | `/api/chat` | Chat with Tully |
 
-### User Preferences
-```
-GET /api/users/:id/preferences
-PUT /api/users/:id/preferences
-GET /api/users/:id/interactions
-```
+---
+
+## Personalization Phases
+
+### Phase 1: Explicit Preferences (MVP)
+- User sets favorite categories, price range, location in profile
+- Passed to AI in system prompt
+- AI naturally factors them into recommendations
+
+### Phase 2: Behavior Tracking (MVP)
+- Log clicks, saves, dismisses to `user_interactions`
+- Build dataset for future ML
+
+### Phase 3: ML Recommendations (Future)
+- Analyze interaction patterns
+- Build taste profiles / embeddings
+- "Users who liked X also liked Y"
+- AI calls `get_user_preferences` tool
 
 ---
 
@@ -303,55 +335,26 @@ GET /api/users/:id/interactions
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Rust (Axum) |
-| Database | PostgreSQL |
-| LLM | Claude API or Gemini API |
-| Scraping | Reqwest + Scraper crate (or Puppeteer for JS sites) |
-| Scheduling | Cron / Tokio scheduled tasks |
-| Frontend | React |
+| Backend | Rust + Axum |
+| Database | PostgreSQL 16 |
+| AI | Google Gemini API |
+| Scraping | Rust (scraper crate) |
+| Frontend | React + Tailwind (planned) |
+| Hosting | TBD |
 
 ---
 
-## Cost Estimates
+## Cost Estimates (MVP)
 
-| Item | Cost |
-|------|------|
-| LLM normalization (~500 events/week) | $5-15/week |
-| Chat queries (Haiku/Flash) | ~$0.001-0.01 per query |
-| 1000 user chats/month | ~$10-20/month |
-| **Total MVP** | ~$30-50/month |
+| Item | Monthly Cost |
+|------|--------------|
+| Gemini API (normalize ~500 events/week) | $5-15 |
+| Gemini API (chat ~1000 queries/month) | $10-20 |
+| PostgreSQL (managed) | $5-15 |
+| **Total** | **~$30-50** |
 
----
-
-## MVP Checklist
-
-### Skylar (Data Pipeline)
-- [ ] Eventbrite API integration
-- [ ] Bandsintown API integration
-- [ ] 2-3 local site scrapers (Visit Tulsa, Cain's, etc.)
-- [ ] Cron job scheduling
-- [ ] Send raw HTML to /api/normalize
-
-### Ben (Chat Interface)
-- [ ] `/api/normalize` endpoint (LLM cleans raw data)
-- [ ] `/api/chat` endpoint (Claude/Gemini with tools)
-- [ ] `search_events` tool implementation
-- [ ] User preferences in profile
-- [ ] Interaction logging
-
-### Frontend
-- [ ] Chat interface component
-- [ ] Event cards/list display
-- [ ] User preferences settings
-- [ ] Save/dismiss interactions
-
----
-
-## Future Enhancements
-
-- Custom weather tool (faster than web search)
-- Embedded maps
-- Ticket purchase integration
-- Push notifications for saved event types
-- ML-powered recommendations
-- Mobile apps (Android/iOS)
+### Cost Optimization
+- Use Gemini Flash for search (cheaper)
+- Use Gemini Pro for chat (better quality)
+- Batch API for normalization (50% off)
+- Prompt caching for repeated queries (90% off)
