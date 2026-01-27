@@ -28,4 +28,4 @@ npm-debug.log*
 # Secrets
 .env
 *.pem
-*.key
+*.key*.bak
