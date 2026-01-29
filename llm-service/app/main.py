@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 # Load env vars before importing services
 load_dotenv()
 
-from app.routes import search, chat
+from app.routes import search, chat, normalize
 
 app = FastAPI(title="Locate918 LLM Service")
 
@@ -21,6 +21,7 @@ app.add_middleware(
 # Register Routes
 app.include_router(search.router, prefix="/api", tags=["Search"])
 app.include_router(chat.router, prefix="/api", tags=["Chat"])
+app.include_router(normalize.router, prefix="/api", tags=["Normalize"])
 
 @app.get("/health")
 async def health_check():

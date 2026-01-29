@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 # Search Schemas
 
@@ -25,8 +26,18 @@ class ChatResponse(BaseModel):
 # Normalization Schemas
 
 class NormalizeRequest(BaseModel):
-    raw_html: str
+    raw_content: str
     source_url: str
+    content_type: str = "html"  # "html" or "json"
+
+class NormalizedEvent(BaseModel):
+    title: str
+    venue: str
+    start_time: datetime
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
 
 class NormalizeResponse(BaseModel):
-    events: List[Dict[str, Any]]
+    events: List[NormalizedEvent]
