@@ -1,17 +1,43 @@
-"""
-Locate918 LLM Service - Data Models
-===================================
-Owner: Ben (AI Engineer)
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 
-Pydantic models for API requests/responses.
-These should mirror the Rust structs in backend/src/models/mod.rs.
+# Search Schemas
 
-Models to implement:
-- SearchParams: query, category, date_from, date_to, location
-- ParseIntentRequest/Response: for /api/parse-intent endpoint
-- ChatRequest/Response: for /api/chat endpoint
-- Event: mirrors Rust Event struct
-- UserProfile: for personalization context
-"""
+class SearchRequest(BaseModel):
+    query: str
 
-# TODO: Ben to implement
+class SearchResponse(BaseModel):
+    parsed_params: Dict[str, Any]
+    # For now just returns the parsed intent.
+
+# Chat Schemas
+
+class ChatRequest(BaseModel):
+    message: str
+    user_id: str
+    conversation_history: Optional[List[Dict[str, Any]]] = []
+    # Example history item: {"role": "user", "parts": ["Hello"]}
+
+class ChatResponse(BaseModel):
+    text: Optional[str]
+    tool_call: Optional[Dict[str, Any]]
+
+# Normalization Schemas
+
+class NormalizeRequest(BaseModel):
+    raw_content: str
+    source_url: str
+    content_type: str = "html"  # "html" or "json"
+
+class NormalizedEvent(BaseModel):
+    title: str
+    venue: str
+    start_time: datetime
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+
+class NormalizeResponse(BaseModel):
+    events: List[NormalizedEvent]

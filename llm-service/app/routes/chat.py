@@ -1,22 +1,29 @@
-"""
-Locate918 LLM Service - Chat Routes
-===================================
-Owner: Ben (AI Engineer)
+from fastapi import APIRouter, HTTPException
+from app.models.schemas import ChatRequest, ChatResponse
+from app.services import gemini
 
-FastAPI endpoints called by the Rust backend.
+router = APIRouter()
 
-Endpoints to implement:
-- POST /api/parse-intent  → Convert natural language to SearchParams
-- POST /api/chat          → Generate conversational response about events
-- POST /api/normalize     → Clean up raw scraped event data (for Skylar)
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_tully(request: ChatRequest):
+    """
+    Handles conversation with Tully.
+    """
+    try:
+        # TODO: Fetch the user profile from the backend using request.user_id
+        # For MVP, we mock a basic profile
+        mock_user_profile = {
+            "id": request.user_id,
+            "location_preference": "Downtown Tulsa",
+            "family_friendly_only": False
+        }
 
-Request flow:
-1. User: "Any jazz concerts this weekend?"
-2. Rust calls POST /api/parse-intent
-3. Returns: {"params": {"category": "music", "query": "jazz"}}
-4. Rust searches database
-5. Rust calls POST /api/chat with message + events
-6. Returns: {"reply": "I found 3 concerts! ..."}
-"""
-
-# TODO: Ben to implement
+        response = await gemini.generate_chat_response(
+            message=request.message,
+            history=request.conversation_history,
+            user_profile=mock_user_profile
+        )
+        
+        return ChatResponse(**response)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
