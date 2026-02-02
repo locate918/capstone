@@ -3,10 +3,16 @@ import asyncio
 import httpx
 from bs4 import BeautifulSoup
 
+# Main listing page containing upcoming events
 BASE_URL = "https://www.cainsballroom.com/events/"
+
+# Human-readable source name
 SOURCE_NAME = "Cain's Ballroom"
+
+
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:8001")
 
+# Custom User-Agen so sites can identify us as a student project
 HEADERS = {
     "User-Agent": "Locate918 Event Aggregator (educational project)"
 }
@@ -20,13 +26,15 @@ def extract_events_from_html(html: str):
     events = []
     seen = set()
 
+    # Each event title is a clickabl <a> with class="url" and rel="bookmark"
     for a in soup.select('a.url[rel="bookmark"]'):
         title = a.get_text(strip=True) or "Unknown"
         link = (a.get("href") or "").strip()
 
+        # Skip malformed anchors
         if not link:
             continue
-
+        # Convert relative URLs to absolute URLs
         if link.startswith("/"):
             link = "https://www.cainsballroom.com" + link
 
@@ -45,15 +53,19 @@ def extract_events_from_html(html: str):
         date_text = "Unknown"
         doors_text = "Unknown"
 
+        # Extract date and dors time if present
         if container:
+            # Event date (e.g., "Thu, Feb 05")
             date_el = container.select_one(".eventDateList #eventDate")
             if date_el:
                 date_text = date_el.get_text(strip=True)
 
+            # Doors time (e.g., "Doors: 6:30 pm")
             doors_el = container.select_one("span.rhp-event__time-text--list")
             if doors_el:
                 doors_text = doors_el.get_text(strip=True)
 
+        # Append normalized raw event object
         events.append({
             "title": title,
             "date": date_text,
@@ -71,12 +83,15 @@ async def scrape_cains_ballroom(send_to_normalize: bool = False, limit: int = 50
      """
 
     async with httpx.AsyncClient(headers=HEADERS, timeout=20) as client:
+        # Fetch the main events page
         resp = await client.get(BASE_URL)
         resp.raise_for_status()
 
+        # Parse HTML into structured events
         events = extract_events_from_html(resp.text)[:limit]
         print(f"[Cain's] Extracted {len(events)} events")
 
+        # If we're not sending to normalize, just print sample and return
         if not send_to_normalize:
             for e in events[:5]:
                 payload = {
@@ -86,7 +101,8 @@ async def scrape_cains_ballroom(send_to_normalize: bool = False, limit: int = 50
                 }
                 print(payload)
             return events
-            
+
+        # Otherwise, send each event to the normalization API
         for e in events:
             payload = {
                 "raw_content": str(e),
@@ -105,4 +121,5 @@ async def scrape_cains_ballroom(send_to_normalize: bool = False, limit: int = 50
         return events
         
 if __name__ == "__main__":
+    # Run locally without normalization for testing
     asyncio.run(scrape_cains_ballroom(send_to_normalize=False, limit=25))
