@@ -10,14 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        service: [backend, llm, frontend]
+        service: [backend, llm-service, frontend]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ---------- BACKEND (Rust) ----------
+      # ====================
+      # Backend (Rust)
+      # ====================
       - name: Set up Rust
         if: matrix.service == 'backend'
         uses: actions-rs/toolchain@v1
@@ -25,37 +28,59 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Cache Cargo
+        if: matrix.service == 'backend'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            backend/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('backend/Cargo.lock') }}
+
       - name: Run Rust tests
         if: matrix.service == 'backend'
         run: cargo test --manifest-path backend/Cargo.toml
 
-      # ---------- LLM SERVICE (Python) ----------
+      # ====================
+      # LLM Service (Python)
+      # ====================
       - name: Set up Python
-        if: matrix.service == 'llm'
+        if: matrix.service == 'llm-service'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        if: matrix.service == 'llm-service'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('llm-service/requirements.txt') }}
+
       - name: Install Python dependencies
-        if: matrix.service == 'llm'
+        if: matrix.service == 'llm-service'
         run: |
           python -m pip install --upgrade pip
           pip install -r llm-service/requirements.txt
 
       - name: Run Python tests
-        if: matrix.service == 'llm'
+        if: matrix.service == 'llm-service'
         run: pytest llm-service
 
-      # ---------- FRONTEND (React) ----------
+      # ====================
+      # Frontend (React)
+      # ====================
       - name: Set up Node
         if: matrix.service == 'frontend'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
         if: matrix.service == 'frontend'
-        run: npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: Run frontend tests
         if: matrix.service == 'frontend'
