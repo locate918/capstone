@@ -1,28 +1,17 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-
-# Load env vars before importing services
-load_dotenv()
-
 from app.routes import search, chat, normalize
 
-app = FastAPI(title="Locate918 LLM Service")
+# Load environment variables
+load_dotenv()
 
-# Configure CORS (Allow frontend to connect)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, this should be the frontend URL
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Locate918 LLM Service", version="1.0.0")
 
-# Register Routes
-app.include_router(search.router, prefix="/api", tags=["Search"])
-app.include_router(chat.router, prefix="/api", tags=["Chat"])
-app.include_router(normalize.router, prefix="/api", tags=["Normalize"])
+# Register Routers
+app.include_router(search.router)
+app.include_router(chat.router)
+app.include_router(normalize.router)
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "llm-service"}
+@app.get("/")
+async def root():
+    return {"status": "online", "service": "Locate918 LLM Service"}
