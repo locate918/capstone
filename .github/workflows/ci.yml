@@ -68,7 +68,7 @@ jobs:
 
       - name: Run Python tests
         if: matrix.service == 'llm-service'
-        run: pytest llm-service
+        run: pytest llm-service/app
 
       # ====================
       # Frontend (React)
