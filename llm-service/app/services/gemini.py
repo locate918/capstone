@@ -102,7 +102,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
         
         for fc in response.function_calls:
             func_name = fc.name
-            func_args = dict(fc.args)
+            func_args = dict(fc.args) if fc.args else {}
 
             if tool_functions and func_name in tool_functions:
                 # Execute the tool
@@ -131,7 +131,12 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
         else:
             break
 
-    return {"text": response.text, "tool_call": None}
+    try:
+        text_response = response.text
+    except Exception:
+        text_response = "I'm having trouble formulating a response right now."
+
+    return {"text": text_response, "tool_call": None}
 
 
 async def normalize_events(raw_content: str, source_url: str, content_type: str = "html") -> List[Dict]:
