@@ -63,6 +63,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r llm-service/requirements.txt
 
+      - name: Install pytest
+        run: pip install pytest
+
       - name: Run Python tests
         if: matrix.service == 'llm-service'
         run: pytest llm-service
