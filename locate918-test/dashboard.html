@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locate918 - Test Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #888;
+            margin-top: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+        }
+
+        .stat {
+            background: rgba(255,255,255,0.1);
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #f39c12;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin: 30px 0;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+
+        .search-box input::placeholder {
+            color: #888;
+        }
+
+        .search-box button {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .search-box button:hover {
+            transform: scale(1.05);
+        }
+
+        .events-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 30px 0 20px;
+        }
+
+        .events-header h2 {
+            font-size: 1.5rem;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: 1px solid #f39c12;
+            color: #f39c12;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .refresh-btn:hover {
+            background: #f39c12;
+            color: #000;
+        }
+
+        .events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .event-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border-left: 4px solid #f39c12;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .event-card:hover {
+            transform: translateX(5px);
+            background: rgba(255,255,255,0.1);
+        }
+
+        .event-card.outdoor {
+            border-left-color: #2ecc71;
+        }
+
+        .event-card.family {
+            border-left-color: #3498db;
+        }
+
+        .event-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .event-details {
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        .event-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .tag {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .tag.price {
+            background: rgba(46, 204, 113, 0.2);
+            color: #2ecc71;
+        }
+
+        .tag.category {
+            background: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+        }
+
+        .tag.venue {
+            background: rgba(243, 156, 18, 0.2);
+            color: #f39c12;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #888;
+        }
+
+        .error {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .no-events {
+            text-align: center;
+            padding: 50px;
+            color: #888;
+        }
+
+        .source-link {
+            color: #f39c12;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .source-link:hover {
+            text-decoration: underline;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding: 20px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🎪 Locate918</h1>
+        <p class="subtitle">Discover what's happening in Tulsa</p>
+    </header>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-number" id="event-count">-</div>
+            <div class="stat-label">Events Found</div>
+        </div>
+        <div class="stat">
+            <div class="stat-number" id="venue-count">-</div>
+            <div class="stat-label">Venues</div>
+        </div>
+        <div class="stat">
+            <div class="stat-number" id="source-count">-</div>
+            <div class="stat-label">Sources</div>
+        </div>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="search-input" placeholder="Search events... (e.g., jazz, family, outdoor)">
+        <button onclick="searchEvents()">🔍 Search</button>
+    </div>
+
+    <div class="events-header">
+        <h2>📅 Upcoming Events</h2>
+        <button class="refresh-btn" onclick="loadEvents()">↻ Refresh</button>
+    </div>
+
+    <div id="events-container" class="events-list">
+        <div class="loading">Loading events...</div>
+    </div>
+
+    <footer>
+        <p>Locate918 Test Dashboard • Data from local scrapers + Gemini AI</p>
+        <p>Backend: localhost:3000 • LLM Service: localhost:8001</p>
+    </footer>
+</div>
+
+<script>
+    const API_BASE = 'http://localhost:3000';
+
+    // Format date nicely
+    function formatDate(dateStr) {
+        const date = new Date(dateStr);
+        const options = {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        };
+        return date.toLocaleDateString('en-US', options);
+    }
+
+    // Format price
+    function formatPrice(min, max) {
+        if (min === null && max === null) return null;
+        if (min === 0 && max === 0) return 'FREE';
+        if (min === max) return `$${min}`;
+        if (min && max) return `$${min} - $${max}`;
+        if (max) return `Up to $${max}`;
+        if (min) return `From $${min}`;
+        return null;
+    }
+
+    // Create natural language description
+    function createDescription(event) {
+        let desc = '';
+
+        // Date
+        desc += `📅 ${formatDate(event.start_time)}`;
+
+        // Venue
+        if (event.venue) {
+            desc += ` at <strong>${event.venue}</strong>`;
+        }
+
+        // Address
+        if (event.venue_address) {
+            desc += ` (${event.venue_address})`;
+        }
+
+        // Description
+        if (event.description) {
+            desc += `<br><br>${event.description}`;
+        }
+
+        return desc;
+    }
+
+    // Render a single event card
+    function renderEvent(event) {
+        const price = formatPrice(event.price_min, event.price_max);
+        const categories = event.categories || [];
+
+        let cardClass = 'event-card';
+        if (event.outdoor) cardClass += ' outdoor';
+        if (event.family_friendly) cardClass += ' family';
+
+        let tagsHtml = '';
+
+        if (price) {
+            tagsHtml += `<span class="tag price">${price}</span>`;
+        }
+
+        if (event.venue) {
+            tagsHtml += `<span class="tag venue">📍 ${event.venue}</span>`;
+        }
+
+        categories.forEach(cat => {
+            tagsHtml += `<span class="tag category">${cat}</span>`;
+        });
+
+        if (event.outdoor) {
+            tagsHtml += `<span class="tag">🌳 Outdoor</span>`;
+        }
+
+        if (event.family_friendly) {
+            tagsHtml += `<span class="tag">👨‍👩‍👧 Family Friendly</span>`;
+        }
+
+        return `
+                <div class="${cardClass}">
+                    <div class="event-title">${event.title}</div>
+                    <div class="event-details">${createDescription(event)}</div>
+                    <div class="event-meta">
+                        ${tagsHtml}
+                    </div>
+                    ${event.source_url ? `<br><a href="${event.source_url}" target="_blank" class="source-link">View original source →</a>` : ''}
+                </div>
+            `;
+    }
+
+    // Load all events
+    async function loadEvents() {
+        const container = document.getElementById('events-container');
+        container.innerHTML = '<div class="loading">Loading events...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/api/events`);
+            if (!response.ok) throw new Error('Failed to fetch events');
+
+            const events = await response.json();
+
+            // Update stats
+            document.getElementById('event-count').textContent = events.length;
+
+            const venues = new Set(events.filter(e => e.venue).map(e => e.venue));
+            document.getElementById('venue-count').textContent = venues.size;
+
+            const sources = new Set(events.filter(e => e.source_name).map(e => e.source_name));
+            document.getElementById('source-count').textContent = sources.size;
+
+            // Render events
+            if (events.length === 0) {
+                container.innerHTML = '<div class="no-events">No events found. Run the scraper to populate data!</div>';
+            } else {
+                container.innerHTML = events.map(renderEvent).join('');
+            }
+
+        } catch (error) {
+            container.innerHTML = `
+                    <div class="error">
+                        <p>⚠️ Could not connect to backend</p>
+                        <p style="margin-top:10px; font-size: 0.9rem;">Make sure the Rust backend is running on localhost:3000</p>
+                    </div>
+                `;
+        }
+    }
+
+    // Search events
+    async function searchEvents() {
+        const query = document.getElementById('search-input').value.trim();
+        const container = document.getElementById('events-container');
+
+        if (!query) {
+            loadEvents();
+            return;
+        }
+
+        container.innerHTML = '<div class="loading">Searching...</div>';
+
+        try {
+            // Build search params
+            const params = new URLSearchParams();
+
+            // Check for category keywords
+            const categories = ['jazz', 'concerts', 'rock', 'sports', 'family', 'comedy', 'food', 'nightlife'];
+            const foundCategory = categories.find(c => query.toLowerCase().includes(c));
+            if (foundCategory) {
+                params.append('category', foundCategory);
+            }
+
+            // Check for outdoor
+            if (query.toLowerCase().includes('outdoor')) {
+                params.append('outdoor', 'true');
+            }
+
+            // Check for family
+            if (query.toLowerCase().includes('family')) {
+                params.append('family_friendly', 'true');
+            }
+
+            // Check for free
+            if (query.toLowerCase().includes('free')) {
+                params.append('price_max', '0');
+            }
+
+            // Add text search
+            params.append('q', query);
+
+            const response = await fetch(`${API_BASE}/api/events/search?${params}`);
+            if (!response.ok) throw new Error('Search failed');
+
+            const events = await response.json();
+
+            // Update event count
+            document.getElementById('event-count').textContent = events.length;
+
+            if (events.length === 0) {
+                container.innerHTML = `<div class="no-events">No events found matching "${query}"</div>`;
+            } else {
+                container.innerHTML = events.map(renderEvent).join('');
+            }
+
+        } catch (error) {
+            container.innerHTML = `<div class="error">Search failed: ${error.message}</div>`;
+        }
+    }
+
+    // Search on Enter key
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchEvents();
+    });
+
+    // Load events on page load
+    loadEvents();
+</script>
+</body>
+</html>

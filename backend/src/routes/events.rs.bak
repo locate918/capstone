@@ -44,16 +44,6 @@ pub fn routes() -> Router<PgPool> {
 }
 
 // =============================================================================
-// QUERY PARAMETERS FOR LIST
-// =============================================================================
-
-#[derive(Debug, Deserialize)]
-pub struct ListQuery {
-    /// Maximum number of results (default: 100, max: 1000)
-    pub limit: Option<i32>,
-}
-
-// =============================================================================
 // HANDLER: LIST ALL EVENTS
 // =============================================================================
 
@@ -61,13 +51,9 @@ pub struct ListQuery {
 ///
 /// # Endpoint
 /// `GET /api/events`
-/// `GET /api/events?limit=500`
 async fn list_events(
     State(pool): State<PgPool>,
-    Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(100).min(1000);
-
     let events = sqlx::query_as::<_, Event>(
         r#"
         SELECT id, title, description, venue, venue_address, location,
@@ -77,10 +63,9 @@ async fn list_events(
         FROM events
         WHERE start_time >= NOW()
         ORDER BY start_time ASC
-        LIMIT $1
+        LIMIT 100
         "#
     )
-        .bind(limit)
         .fetch_all(&pool)
         .await
         .map_err(|e| {

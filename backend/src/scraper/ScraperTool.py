@@ -1,0 +1,3313 @@
+"""
+Locate918 Universal Scraper Tool
+================================
+Smart extraction that handles ANY site format. No LLM required.
+Respects robots.txt - will not scrape sites that disallow it.
+
+Extraction strategies (in priority order):
+
+DIRECT APIs:
+1. EventCalendarApp API (Guthrie Green, Fly Loft, etc.)
+2. Timely API (Starlite Bar, etc.)
+3. BOK Center API
+4. Simpleview CMS API (VisitTulsa.com, etc.)
+
+STRUCTURED DATA:
+5. Schema.org/JSON-LD
+
+TICKETING PLATFORMS:
+6. WordPress Events Calendar (Tribe)
+7. Eventbrite
+8. Stubwire (Tulsa Shrine)
+9. Dice.fm
+10. Bandsintown
+11. Songkick
+12. Ticketmaster
+13. AXS
+14. Etix
+15. See Tickets
+
+FALLBACKS:
+16. Timely HTML
+17. Repeating structure detection
+18. Date/time pattern matching
+
+Usage:
+    pip install flask playwright httpx beautifulsoup4 python-dotenv python-dateutil
+    playwright install chromium
+    python ScraperTool.py
+
+Open http://localhost:5000
+"""
+
+import os
+import re
+import json
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
+from flask import Flask, render_template_string, request, jsonify, send_file
+import httpx
+from bs4 import BeautifulSoup, NavigableString
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Check if Playwright is available
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("Playwright not available - install with: pip install playwright && playwright install chromium")
+
+app = Flask(__name__)
+
+OUTPUT_DIR = Path("scraped_data")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000")
+HEADERS = {"User-Agent": "Locate918 Event Aggregator (educational project)"}
+
+# Cache for robots.txt parsers (avoid re-fetching)
+_robots_cache = {}
+
+
+def check_robots_txt(url: str) -> dict:
+    """
+    Check if we're allowed to scrape this URL according to robots.txt.
+    Returns: {'allowed': bool, 'message': str}
+    """
+    try:
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        robots_url = f"{base_url}/robots.txt"
+
+        # Check cache first
+        if base_url in _robots_cache:
+            rp = _robots_cache[base_url]
+        else:
+            rp = RobotFileParser()
+            rp.set_url(robots_url)
+
+            # Fetch with timeout
+            try:
+                response = httpx.get(robots_url, timeout=5, follow_redirects=True)
+                if response.status_code == 200:
+                    rp.parse(response.text.splitlines())
+                else:
+                    # No robots.txt or error - assume allowed
+                    _robots_cache[base_url] = None
+                    return {'allowed': True, 'message': 'No robots.txt found - proceeding'}
+            except Exception as e:
+                # Can't fetch robots.txt - assume allowed
+                _robots_cache[base_url] = None
+                return {'allowed': True, 'message': f'Could not fetch robots.txt - proceeding'}
+
+            _robots_cache[base_url] = rp
+
+        if rp is None:
+            return {'allowed': True, 'message': 'No robots.txt'}
+
+        # Check if our user-agent is allowed
+        user_agent = HEADERS.get('User-Agent', '*')
+        allowed = rp.can_fetch(user_agent, url)
+
+        # Also check with * (generic)
+        if not allowed:
+            allowed = rp.can_fetch('*', url)
+
+        if allowed:
+            return {'allowed': True, 'message': 'Allowed by robots.txt'}
+        else:
+            # Get the crawl delay if any
+            delay = rp.crawl_delay(user_agent)
+            msg = f'Blocked by robots.txt for path: {parsed.path}'
+            if delay:
+                msg += f' (crawl-delay: {delay}s)'
+            return {'allowed': False, 'message': msg}
+
+    except Exception as e:
+        # On any error, allow but warn
+        return {'allowed': True, 'message': f'robots.txt check error: {str(e)[:50]}'}
+
+
+# Simple URL history file
+SAVED_URLS_FILE = OUTPUT_DIR / "saved_urls.json"
+
+
+def load_saved_urls() -> list:
+    """Load saved URLs from file."""
+    if SAVED_URLS_FILE.exists():
+        try:
+            return json.loads(SAVED_URLS_FILE.read_text())
+        except:
+            return []
+    return []
+
+
+def save_url(url: str, name: str, use_playwright: bool = True) -> list:
+    """Add a URL to saved list."""
+    urls = load_saved_urls()
+    # Update if exists, otherwise add
+    for u in urls:
+        if u['url'] == url:
+            u['name'] = name
+            u['playwright'] = use_playwright
+            SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
+            return urls
+
+    urls.append({'url': url, 'name': name, 'playwright': use_playwright})
+    SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
+    return urls
+
+
+def delete_saved_url(url: str) -> list:
+    """Remove a URL from saved list."""
+    urls = load_saved_urls()
+    urls = [u for u in urls if u['url'] != url]
+    SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
+    return urls
+
+
+# ============================================================================
+# DATE/TIME PATTERN MATCHING
+# ============================================================================
+
+# Regex patterns for dates
+DATE_PATTERNS = [
+    # "Feb 5", "February 5", "Feb 5, 2026"
+    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?',
+    # "2/5/2026", "02/05/26"
+    r'\d{1,2}/\d{1,2}/\d{2,4}',
+    # "2026-02-05"
+    r'\d{4}-\d{2}-\d{2}',
+    # "Thursday, February 5"
+    r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+[A-Z][a-z]+\s+\d{1,2}',
+]
+
+# Regex patterns for times
+TIME_PATTERNS = [
+    # "8:00pm", "8:00 PM", "20:00"
+    r'\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?',
+    # "8pm", "8 PM"
+    r'\d{1,2}\s*(?:am|pm|AM|PM)',
+    # "Doors: 7pm"
+    r'[Dd]oors:?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)?',
+]
+
+COMBINED_DATE_PATTERN = re.compile('|'.join(f'({p})' for p in DATE_PATTERNS), re.IGNORECASE)
+COMBINED_TIME_PATTERN = re.compile('|'.join(f'({p})' for p in TIME_PATTERNS), re.IGNORECASE)
+
+
+def extract_date_from_text(text):
+    """Extract date string from text."""
+    match = COMBINED_DATE_PATTERN.search(text)
+    return match.group(0).strip() if match else None
+
+
+def extract_time_from_text(text):
+    """Extract time string from text."""
+    match = COMBINED_TIME_PATTERN.search(text)
+    return match.group(0).strip() if match else None
+
+
+def text_has_date(text):
+    """Check if text contains a date pattern."""
+    return bool(COMBINED_DATE_PATTERN.search(text))
+
+
+# ============================================================================
+# KNOWN PLUGIN EXTRACTORS
+# ============================================================================
+
+def extract_tribe_events(soup, base_url, source_name):
+    """Extract from The Events Calendar (WordPress plugin) - used by Starlite Bar."""
+    events = []
+
+    # Try multiple selectors used by different versions of the plugin
+    selectors = [
+        '.tribe-events-calendar-list__event',
+        '.tribe-events-calendar-list__event-row',
+        '.tribe_events',
+        '.type-tribe_events',
+        '[class*="tribe-events"]',
+        '.tribe-event-featured',
+    ]
+
+    containers = []
+    for sel in selectors:
+        containers.extend(soup.select(sel))
+
+    # Also try the list items in the calendar
+    if not containers:
+        # Look for the event list structure
+        event_list = soup.select('.tribe-events-calendar-list')
+        for lst in event_list:
+            # Get direct article/div children that look like events
+            for child in lst.find_all(['article', 'div', 'li'], recursive=False):
+                containers.append(child)
+
+    seen = set()
+    for container in containers:
+        # Get title
+        title_el = (
+                container.select_one('.tribe-events-calendar-list__event-title a') or
+                container.select_one('.tribe-events-calendar-list__event-title') or
+                container.select_one('.tribe-event-url') or
+                container.select_one('h3 a') or
+                container.select_one('h2 a') or
+                container.select_one('a[href*="event"]')
+        )
+
+        if not title_el:
+            continue
+
+        title = title_el.get_text(strip=True)
+        if not title or title in seen:
+            continue
+        seen.add(title)
+
+        # Get link
+        link = ''
+        if title_el.name == 'a':
+            link = title_el.get('href', '')
+        else:
+            link_el = title_el.find('a') or container.select_one('a[href*="event"]')
+            if link_el:
+                link = link_el.get('href', '')
+
+        # Get date/time
+        date_el = (
+                container.select_one('.tribe-events-calendar-list__event-datetime') or
+                container.select_one('.tribe-event-date-start') or
+                container.select_one('time') or
+                container.select_one('[datetime]') or
+                container.select_one('.tribe-event-schedule-details')
+        )
+
+        date_str = ''
+        if date_el:
+            # Try datetime attribute first
+            date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        # If no date found in element, look in container text
+        if not date_str:
+            container_text = container.get_text(' ', strip=True)
+            date_str = extract_date_from_text(container_text) or ''
+            time_str = extract_time_from_text(container_text)
+            if time_str and date_str:
+                date_str = f"{date_str} @ {time_str}"
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': urljoin(base_url, link) if link else '',
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+def extract_eventbrite_embed(soup, base_url, source_name):
+    """Extract from Eventbrite embeds."""
+    events = []
+
+    for container in soup.select('[class*="eventbrite"], [data-eventbrite], .eb-event'):
+        title_el = container.select_one('.eb-event-title, .event-title, h3, h2')
+        if not title_el:
+            continue
+
+        title = title_el.get_text(strip=True)
+        link_el = container.select_one('a[href*="eventbrite.com"]')
+        link = link_el.get('href', '') if link_el else ''
+
+        date_el = container.select_one('.eb-event-date, .event-date, time')
+        date_str = date_el.get_text(strip=True) if date_el else ''
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': link,
+            'source': source_name,
+        })
+
+    return events
+
+
+def extract_schema_org(soup, base_url, source_name):
+    """Extract from Schema.org JSON-LD structured data."""
+    events = []
+
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.string)
+
+            # Handle both single objects and arrays
+            items = data if isinstance(data, list) else [data]
+
+            for item in items:
+                if item.get('@type') in ['Event', 'MusicEvent', 'SocialEvent']:
+                    events.append({
+                        'title': item.get('name', ''),
+                        'date': item.get('startDate', ''),
+                        'end_date': item.get('endDate', ''),
+                        'venue': item.get('location', {}).get('name', '') if isinstance(item.get('location'), dict) else '',
+                        'description': item.get('description', '')[:200] if item.get('description') else '',
+                        'source_url': item.get('url', ''),
+                        'image_url': item.get('image', ''),
+                        'source': source_name,
+                    })
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    return events
+
+
+def extract_ical_links(soup, base_url, source_name):
+    """Extract events from iCal/ICS links if present."""
+    # Just note the presence of calendar feeds for now
+    events = []
+    for link in soup.select('a[href*=".ics"], a[href*="ical"], a[href*="webcal"]'):
+        # Could fetch and parse ICS in future
+        pass
+    return events
+
+
+# ============================================================================
+# EVENTCALENDARAPP API EXTRACTOR (Direct JSON - No Scraping!)
+# ============================================================================
+
+# Known EventCalendarApp venues with their calendar IDs
+# Add venues here as we discover them via browser DevTools Network tab
+KNOWN_EVENTCALENDARAPP_VENUES = {
+    # Guthrie Green complex (includes Fly Loft, LowDown)
+    'guthriegreen.com': {'id': '11692', 'widgetUuid': 'dcafff1d-f2a8-4799-9a6b-a5ad3e3a6ff2'},
+    'www.guthriegreen.com': {'id': '11692', 'widgetUuid': 'dcafff1d-f2a8-4799-9a6b-a5ad3e3a6ff2'},
+    # The Colony Tulsa - TODO: Need to discover calendar ID via DevTools
+    # 'thecolonytulsa.com': {'id': 'XXXXX', 'widgetUuid': 'XXXXX'},
+    # Starlite Bar - Uses WordPress Events Calendar, not EventCalendarApp
+    # Add more venues as discovered...
+}
+
+
+def detect_eventcalendarapp(html: str, url: str = '') -> dict | None:
+    """
+    Detect EventCalendarApp widget and extract API parameters.
+    Returns dict with 'id' and 'widgetUuid' if found, else None.
+
+    Used by: Guthrie Green, Fly Loft, LowDown, and many other venues.
+    """
+    # First check known venues by domain
+    if url:
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(url).netloc.lower()
+            if domain in KNOWN_EVENTCALENDARAPP_VENUES:
+                print(f"[EventCalendarApp] Known venue: {domain}")
+                return KNOWN_EVENTCALENDARAPP_VENUES[domain]
+        except:
+            pass
+
+    # Pattern 1: Script embed with id and widgetUuid
+    # <script ... src="https://eventcalendarapp.com/widgets/...?id=11692&widgetUuid=dcafff1d-...">
+    script_pattern = re.compile(
+        r'eventcalendarapp\.com[^"\']*[?&]id=(\d+)[^"\']*widgetUuid=([a-f0-9-]+)',
+        re.IGNORECASE
+    )
+    match = script_pattern.search(html)
+    if match:
+        return {'id': match.group(1), 'widgetUuid': match.group(2)}
+
+    # Pattern 2: Reversed order (widgetUuid before id)
+    script_pattern2 = re.compile(
+        r'eventcalendarapp\.com[^"\']*widgetUuid=([a-f0-9-]+)[^"\']*[?&]id=(\d+)',
+        re.IGNORECASE
+    )
+    match = script_pattern2.search(html)
+    if match:
+        return {'id': match.group(2), 'widgetUuid': match.group(1)}
+
+    # Pattern 3: Look for API calls in inline scripts
+    api_pattern = re.compile(
+        r'api\.eventcalendarapp\.com/events\?id=(\d+)[^"\']*widgetUuid=([a-f0-9-]+)',
+        re.IGNORECASE
+    )
+    match = api_pattern.search(html)
+    if match:
+        return {'id': match.group(1), 'widgetUuid': match.group(2)}
+
+    # Pattern 4: Just look for the calendar ID in any eventcalendarapp reference
+    id_only = re.compile(r'eventcalendarapp\.com[^"\']*[?&]id=(\d+)', re.IGNORECASE)
+    match = id_only.search(html)
+    if match:
+        # Try to find widgetUuid separately
+        uuid_pattern = re.compile(r'widgetUuid[=:]["\']?([a-f0-9-]{36})', re.IGNORECASE)
+        uuid_match = uuid_pattern.search(html)
+        if uuid_match:
+            return {'id': match.group(1), 'widgetUuid': uuid_match.group(1)}
+        # Return with just ID - API might work without UUID
+        return {'id': match.group(1), 'widgetUuid': None}
+
+    return None
+
+
+async def fetch_eventcalendarapp_api(calendar_id: str, widget_uuid: str = None, max_pages: int = 50) -> list:
+    """
+    Fetch all events from EventCalendarApp API with pagination.
+
+    API: GET https://api.eventcalendarapp.com/events?id={id}&page={page}&widgetUuid={uuid}
+
+    Returns list of raw event dicts from API.
+    """
+    all_events = []
+    page = 1
+
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        while page <= max_pages:
+            # Build API URL
+            url = f"https://api.eventcalendarapp.com/events?id={calendar_id}&page={page}"
+            if widget_uuid:
+                url += f"&widgetUuid={widget_uuid}"
+
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+
+                # Extract events from response
+                events = data.get('events', [])
+                if not events:
+                    break
+
+                all_events.extend(events)
+
+                # Check pagination
+                pages = data.get('pages', {})
+                total_pages = pages.get('total', 1)
+
+                if page >= total_pages:
+                    break
+
+                page += 1
+
+            except Exception as e:
+                print(f"EventCalendarApp API error page {page}: {e}")
+                break
+
+    return all_events
+
+
+def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
+    """
+    Convert raw EventCalendarApp API events to our standardized format.
+
+    Args:
+        raw_events: List of raw event dicts from API
+        source_name: Name of the source/venue
+        future_only: If True, only return events with start date >= today
+
+    API fields:
+    - summary: Event title
+    - timezoneStart: ISO datetime (local) e.g. "2026-10-25T19:00:00"
+    - timezoneEnd: ISO datetime (local)
+    - location.description: Venue name
+    - description / shortDescription: Event details (HTML)
+    - thumbnail / image: CDN image URLs
+    - ticketsLink: External ticket URL or null
+    - url: EventCalendarApp event page URL
+    - ticketTypes: Array of ticket options
+    - featured: Boolean
+    - timezone: e.g. "US/Central"
+    """
+    events = []
+    seen = set()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    for raw in raw_events:
+        title = raw.get('summary', '').strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+
+        # Parse date/time
+        start = raw.get('timezoneStart', '')
+        end = raw.get('timezoneEnd', '')
+
+        # Filter past events if future_only is True
+        if future_only and start:
+            try:
+                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                if start_dt < today:
+                    continue
+            except:
+                pass  # Keep event if we can't parse the date
+
+        # Format nicely: "Oct 25, 2026 @ 7:00 PM - 10:00 PM"
+        date_str = ''
+        if start:
+            try:
+                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
+
+                if end:
+                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
+                    # Only show end time if same day
+                    if dt.date() == end_dt.date():
+                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+            except:
+                date_str = start
+
+        # Get venue from location
+        location = raw.get('location', {})
+        venue = location.get('description', '') if isinstance(location, dict) else ''
+        if not venue:
+            venue = source_name
+
+        # Get description (strip HTML)
+        desc = raw.get('shortDescription', '') or raw.get('description', '')
+        if desc:
+            # Simple HTML strip
+            desc = re.sub(r'<[^>]+>', ' ', desc)
+            desc = re.sub(r'\s+', ' ', desc).strip()[:200]
+
+        # Get image
+        image = raw.get('image', '') or raw.get('thumbnail', '')
+
+        # Get ticket link
+        tickets = raw.get('ticketsLink', '')
+
+        # Get event URL
+        event_url = raw.get('url', '')
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'end_date': end,
+            'venue': venue,
+            'description': desc,
+            'source_url': event_url,
+            'tickets_url': tickets,
+            'image_url': image,
+            'source': source_name,
+            'featured': raw.get('featured', False),
+        })
+
+    return events
+
+
+async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Main EventCalendarApp extraction function.
+
+    Args:
+        html: Page HTML content
+        source_name: Name of the source/venue
+        url: Page URL (used for known venue lookup)
+        future_only: If True, only return events with start date >= today
+
+    Returns: (events_list, was_detected)
+    - events_list: List of events if found
+    - was_detected: True if EventCalendarApp widget was detected (even if no events)
+    """
+    params = detect_eventcalendarapp(html, url)
+    if not params:
+        return [], False
+
+    print(f"[EventCalendarApp] Detected calendar ID: {params['id']}")
+
+    # Fetch from API
+    raw_events = await fetch_eventcalendarapp_api(
+        params['id'],
+        params.get('widgetUuid')
+    )
+
+    print(f"[EventCalendarApp] Fetched {len(raw_events)} total events from API")
+
+    # Parse to our format (with optional date filtering)
+    events = parse_eventcalendarapp_events(raw_events, source_name, future_only)
+
+    if future_only:
+        print(f"[EventCalendarApp] {len(events)} upcoming events after date filter")
+
+    return events, True
+
+
+# ============================================================================
+# TIMELY API EXTRACTOR (Direct JSON - No Scraping!)
+# ============================================================================
+
+# Known Timely venues with their calendar IDs
+# Discover via DevTools: events.timely.fun/api/calendars/{ID}/events
+KNOWN_TIMELY_VENUES = {
+    'thestarlitebar.com': {'id': '54755961'},
+    'www.thestarlitebar.com': {'id': '54755961'},
+    # Add more venues as discovered...
+}
+
+
+def detect_timely(html: str, url: str = '') -> dict | None:
+    """
+    Detect Timely calendar widget and extract calendar ID.
+    Returns dict with 'id' if found, else None.
+    """
+    # First check known venues by domain
+    if url:
+        try:
+            domain = urlparse(url).netloc.lower()
+            if domain in KNOWN_TIMELY_VENUES:
+                print(f"[Timely] Known venue: {domain}")
+                return KNOWN_TIMELY_VENUES[domain]
+        except:
+            pass
+
+    # Pattern 1: Look for timely embed script or iframe
+    # <script src="https://events.timely.fun/embed.js" data-calendar-id="54755961">
+    id_pattern = re.compile(r'data-calendar-id[=:]["\']?(\d+)', re.IGNORECASE)
+    match = id_pattern.search(html)
+    if match:
+        return {'id': match.group(1)}
+
+    # Pattern 2: Look for timely.fun URL with calendar ID
+    url_pattern = re.compile(r'events\.timely\.fun/(?:api/calendars/)?(\d+)', re.IGNORECASE)
+    match = url_pattern.search(html)
+    if match:
+        return {'id': match.group(1)}
+
+    # Pattern 3: Look for timelyapp references
+    timely_pattern = re.compile(r'timelyapp\.time\.ly/[^/]*/calendars/(\d+)', re.IGNORECASE)
+    match = timely_pattern.search(html)
+    if match:
+        return {'id': match.group(1)}
+
+    return None
+
+
+async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: int = 10) -> list:
+    """
+    Fetch all events from Timely API with pagination.
+
+    API: GET https://events.timely.fun/api/calendars/{id}/events?group_by_date=1&timezone=America/Chicago&view=agenda&start_date_utc={timestamp}&per_page=30&page={page}
+
+    Returns list of raw event dicts from API.
+    """
+    import time
+    all_events = []
+    page = 1
+
+    # Start from today
+    start_timestamp = int(time.time())
+
+    # Timely API requires Referer header from the embedding site
+    headers = dict(HEADERS)
+    if referer_url:
+        headers['Referer'] = referer_url
+        headers['Origin'] = referer_url.rstrip('/')
+
+    async with httpx.AsyncClient(headers=headers, timeout=30) as client:
+        while page <= max_pages:
+            url = (
+                f"https://events.timely.fun/api/calendars/{calendar_id}/events"
+                f"?group_by_date=1&timezone=America%2FChicago&view=agenda"
+                f"&start_date_utc={start_timestamp}&per_page=30&page={page}"
+            )
+
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+
+                # Timely returns {data: {items: [{date: ..., events: [...]}]}}
+                items = data.get('data', {}).get('items', [])
+                if not items:
+                    break
+
+                # Extract events from grouped structure
+                for item in items:
+                    events_in_group = item.get('events', [])
+                    all_events.extend(events_in_group)
+
+                # Check if there are more pages
+                total = data.get('data', {}).get('total', 0)
+                if len(all_events) >= total or not items:
+                    break
+
+                page += 1
+
+            except Exception as e:
+                print(f"Timely API error page {page}: {e}")
+                break
+
+    return all_events
+
+
+def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
+    """
+    Convert raw Timely API events to our standardized format.
+
+    Timely API fields (typical):
+    - title: Event title
+    - start_datetime: ISO datetime
+    - end_datetime: ISO datetime
+    - description: Event details (may be HTML)
+    - url: Event page URL
+    - featured_image: Image URL
+    - venue: {name: ..., address: ...}
+    - taxonomies: {category: [...], tag: [...]}
+    """
+    events = []
+    seen = set()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    for raw in raw_events:
+        title = raw.get('title', '').strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+
+        # Parse date/time
+        start = raw.get('start_datetime', '')
+        end = raw.get('end_datetime', '')
+
+        # Filter past events if future_only is True
+        if future_only and start:
+            try:
+                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                if start_dt < today:
+                    continue
+            except:
+                pass
+
+        # Format nicely
+        date_str = ''
+        if start:
+            try:
+                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
+
+                if end:
+                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
+                    if dt.date() == end_dt.date():
+                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+            except:
+                date_str = start
+
+        # Get venue
+        venue_data = raw.get('venue', {})
+        venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
+        if not venue:
+            venue = source_name
+
+        # Get description (strip HTML)
+        desc = raw.get('description', '') or raw.get('excerpt', '')
+        if desc:
+            desc = re.sub(r'<[^>]+>', ' ', desc)
+            desc = re.sub(r'\s+', ' ', desc).strip()[:200]
+
+        # Get image
+        image = raw.get('featured_image', {})
+        image_url = image.get('url', '') if isinstance(image, dict) else (image if isinstance(image, str) else '')
+
+        # Get event URL
+        event_url = raw.get('url', '') or raw.get('canonical_url', '')
+
+        # Get ticket link
+        tickets = raw.get('ticket_url', '') or raw.get('custom_ticket_url', '')
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'end_date': end,
+            'venue': venue,
+            'description': desc,
+            'source_url': event_url,
+            'tickets_url': tickets,
+            'image_url': image_url,
+            'source': source_name,
+        })
+
+    return events
+
+
+async def extract_timely(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Main Timely extraction function.
+
+    Returns: (events_list, was_detected)
+    """
+    params = detect_timely(html, url)
+    if not params:
+        return [], False
+
+    print(f"[Timely] Detected calendar ID: {params['id']}")
+
+    # Try API first
+    raw_events = await fetch_timely_api(params['id'], referer_url=url)
+
+    if raw_events:
+        print(f"[Timely] Fetched {len(raw_events)} total events from API")
+        events = parse_timely_events(raw_events, source_name, future_only)
+        if future_only:
+            print(f"[Timely] {len(events)} upcoming events after date filter")
+        return events, True
+
+    # API failed - try HTML extraction
+    print(f"[Timely] API returned 0 events, trying HTML extraction...")
+    soup = BeautifulSoup(html, 'html.parser')
+    events = extract_timely_from_html(soup, url, source_name)
+    print(f"[Timely] Found {len(events)} events from HTML")
+
+    return events, True
+
+
+def clean_timely_title(title: str) -> str:
+    """
+    Clean up Timely titles that have concatenated tags.
+
+    Example: "Starlite Trivia NightTriviatriviatrivia nighttrivianighttriviapub quiz..."
+    Should become: "Starlite Trivia Night"
+
+    Pattern: Title text followed by tags concatenated without spaces
+    """
+    if not title or len(title) < 20:
+        return title
+
+    # Look for the pattern where a word is followed by itself (lowercase) or similar
+    # "NightTrivia" or "PartyThe" - capital letter in middle of what should be a word
+
+    # Find position where lowercase is immediately followed by uppercase (tag boundary)
+    # Pattern: lowercase letter followed by uppercase letter (except normal cases like "McDonald")
+    # This often indicates where the title ends and tags begin
+    matches = list(re.finditer(r'[a-z][A-Z]', title))
+
+    if matches:
+        # Take the first occurrence as potential title end
+        first_match = matches[0]
+        potential_title = title[:first_match.start() + 1]
+
+        # Verify it's reasonable (at least 3 words or 15 chars)
+        if len(potential_title) >= 10 or potential_title.count(' ') >= 2:
+            return potential_title.strip()
+
+    # Alternative: look for repeated words
+    words = title.split()
+    if len(words) >= 2:
+        # Check if any word appears multiple times (indicates tag repetition)
+        seen_words = {}
+        for i, word in enumerate(words):
+            word_lower = word.lower()
+            if word_lower in seen_words and i > 1:
+                # Found a repeat - title probably ends before first occurrence
+                return ' '.join(words[:seen_words[word_lower]]).strip()
+            seen_words[word_lower] = i
+
+    # If title is very long with few spaces, it's probably polluted
+    if len(title) > 50 and title.count(' ') < 5:
+        # Try to find a reasonable stopping point
+        # Look for common patterns like "- " which often end the main title
+        if ' - ' in title:
+            parts = title.split(' - ')
+            if len(parts[0]) >= 10:
+                return parts[0].strip()
+
+        # Just take first ~50 chars up to a word boundary
+        if len(title) > 50:
+            truncated = title[:50]
+            last_space = truncated.rfind(' ')
+            if last_space > 20:
+                return truncated[:last_space].strip()
+
+    return title
+
+
+def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Timely widget's rendered HTML structure.
+    Fallback when API access is blocked.
+
+    Timely renders events with structure like:
+    - .timely-event or [data-event-id]
+    - Event title in heading
+    - Date/time in various formats
+    """
+    events = []
+    seen = set()
+
+    # Timely event selectors
+    selectors = [
+        '.timely-event',
+        '[data-event-id]',
+        '.timely-calendar .event',
+        '.tc-event',
+        # Agenda view items
+        '.timely-agenda-event',
+        '.agenda-event',
+    ]
+
+    containers = []
+    for sel in selectors:
+        containers.extend(soup.select(sel))
+
+    # Also look for the agenda structure
+    if not containers:
+        # Look for date groups with events
+        date_groups = soup.select('[class*="agenda"], [class*="event-list"]')
+        for group in date_groups:
+            # Find individual event items
+            items = group.select('a[href*="event"], div[class*="event"], li')
+            containers.extend(items)
+
+    for container in containers:
+        # Get title - look for specific title element first
+        title_el = (
+                container.select_one('.timely-title, .event-title, [class*="title"]:not([class*="subtitle"])') or
+                container.select_one('h1, h2, h3, h4')
+        )
+
+        if not title_el:
+            # Try first link text
+            link_el = container.select_one('a[href]')
+            if link_el:
+                title_el = link_el
+
+        if not title_el:
+            continue
+
+        # Get just the direct text, not nested tag text
+        title = ''
+        for child in title_el.children:
+            if isinstance(child, str):
+                title += child.strip()
+            elif hasattr(child, 'name') and child.name in ['span', 'strong', 'b', 'em']:
+                # Only include certain inline elements
+                if not child.get('class') or not any('tag' in c.lower() for c in child.get('class', [])):
+                    title += child.get_text(strip=True)
+
+        # Fallback to full text if empty
+        if not title:
+            title = title_el.get_text(strip=True)
+
+        # Clean up duplicated text (Timely sometimes doubles the title)
+        if len(title) > 10:
+            half = len(title) // 2
+            first_half = title[:half]
+            second_half = title[half:half + len(first_half)]
+            if first_half == second_half:
+                title = first_half
+
+        if not title or len(title) < 3 or title in seen:
+            continue
+
+        # Skip navigation/UI elements
+        skip_words = ['read full', 'more', 'view all', 'click here', 'get a timely', 'powered by', 'buy tickets']
+        if any(skip in title.lower() for skip in skip_words):
+            continue
+
+        # Skip if title looks like a tag dump (too many words without spaces in original)
+        if len(title) > 50 and title.count(' ') < 3:
+            continue
+
+        # Clean up tag pollution from Timely
+        title = clean_timely_title(title)
+
+        if not title or len(title) < 3:
+            continue
+
+        seen.add(title)
+
+        # Get date/time - look for specific date element
+        date_el = container.select_one('.timely-date, .event-date, time, [class*="date"]:not([class*="update"])')
+        date_str = ''
+        if date_el:
+            # Get datetime attribute first
+            date_str = date_el.get('datetime', '')
+            if not date_str:
+                # Get text but clean it
+                date_text = date_el.get_text(strip=True)
+                # Extract just the date/time part
+                date_match = extract_date_from_text(date_text)
+                time_match = extract_time_from_text(date_text)
+                if date_match:
+                    date_str = date_match
+                    if time_match:
+                        date_str = f"{date_match} @ {time_match}"
+                elif time_match:
+                    date_str = time_match
+
+        if not date_str:
+            # Look for date in container text more carefully
+            container_text = container.get_text(' ', strip=True)
+            date_str = extract_date_from_text(container_text) or ''
+            time_str = extract_time_from_text(container_text)
+            if time_str:
+                date_str = f"{date_str} @ {time_str}" if date_str else time_str
+
+        # Get link
+        link = ''
+        link_el = container if container.name == 'a' else container.select_one('a[href]')
+        if link_el:
+            href = link_el.get('href', '')
+            if href and not href.startswith('#') and 'javascript:' not in href:
+                link = urljoin(base_url, href)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': link,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# BOK CENTER API EXTRACTOR
+# ============================================================================
+
+KNOWN_BOK_VENUES = {
+    'bokcenter.com': True,
+    'www.bokcenter.com': True,
+}
+
+
+# ============================================================================
+# STUBWIRE / SHRINE EXTRACTOR
+# ============================================================================
+
+def extract_stubwire_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Stubwire-powered sites like Tulsa Shrine.
+
+    Structure:
+    - Day number in standalone element
+    - Month abbreviation
+    - h2 > a with title linking to /event/{id}/{slug}/
+    - Time like "8:00PM"
+    - Stubwire ticket links
+    """
+    events = []
+    seen = set()
+
+    # Find all event links to /event/ pages
+    event_links = soup.select('a[href*="/event/"]')
+
+    for link in event_links:
+        href = link.get('href', '')
+        title = link.get_text(strip=True)
+
+        # Skip non-title links (Buy Tickets, More Info, images)
+        if not title or len(title) < 2:
+            continue
+        if title.lower() in ['buy tickets', 'more info', 'all session tickets']:
+            continue
+        if '/event/' not in href:
+            continue
+
+        # Deduplicate by URL
+        if href in seen:
+            continue
+        seen.add(href)
+
+        # Find the parent container to get date/time
+        container = link.find_parent(['div', 'article', 'li'])
+        date_str = ''
+        time_str = ''
+
+        if container:
+            # Look for the full text which should have day, month, time
+            container_text = container.get_text(' ', strip=True)
+
+            # Extract month and day - look for patterns like "06 Feb" or "Feb 06"
+            months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+            for month in months:
+                if month in container_text:
+                    # Try to find day number near the month
+                    month_idx = container_text.find(month)
+
+                    # Look for day before month (like "06 Feb")
+                    before = container_text[:month_idx].strip()
+                    day_match = re.search(r'(\d{1,2})\s*$', before)
+                    if day_match:
+                        date_str = f"{month} {day_match.group(1)}"
+                        break
+
+                    # Look for day after month (like "Feb 06")
+                    after = container_text[month_idx + len(month):].strip()
+                    day_match = re.search(r'^[\s,]*(\d{1,2})', after)
+                    if day_match:
+                        date_str = f"{month} {day_match.group(1)}"
+                        break
+
+            # Extract time - look for patterns like "7:00PM", "8:00 PM"
+            time_match = re.search(r'(\d{1,2}:\d{2}\s*[APap][Mm])', container_text)
+            if time_match:
+                time_str = time_match.group(1)
+
+        # Combine date and time
+        full_date = date_str
+        if time_str:
+            full_date = f"{date_str} @ {time_str}" if date_str else time_str
+
+        # Build full URL
+        full_url = href if href.startswith('http') else urljoin(base_url, href)
+
+        # Get image if available
+        image_url = ''
+        if container:
+            img = container.select_one('img[src*="stubwire"]')
+            if img:
+                image_url = img.get('src', '')
+
+        # Get ticket URL
+        ticket_url = ''
+        if container:
+            ticket_link = container.select_one('a[href*="stubwire.com"]')
+            if ticket_link:
+                ticket_url = ticket_link.get('href', '')
+
+        events.append({
+            'title': title,
+            'date': full_date,
+            'source_url': full_url,
+            'tickets_url': ticket_url,
+            'image_url': image_url,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# DICE.FM EXTRACTOR
+# ============================================================================
+
+def extract_dice_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Dice.fm embeds or pages.
+    Dice uses data attributes and specific class patterns.
+    """
+    events = []
+    seen = set()
+
+    # Look for Dice event links
+    dice_links = soup.select('a[href*="dice.fm"], a[href*="link.dice.fm"]')
+
+    for link in dice_links:
+        href = link.get('href', '')
+        if href in seen:
+            continue
+        seen.add(href)
+
+        # Get title from link text or nearby heading
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3:
+            parent = link.find_parent(['div', 'article'])
+            if parent:
+                heading = parent.select_one('h1, h2, h3, h4, [class*="title"]')
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        if not title or title.lower() in ['buy tickets', 'get tickets', 'book now']:
+            continue
+
+        # Look for date in parent container
+        date_str = ''
+        parent = link.find_parent(['div', 'article', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"], [datetime]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# BANDSINTOWN EXTRACTOR
+# ============================================================================
+
+def extract_bandsintown_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Bandsintown embeds or widgets.
+    """
+    events = []
+    seen = set()
+
+    # Look for Bandsintown links or widgets
+    bit_links = soup.select('a[href*="bandsintown.com"], a[href*="bit.ly"], [class*="bandsintown"]')
+
+    # Also look for BIT widget data
+    bit_widgets = soup.select('[data-bit-widget], .bit-widget, #bandsintown-widget')
+
+    for link in bit_links:
+        href = link.get('href', '')
+        if 'bandsintown.com' not in href and 'bit.ly' not in href:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3:
+            continue
+
+        # Get date from parent
+        date_str = ''
+        parent = link.find_parent(['div', 'li', 'tr'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# SONGKICK EXTRACTOR
+# ============================================================================
+
+def extract_songkick_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Songkick embeds or widgets.
+    """
+    events = []
+    seen = set()
+
+    # Look for Songkick links
+    sk_links = soup.select('a[href*="songkick.com"]')
+
+    # Also look for Songkick widget
+    sk_widgets = soup.select('[class*="songkick"], #songkick-widget')
+
+    for link in sk_links:
+        href = link.get('href', '')
+        if '/concerts/' not in href and '/events/' not in href:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3:
+            continue
+
+        date_str = ''
+        parent = link.find_parent(['div', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# TICKETMASTER EXTRACTOR
+# ============================================================================
+
+def extract_ticketmaster_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Ticketmaster links/embeds on venue pages.
+    """
+    events = []
+    seen = set()
+
+    # Look for Ticketmaster links
+    tm_links = soup.select('a[href*="ticketmaster.com"], a[href*="livenation.com"]')
+
+    for link in tm_links:
+        href = link.get('href', '')
+        # Only event pages, not artist pages or homepage
+        if '/event/' not in href and '/venue/' not in href:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+
+        # Try to get better title from parent
+        if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets', 'buy now']:
+            parent = link.find_parent(['div', 'article', 'li'])
+            if parent:
+                heading = parent.select_one('h1, h2, h3, h4, [class*="title"], [class*="name"]')
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        if not title or len(title) < 3:
+            continue
+
+        date_str = ''
+        parent = link.find_parent(['div', 'article', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"], [datetime]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# AXS EXTRACTOR
+# ============================================================================
+
+def extract_axs_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from AXS links/embeds.
+    """
+    events = []
+    seen = set()
+
+    axs_links = soup.select('a[href*="axs.com"]')
+
+    for link in axs_links:
+        href = link.get('href', '')
+        if '/events/' not in href:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets']:
+            parent = link.find_parent(['div', 'article', 'li'])
+            if parent:
+                heading = parent.select_one('h1, h2, h3, h4, [class*="title"]')
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        if not title or len(title) < 3:
+            continue
+
+        date_str = ''
+        parent = link.find_parent(['div', 'article', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# ETIX EXTRACTOR
+# ============================================================================
+
+def extract_etix_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from Etix links/embeds OR from Etix venue pages directly.
+    Also parses captured API responses if available.
+    """
+    events = []
+    seen = set()
+
+    # Check if we're ON an Etix page (venue page)
+    is_etix_page = 'etix.com' in base_url
+
+    # FIRST: Try to parse captured API data (most reliable)
+    api_scripts = soup.select('script[type="etix-api-data"]')
+    for script in api_scripts:
+        try:
+            api_data = json.loads(script.get_text())
+            print(f"[Etix] Parsing API data with {len(api_data) if isinstance(api_data, list) else 'object'} items")
+
+            # API returns array of performances/events
+            if isinstance(api_data, list):
+                for item in api_data:
+                    perf = item.get('performance', item)  # Sometimes nested
+
+                    title = perf.get('name', '') or perf.get('title', '') or perf.get('performanceName', '')
+                    if not title:
+                        continue
+
+                    # Get date/time
+                    date_str = perf.get('performanceDate', '') or perf.get('date', '') or perf.get('startDate', '')
+                    time_str = perf.get('performanceTime', '') or perf.get('time', '') or perf.get('startTime', '')
+                    if date_str and time_str:
+                        date_str = f"{date_str} {time_str}"
+
+                    # Get URL
+                    perf_id = perf.get('performanceID', '') or perf.get('id', '')
+                    event_url = f"https://www.etix.com/ticket/p/{perf_id}" if perf_id else base_url
+
+                    # Get image
+                    image_url = perf.get('imageUrl', '') or perf.get('image', '') or perf.get('performanceImage', '')
+
+                    # Get venue
+                    venue = perf.get('venueName', '') or perf.get('venue', '') or source_name
+
+                    if event_url not in seen:
+                        seen.add(event_url)
+                        events.append({
+                            'title': title,
+                            'date': date_str,
+                            'source_url': event_url,
+                            'tickets_url': event_url,
+                            'source': source_name,
+                            'venue': venue,
+                            'image_url': image_url,
+                        })
+
+            # Or might be object with results array
+            elif isinstance(api_data, dict):
+                results = api_data.get('results', []) or api_data.get('performances', []) or api_data.get('events', [])
+                for perf in results:
+                    title = perf.get('name', '') or perf.get('title', '') or perf.get('performanceName', '')
+                    if not title:
+                        continue
+
+                    date_str = perf.get('performanceDate', '') or perf.get('date', '') or perf.get('startDate', '')
+                    time_str = perf.get('performanceTime', '') or perf.get('time', '') or perf.get('startTime', '')
+                    if date_str and time_str:
+                        date_str = f"{date_str} {time_str}"
+
+                    perf_id = perf.get('performanceID', '') or perf.get('id', '')
+                    event_url = f"https://www.etix.com/ticket/p/{perf_id}" if perf_id else base_url
+
+                    image_url = perf.get('imageUrl', '') or perf.get('image', '')
+                    venue = perf.get('venueName', '') or perf.get('venue', '') or source_name
+
+                    if event_url not in seen:
+                        seen.add(event_url)
+                        events.append({
+                            'title': title,
+                            'date': date_str,
+                            'source_url': event_url,
+                            'tickets_url': event_url,
+                            'source': source_name,
+                            'venue': venue,
+                            'image_url': image_url,
+                        })
+        except Exception as e:
+            print(f"[Etix] Error parsing API data: {e}")
+
+    # If we got events from API, return them
+    if events:
+        print(f"[Etix] Extracted {len(events)} events from API data")
+        return events
+
+    if is_etix_page:
+        # Extract from Etix's rendered React content
+        # Look for event cards - they use MUI components
+
+        # Try various selectors for Etix event cards
+        event_cards = soup.select('[class*="MuiCard"], [class*="performance"], [class*="event-card"], [class*="EventCard"]')
+
+        # Also look for links to /ticket/p/ (performance pages)
+        perf_links = soup.select('a[href*="/ticket/p/"]')
+
+        for link in perf_links:
+            href = link.get('href', '')
+            if href in seen:
+                continue
+            seen.add(href)
+
+            # Make absolute URL
+            if href.startswith('/'):
+                href = 'https://www.etix.com' + href
+
+            # Get title from link or nearby heading
+            title = link.get_text(strip=True)
+            if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets', 'buy', 'tickets']:
+                # Look for title in parent card
+                parent = link.find_parent(['div', 'article', 'li', 'section'])
+                if parent:
+                    heading = parent.select_one('h1, h2, h3, h4, h5, [class*="title"], [class*="Title"], [class*="name"], [class*="Name"]')
+                    if heading:
+                        title = heading.get_text(strip=True)
+
+            if not title or len(title) < 3:
+                continue
+
+            # Get date
+            date_str = ''
+            parent = link.find_parent(['div', 'article', 'li', 'section'])
+            if parent:
+                date_el = parent.select_one('time, [class*="date"], [class*="Date"], [class*="time"], [class*="Time"]')
+                if date_el:
+                    date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+            # Get image
+            image_url = ''
+            if parent:
+                img = parent.select_one('img')
+                if img:
+                    image_url = img.get('src', '')
+
+            events.append({
+                'title': title,
+                'date': date_str,
+                'source_url': href,
+                'tickets_url': href,
+                'source': source_name,
+                'venue': source_name,
+                'image_url': image_url,
+            })
+
+        # Also try to extract from any visible text patterns if no links found
+        if not events:
+            # Look for any divs with event-like structure
+            all_divs = soup.select('div')
+            for div in all_divs:
+                text = div.get_text(separator=' ', strip=True)
+                # Look for patterns like "Artist Name Feb 15, 2026 8:00 PM"
+                if len(text) > 10 and len(text) < 200:
+                    # Check for date-like patterns
+                    if re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d', text):
+                        # Find any ticket link in this div
+                        ticket_link = div.select_one('a[href*="ticket"]')
+                        if ticket_link:
+                            href = ticket_link.get('href', '')
+                            if href.startswith('/'):
+                                href = 'https://www.etix.com' + href
+
+                            if href not in seen:
+                                seen.add(href)
+                                events.append({
+                                    'title': text[:100],  # Use text as title
+                                    'date': '',
+                                    'source_url': href,
+                                    'tickets_url': href,
+                                    'source': source_name,
+                                    'venue': source_name,
+                                })
+
+    # Also check for links TO etix (for non-Etix pages embedding Etix links)
+    etix_links = soup.select('a[href*="etix.com"]')
+
+    for link in etix_links:
+        href = link.get('href', '')
+        if '/ticket/' not in href and '/event/' not in href:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets']:
+            parent = link.find_parent(['div', 'article', 'li'])
+            if parent:
+                heading = parent.select_one('h1, h2, h3, h4, [class*="title"]')
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        if not title or len(title) < 3:
+            continue
+
+        date_str = ''
+        parent = link.find_parent(['div', 'article', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# SEE TICKETS EXTRACTOR
+# ============================================================================
+
+def extract_seetickets_events(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from See Tickets links/embeds.
+    """
+    events = []
+    seen = set()
+
+    st_links = soup.select('a[href*="seetickets.us"], a[href*="seetickets.com"]')
+
+    for link in st_links:
+        href = link.get('href', '')
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = link.get_text(strip=True)
+        if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets']:
+            parent = link.find_parent(['div', 'article', 'li'])
+            if parent:
+                heading = parent.select_one('h1, h2, h3, h4, [class*="title"]')
+                if heading:
+                    title = heading.get_text(strip=True)
+
+        if not title or len(title) < 3:
+            continue
+
+        date_str = ''
+        parent = link.find_parent(['div', 'article', 'li'])
+        if parent:
+            date_el = parent.select_one('time, [class*="date"]')
+            if date_el:
+                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': href,
+            'tickets_url': href,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    return events
+
+
+# ============================================================================
+# EVENTBRITE EXTRACTOR (Enhanced)
+# ============================================================================
+
+
+async def fetch_bok_center_events(max_pages: int = 20) -> list:
+    """
+    Fetch all events from BOK Center's AJAX API.
+
+    API: GET https://www.bokcenter.com/events/events_ajax/{offset}?category=0&venue=0&team=0&exclude=&per_page=6
+
+    Returns parsed events.
+    """
+    all_events = []
+    offset = 0
+    per_page = 6
+
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        while offset < max_pages * per_page:
+            url = f"https://www.bokcenter.com/events/events_ajax/{offset}?category=0&venue=0&team=0&exclude=&per_page={per_page}&came_from_page=event-list-page"
+
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+
+                # API returns HTML wrapped in a JSON string - decode it
+                raw_text = resp.text
+
+                try:
+                    html = json.loads(raw_text)
+                except Exception as je:
+                    html = raw_text  # Fallback if not JSON-encoded
+
+                if not html or len(html.strip()) < 50:
+                    break
+
+                # Parse the HTML fragment
+                soup = BeautifulSoup(html, 'html.parser')
+
+                # Find all h3 elements (event titles)
+                titles = soup.select('h3 a')
+
+                if not titles:
+                    # Try alternate selectors
+                    titles = soup.select('a[href*="/events/detail/"]')
+
+                if not titles:
+                    break
+
+                for title_link in titles:
+                    title = title_link.get_text(strip=True)
+                    href = title_link.get('href', '')
+
+                    if not title or not href or '/events/detail/' not in href:
+                        continue
+
+                    # Find the parent event container
+                    # Walk up until we find a div that contains the date
+                    container = title_link.parent
+                    date_str = ''
+
+                    for _ in range(8):
+                        if container is None:
+                            break
+
+                        # Look for spans with date content
+                        spans = container.find_all('span', recursive=True)
+                        span_texts = [s.get_text(strip=True) for s in spans]
+
+                        # Check if we have month names
+                        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        if any(month in ' '.join(span_texts) for month in months):
+                            # Join span texts to form date
+                            date_str = ' '.join(span_texts)
+                            # Clean up
+                            date_str = re.sub(r'\s+', ' ', date_str).strip()
+                            break
+
+                        container = container.parent
+
+                    # Build full URL
+                    full_url = href if href.startswith('http') else f"https://www.bokcenter.com{href}"
+
+                    all_events.append({
+                        'title': title,
+                        'date': date_str,
+                        'source_url': full_url,
+                    })
+
+                offset += per_page
+
+            except Exception as e:
+                print(f"BOK Center API error at offset {offset}: {e}")
+                break
+
+    return all_events
+
+
+async def extract_bok_center(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Extract events from BOK Center.
+
+    Returns: (events_list, was_detected)
+    """
+    # Check if this is BOK Center
+    try:
+        domain = urlparse(url).netloc.lower()
+        if domain not in KNOWN_BOK_VENUES:
+            return [], False
+    except:
+        return [], False
+
+    print(f"[BOK Center] Detected BOK Center site")
+
+    # Fetch from AJAX API
+    raw_events = await fetch_bok_center_events()
+
+    print(f"[BOK Center] Fetched {len(raw_events)} events from API")
+
+    # Deduplicate by URL and clean up
+    seen = set()
+    events = []
+    for event in raw_events:
+        url_key = event.get('source_url', '')
+        if url_key in seen:
+            continue
+        seen.add(url_key)
+
+        # Clean up duplicated dates
+        date_str = event.get('date', '')
+        if date_str:
+            # Dates are duplicated like "Thu,Feb5, 2026 Thu, Feb 5 , 2026"
+            # or "Mar6 Mar 6 - 7, 2026 7 , 2026"
+
+            # First, normalize spacing
+            date_str = re.sub(r'\s+', ' ', date_str).strip()
+
+            # Strategy: Find first year (4 digits) and cut there
+            year_match = re.search(r'\d{4}', date_str)
+            if year_match:
+                date_str = date_str[:year_match.end()]
+
+            # Now clean up the remaining duplicates
+            # If a day name appears twice, take the second (cleaner) version
+            days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            for day in days:
+                if date_str.count(day) >= 2:
+                    # Find second occurrence and take from there
+                    first_idx = date_str.find(day)
+                    second_idx = date_str.find(day, first_idx + 1)
+                    if second_idx > first_idx:
+                        date_str = date_str[second_idx:]
+                    break
+
+            # If a month appears twice, take the second (cleaner) version
+            months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'June', 'July']
+            for month in months:
+                if date_str.count(month) >= 2:
+                    first_idx = date_str.find(month)
+                    second_idx = date_str.find(month, first_idx + 1)
+                    if second_idx > first_idx:
+                        date_str = date_str[second_idx:]
+                    break
+
+            # Final cleanup
+            date_str = re.sub(r',(\S)', r', \1', date_str)  # Space after comma
+            date_str = re.sub(r'([A-Za-z])(\d)', r'\1 \2', date_str)  # Space between letter and number
+            date_str = re.sub(r'\s+', ' ', date_str).strip()
+
+            # Remove "On Sale Soon" etc.
+            date_str = re.sub(r'\s*On Sale.*$', '', date_str, flags=re.IGNORECASE)
+
+            event['date'] = date_str.strip()
+
+        event['source'] = source_name
+        event['venue'] = 'BOK Center'
+        events.append(event)
+
+    return events, True
+
+
+# ============================================================================
+# VISITTULSA / SIMPLEVIEW CMS EXTRACTOR
+# ============================================================================
+
+# Known Simpleview CMS sites
+KNOWN_SIMPLEVIEW_SITES = {
+    'www.visittulsa.com': 'Visit Tulsa',
+    'visittulsa.com': 'Visit Tulsa',
+}
+
+
+async def extract_simpleview_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Extract events from Simpleview CMS sites (like VisitTulsa.com).
+    Uses their REST API to fetch all events with pagination.
+
+    Returns: (events_list, was_detected)
+    """
+    # Check if this is a Simpleview site
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        if domain not in KNOWN_SIMPLEVIEW_SITES:
+            # Also check HTML for Simpleview markers
+            if 'simpleview' not in html.lower() and 'plugins_events' not in html.lower():
+                return [], False
+    except:
+        return [], False
+
+    print(f"[Simpleview] Detected Simpleview CMS site: {domain}")
+
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    try:
+        events = await fetch_simpleview_events(base_url, source_name, future_only)
+        return events, True
+    except Exception as e:
+        print(f"[Simpleview] Error fetching events: {e}")
+        return [], True  # Detected but failed
+
+
+async def fetch_simpleview_events(base_url: str, source_name: str, future_only: bool = True) -> list:
+    """
+    Fetch all events from Simpleview CMS API with pagination.
+    """
+    import urllib.parse
+    from datetime import datetime, timedelta, timezone
+
+    events = []
+
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        # Step 1: Get authentication token
+        token_url = f"{base_url}/plugins/core/get_simple_token/"
+        print(f"[Simpleview] Fetching token from {token_url}")
+
+        try:
+            token_resp = await client.get(token_url)
+            token = token_resp.text.strip()
+            if not token or len(token) > 100:  # Token should be a short hash
+                print(f"[Simpleview] Invalid token received")
+                return []
+            print(f"[Simpleview] Got token: {token[:20]}...")
+        except Exception as e:
+            print(f"[Simpleview] Failed to get token: {e}")
+            return []
+
+        # Step 2: Build query
+        # Date range - from today to 1 year ahead (or all time if not future_only)
+        now = datetime.now(timezone.utc)
+        if future_only:
+            start_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
+        else:
+            start_date = "2020-01-01T06:00:00.000Z"
+        end_date = (now + timedelta(days=365)).strftime("%Y-%m-%dT06:00:00.000Z")
+
+        # Query with all categories (empty filter = all events)
+        batch_size = 100
+        skip = 0
+        total_fetched = 0
+
+        while True:
+            query = {
+                "filter": {
+                    "active": True,
+                    "date_range": {
+                        "start": {"$date": start_date},
+                        "end": {"$date": end_date}
+                    }
+                },
+                "options": {
+                    "limit": batch_size,
+                    "skip": skip,
+                    "count": True,
+                    "castDocs": False,
+                    "fields": {
+                        "_id": 1, "location": 1, "date": 1, "startDate": 1, "endDate": 1,
+                        "recurrence": 1, "recurType": 1, "latitude": 1, "longitude": 1,
+                        "media_raw": 1, "recid": 1, "title": 1, "url": 1, "description": 1,
+                        "categories": 1, "listing.primary_category": 1, "listing.title": 1,
+                        "listing.url": 1, "address": 1, "location": 1
+                    },
+                    "hooks": [],
+                    "sort": {"date": 1, "rank": 1, "title_sort": 1}
+                }
+            }
+
+            json_str = json.dumps(query)
+            api_url = f"{base_url}/includes/rest_v2/plugins_events_events_by_date/find/?json={urllib.parse.quote(json_str)}&token={token}"
+
+            print(f"[Simpleview] Fetching events (skip={skip})...")
+
+            try:
+                resp = await client.get(api_url)
+                data = resp.json()
+                print(f"[Simpleview] Raw response (first 500 chars): {str(data)[:500]}")
+            except Exception as e:
+                print(f"[Simpleview] API request failed: {e}")
+                break
+
+            # Debug: print response structure
+            print(f"[Simpleview] Response keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+
+            # Parse response - handle different response formats
+            docs = []
+            total_count = 0
+
+            if isinstance(data, dict):
+                # Check for nested structure: {'docs': {'count': N, 'docs': [...]}}
+                if 'docs' in data and isinstance(data['docs'], dict):
+                    inner = data['docs']
+                    docs = inner.get('docs', [])
+                    total_count = inner.get('count', 0)
+                    print(f"[Simpleview] Found nested structure with {total_count} total events")
+                else:
+                    # Flat structure: {'docs': [...], 'count': N}
+                    docs = data.get('docs', [])
+                    total_count = data.get('count', 0)
+
+                # Some responses have data nested differently
+                if not docs and 'results' in data:
+                    docs = data.get('results', [])
+                if not docs and 'items' in data:
+                    docs = data.get('items', [])
+            elif isinstance(data, list):
+                docs = data
+                total_count = len(data)
+
+            if not docs:
+                print(f"[Simpleview] No more events")
+                break
+
+            print(f"[Simpleview] Got {len(docs)} events (total available: {total_count})")
+
+            # Debug first doc structure
+            if docs and len(docs) > 0:
+                first_doc = docs[0]
+                print(f"[Simpleview] First doc type: {type(first_doc)}")
+                if isinstance(first_doc, dict):
+                    print(f"[Simpleview] First doc keys: {list(first_doc.keys())[:15]}")
+                else:
+                    print(f"[Simpleview] First doc value: {str(first_doc)[:200]}")
+
+            # Transform to our format
+            for i, doc in enumerate(docs):
+                try:
+                    # Skip if doc is not a dict
+                    if not isinstance(doc, dict):
+                        print(f"[Simpleview] Skipping non-dict doc {i}: {type(doc)} = {str(doc)[:50]}")
+                        continue
+
+                    title = doc.get('title', '')
+                    if not title:
+                        continue
+
+                    # Get date
+                    date_str = ''
+                    if doc.get('startDate'):
+                        # Parse ISO date
+                        try:
+                            start_dt = doc['startDate']
+                            if isinstance(start_dt, dict) and '$date' in start_dt:
+                                start_dt = start_dt['$date']
+                            date_str = start_dt
+                        except:
+                            date_str = doc.get('date', '')
+                    else:
+                        date_str = doc.get('date', '')
+
+                    # Get URL
+                    event_url = doc.get('url', '')
+                    if event_url and not event_url.startswith('http'):
+                        event_url = base_url + event_url
+
+                    # Get venue/location - prioritize 'location' field (has actual venue name)
+                    venue = ''
+                    loc = doc.get('location', '')
+                    if loc and isinstance(loc, str):
+                        venue = loc
+                    if not venue:
+                        listing = doc.get('listing')
+                        if listing and isinstance(listing, dict):
+                            venue = listing.get('title', '')
+
+                    # Get image
+                    image_url = ''
+                    media_raw = doc.get('media_raw')
+                    if media_raw and isinstance(media_raw, list) and len(media_raw) > 0:
+                        media = media_raw[0]
+                        if isinstance(media, dict):
+                            image_url = media.get('mediaurl', '') or media.get('url', '')
+                        elif isinstance(media, str):
+                            image_url = media
+
+                    # Get description
+                    description = doc.get('description', '')
+                    if isinstance(description, str):
+                        # Strip HTML
+                        description = re.sub(r'<[^>]+>', '', description)[:500]
+                    else:
+                        description = ''
+
+                    # Get categories
+                    categories = []
+                    cats = doc.get('categories')
+                    if cats and isinstance(cats, list):
+                        for cat in cats:
+                            if isinstance(cat, dict):
+                                cat_name = cat.get('catName', '')
+                                if cat_name:
+                                    categories.append(cat_name)
+                            elif isinstance(cat, str):
+                                categories.append(cat)
+
+                    # Get address
+                    address = doc.get('address', '')
+                    if not isinstance(address, str):
+                        address = ''
+
+                    # Get coordinates
+                    lat = doc.get('latitude')
+                    lng = doc.get('longitude')
+                    location = f"{lat},{lng}" if lat and lng else None
+
+                    events.append({
+                        'title': title,
+                        'date': date_str,
+                        'source_url': event_url or f"{base_url}/events/",
+                        'source': source_name,
+                        'venue': venue or source_name,
+                        'venue_address': address,
+                        'description': description,
+                        'image_url': image_url,
+                        'categories': categories if categories else None,
+                        'location': location,
+                    })
+                except Exception as doc_err:
+                    print(f"[Simpleview] Error processing doc {i}: {doc_err}")
+                    continue
+
+            total_fetched += len(docs)
+            skip += batch_size
+
+            # Stop if we've got all events (or no count provided and fewer docs than batch)
+            if total_count > 0 and total_fetched >= total_count:
+                print(f"[Simpleview] Reached total count ({total_count})")
+                break
+            if len(docs) < batch_size:
+                print(f"[Simpleview] Got fewer docs ({len(docs)}) than batch size ({batch_size}), stopping")
+                break
+
+            # Be nice to the server
+            await asyncio.sleep(0.3)
+
+        print(f"[Simpleview] Total events fetched: {len(events)}")
+
+    return events
+
+
+# ============================================================================
+# GENERIC SMART EXTRACTION
+# ============================================================================
+
+def extract_by_date_proximity(soup, base_url, source_name):
+    """
+    Find events by looking for date patterns and grabbing nearby title-like text.
+    This is the fallback for unknown formats.
+    """
+    events = []
+    seen_titles = set()
+
+    # Get all text nodes that contain dates
+    body = soup.find('body') or soup
+
+    # Find all elements that contain date-like text
+    date_elements = []
+    for element in body.find_all(text=True):
+        if isinstance(element, NavigableString):
+            text = str(element).strip()
+            if text and text_has_date(text):
+                date_elements.append(element.parent)
+
+    for date_el in date_elements:
+        # Look for the event container - walk up to find a reasonable parent
+        container = date_el
+        for _ in range(5):  # Walk up max 5 levels
+            parent = container.parent
+            if not parent or parent.name in ['body', 'html', 'main', 'section']:
+                break
+            container = parent
+            # Stop if container has multiple date-containing children (we went too far up)
+            date_count = len([c for c in container.find_all(text=True) if text_has_date(str(c))])
+            if date_count > 3:
+                container = date_el.parent
+                break
+
+        # Extract title - look for headings or prominent text near the date
+        title = ''
+        title_el = (
+                container.select_one('h1, h2, h3, h4, h5, h6') or
+                container.select_one('a[href]') or
+                container.select_one('[class*="title"]') or
+                container.select_one('strong, b')
+        )
+
+        if title_el:
+            title = title_el.get_text(strip=True)
+
+        # If no title element, look for the most prominent text
+        if not title:
+            texts = [t.strip() for t in container.stripped_strings]
+            # Filter out date/time strings to find the title
+            for t in texts:
+                if len(t) > 5 and not text_has_date(t) and not COMBINED_TIME_PATTERN.search(t):
+                    title = t[:100]
+                    break
+
+        if not title or title in seen_titles:
+            continue
+        seen_titles.add(title)
+
+        # Extract date
+        container_text = container.get_text(' ', strip=True)
+        date_str = extract_date_from_text(container_text) or ''
+        time_str = extract_time_from_text(container_text)
+        if time_str:
+            date_str = f"{date_str} @ {time_str}" if date_str else time_str
+
+        # Extract link
+        link = ''
+        link_el = container.select_one('a[href]')
+        if link_el:
+            href = link_el.get('href', '')
+            if href and not href.startswith('#') and not href.startswith('javascript:'):
+                link = urljoin(base_url, href)
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'source_url': link,
+            'source': source_name,
+        })
+
+    return events
+
+
+def extract_repeating_structures(soup, base_url, source_name):
+    """
+    Find events by detecting repeating HTML structures (lists of similar items).
+    """
+    events = []
+    seen = set()
+
+    # Common list containers
+    list_selectors = [
+        'ul > li',
+        'ol > li',
+        '.events-list > div',
+        '.events-list > article',
+        '.event-list > div',
+        '.event-list > article',
+        '[class*="list"] > [class*="item"]',
+        '[class*="events"] > [class*="event"]',
+        '[class*="calendar"] > div',
+        '.row > .col',
+        'table tbody tr',
+    ]
+
+    for selector in list_selectors:
+        items = soup.select(selector)
+
+        # Need at least 2 similar items to be a list
+        if len(items) < 2:
+            continue
+
+        # Check if these items have consistent structure (likely a repeating pattern)
+        first_classes = set(items[0].get('class', []))
+        similar_count = sum(1 for item in items if set(item.get('class', [])) == first_classes)
+
+        if similar_count < len(items) * 0.5:  # At least 50% should be similar
+            continue
+
+        for item in items:
+            # Must contain a date to be considered an event
+            item_text = item.get_text(' ', strip=True)
+            if not text_has_date(item_text):
+                continue
+
+            # Get title
+            title_el = item.select_one('h1, h2, h3, h4, h5, h6, a[href], [class*="title"], strong')
+            title = title_el.get_text(strip=True) if title_el else ''
+
+            if not title:
+                # Use first substantial text that isn't a date
+                for text in item.stripped_strings:
+                    if len(text) > 5 and not text_has_date(text):
+                        title = text[:100]
+                        break
+
+            if not title or title in seen:
+                continue
+            seen.add(title)
+
+            # Get date
+            date_str = extract_date_from_text(item_text) or ''
+            time_str = extract_time_from_text(item_text)
+            if time_str:
+                date_str = f"{date_str} @ {time_str}" if date_str else time_str
+
+            # Get link
+            link = ''
+            link_el = item.select_one('a[href]')
+            if link_el:
+                href = link_el.get('href', '')
+                if href and not href.startswith('#'):
+                    link = urljoin(base_url, href)
+
+            events.append({
+                'title': title,
+                'date': date_str,
+                'source_url': link,
+                'source': source_name,
+            })
+
+    return events
+
+
+# ============================================================================
+# MASTER EXTRACTION FUNCTION
+# ============================================================================
+
+def extract_events_universal(html: str, base_url: str, source_name: str) -> list:
+    """
+    Universal event extraction - tries multiple strategies.
+    Returns the best results found.
+    """
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # Remove script/style/nav/footer noise (but keep iframes - we capture their content)
+    for tag in soup.select('script, style, nav, footer, header, noscript'):
+        tag.decompose()
+
+    all_events = []
+    methods_used = []
+
+    # PRIORITY: If on Etix domain, try Etix extractor first
+    if 'etix.com' in base_url:
+        etix_events = extract_etix_events(soup, base_url, source_name)
+        if etix_events:
+            all_events.extend(etix_events)
+            methods_used.append(f"Etix ({len(etix_events)})")
+            # Return early if we found events on Etix
+            if all_events:
+                for e in all_events:
+                    e['_extraction_methods'] = methods_used
+                return all_events
+
+    # Strategy 1: Schema.org structured data (most reliable if present)
+    schema_events = extract_schema_org(soup, base_url, source_name)
+    if schema_events:
+        all_events.extend(schema_events)
+        methods_used.append(f"Schema.org ({len(schema_events)})")
+
+    # Strategy 2: Known plugin patterns
+    tribe_events = extract_tribe_events(soup, base_url, source_name)
+    if tribe_events:
+        all_events.extend(tribe_events)
+        methods_used.append(f"WordPress Events Calendar ({len(tribe_events)})")
+
+    eventbrite_events = extract_eventbrite_embed(soup, base_url, source_name)
+    if eventbrite_events:
+        all_events.extend(eventbrite_events)
+        methods_used.append(f"Eventbrite ({len(eventbrite_events)})")
+
+    # Stubwire-powered sites (Tulsa Shrine, etc.)
+    stubwire_events = extract_stubwire_events(soup, base_url, source_name)
+    if stubwire_events:
+        all_events.extend(stubwire_events)
+        methods_used.append(f"Stubwire ({len(stubwire_events)})")
+
+    # Dice.fm
+    dice_events = extract_dice_events(soup, base_url, source_name)
+    if dice_events:
+        all_events.extend(dice_events)
+        methods_used.append(f"Dice.fm ({len(dice_events)})")
+
+    # Bandsintown
+    bit_events = extract_bandsintown_events(soup, base_url, source_name)
+    if bit_events:
+        all_events.extend(bit_events)
+        methods_used.append(f"Bandsintown ({len(bit_events)})")
+
+    # Songkick
+    sk_events = extract_songkick_events(soup, base_url, source_name)
+    if sk_events:
+        all_events.extend(sk_events)
+        methods_used.append(f"Songkick ({len(sk_events)})")
+
+    # Ticketmaster
+    tm_events = extract_ticketmaster_events(soup, base_url, source_name)
+    if tm_events:
+        all_events.extend(tm_events)
+        methods_used.append(f"Ticketmaster ({len(tm_events)})")
+
+    # AXS
+    axs_events = extract_axs_events(soup, base_url, source_name)
+    if axs_events:
+        all_events.extend(axs_events)
+        methods_used.append(f"AXS ({len(axs_events)})")
+
+    # Etix
+    etix_events = extract_etix_events(soup, base_url, source_name)
+    if etix_events:
+        all_events.extend(etix_events)
+        methods_used.append(f"Etix ({len(etix_events)})")
+
+    # See Tickets
+    st_events = extract_seetickets_events(soup, base_url, source_name)
+    if st_events:
+        all_events.extend(st_events)
+        methods_used.append(f"See Tickets ({len(st_events)})")
+
+    # Strategy 3: Timely widget HTML (for when API fails)
+    if not all_events:
+        timely_html_events = extract_timely_from_html(soup, base_url, source_name)
+        if timely_html_events:
+            all_events.extend(timely_html_events)
+            methods_used.append(f"Timely HTML ({len(timely_html_events)})")
+
+    # Strategy 4: Repeating structures
+    if not all_events:
+        repeat_events = extract_repeating_structures(soup, base_url, source_name)
+        if repeat_events:
+            all_events.extend(repeat_events)
+            methods_used.append(f"Repeating structures ({len(repeat_events)})")
+
+    # Strategy 5: Date proximity (fallback)
+    if not all_events:
+        proximity_events = extract_by_date_proximity(soup, base_url, source_name)
+        if proximity_events:
+            all_events.extend(proximity_events)
+            methods_used.append(f"Date proximity ({len(proximity_events)})")
+
+    # Deduplicate by title
+    seen_titles = set()
+    unique_events = []
+    for event in all_events:
+        title = event.get('title', '').lower().strip()
+        if title and title not in seen_titles:
+            seen_titles.add(title)
+            unique_events.append(event)
+
+    # Add extraction metadata
+    for event in unique_events:
+        event['_extraction_methods'] = methods_used
+
+    return unique_events
+
+
+# ============================================================================
+# SCRAPING FUNCTIONS
+# ============================================================================
+
+async def fetch_with_httpx(url: str) -> str:
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30, follow_redirects=True) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
+
+
+async def fetch_with_playwright(url: str) -> str:
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_extra_http_headers(HEADERS)
+
+        # Etix is a heavy React SPA - needs special handling
+        is_etix = 'etix.com' in url
+        etix_api_data = []
+
+        if is_etix:
+            # Intercept API responses to capture event data
+            async def capture_response(response):
+                if '/api/online/search' in response.url or '/api/online/venues/' in response.url:
+                    try:
+                        body = await response.text()
+                        etix_api_data.append(body)
+                        print(f"[Etix] Captured API response from {response.url[:60]}...")
+                    except:
+                        pass
+
+            page.on('response', capture_response)
+
+            # For Etix, use networkidle and wait longer
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=45000)
+            except:
+                await page.goto(url, timeout=45000)
+
+            # Wait for Etix event cards to appear
+            try:
+                await page.wait_for_selector('[class*="performance"], [class*="event-card"], [class*="MuiCard"]', timeout=10000)
+            except:
+                pass
+
+            # Extra wait for API calls to complete
+            await page.wait_for_timeout(5000)
+
+            # Scroll down to trigger lazy loading
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await page.wait_for_timeout(2000)
+        else:
+            # Use domcontentloaded instead of networkidle (faster, more reliable)
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            except:
+                # Fallback if even that times out
+                await page.goto(url, timeout=30000)
+
+            # Wait for dynamic content to load
+            await page.wait_for_timeout(3000)
+
+            # Try to wait for common event containers
+            try:
+                await page.wait_for_selector('[class*="event"], [class*="calendar"], [class*="timely"]', timeout=5000)
+            except:
+                pass  # Continue anyway
+
+        # Get main page content
+        html = await page.content()
+
+        # If we captured Etix API data, append it as a special section
+        if etix_api_data:
+            html += "\n<!-- ETIX_API_DATA -->\n"
+            for data in etix_api_data:
+                html += f"<script type='etix-api-data'>{data}</script>\n"
+            print(f"[Etix] Appended {len(etix_api_data)} API responses to HTML")
+
+        # Also try to get iframe content (Timely and other widgets often use iframes)
+        try:
+            frames = page.frames
+            for frame in frames:
+                if frame != page.main_frame:
+                    try:
+                        frame_content = await frame.content()
+                        # Append iframe content wrapped in a marker
+                        html += f"\n<!-- IFRAME_CONTENT -->\n{frame_content}"
+                    except:
+                        pass
+        except:
+            pass
+
+        await browser.close()
+    return html
+
+
+# ============================================================================
+# HTML TEMPLATE
+# ============================================================================
+
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locate918 Scraper</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+            color: #fff;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { text-align: center; color: #D4AF37; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 25px; font-size: 13px; }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+        .form-row .form-group { flex: 1; }
+        label { display: block; margin-bottom: 5px; color: #D4AF37; font-size: 12px; font-weight: 600; }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-size: 14px;
+        }
+        input:focus { outline: none; border-color: #D4AF37; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+        .checkbox-row input { width: 16px; height: 16px; }
+        .checkbox-row label { margin: 0; color: #aaa; font-size: 13px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-primary { background: #D4AF37; color: #1a1a2e; }
+        .btn-primary:hover { background: #e5c04b; }
+        .btn-primary:disabled { background: #555; }
+        .btn-secondary { background: #444; color: #fff; }
+        .btn-success { background: #28a745; color: #fff; }
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        .status {
+            padding: 10px 12px; border-radius: 6px; margin-top: 12px; font-size: 13px;
+        }
+        .status.loading { background: rgba(212,175,55,0.2); border: 1px solid #D4AF37; }
+        .status.success { background: rgba(40,167,69,0.2); border: 1px solid #28a745; }
+        .status.error { background: rgba(220,53,69,0.2); border: 1px solid #dc3545; }
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
+            border-top-color: #D4AF37; animation: spin 0.7s linear infinite;
+            margin-right: 8px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        .log {
+            background: #0a0a0a; border-radius: 5px; padding: 10px;
+            margin-top: 10px; max-height: 150px; overflow-y: auto;
+            font-family: monospace; font-size: 11px; color: #0f0;
+        }
+        .log-error { color: #f66; }
+        .log-success { color: #6f6; }
+        .log-info { color: #6cf; }
+        h3 { color: #D4AF37; font-size: 15px; margin-bottom: 10px; }
+        .stats { display: flex; gap: 20px; margin: 12px 0; }
+        .stat { text-align: center; }
+        .stat-val { font-size: 22px; font-weight: bold; color: #D4AF37; }
+        .stat-lbl { font-size: 10px; color: #666; text-transform: uppercase; }
+        .method-tag {
+            display: inline-block;
+            background: #444;
+            color: #aaa;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            margin-right: 5px;
+            margin-bottom: 8px;
+        }
+        .event-list { max-height: 400px; overflow-y: auto; }
+        .event-item {
+            background: rgba(0,0,0,0.25); border-radius: 6px;
+            padding: 10px; margin-bottom: 6px; font-size: 13px;
+        }
+        .event-item strong { color: #fff; }
+        .event-item p { color: #888; margin: 3px 0; font-size: 12px; }
+        .event-item a { color: #6cf; font-size: 11px; }
+        .footer { text-align: center; color: #333; margin-top: 25px; font-size: 11px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎯 Locate918 Scraper</h1>
+    <p class="subtitle">Universal Extraction — No LLM Required</p>
+    
+    <div class="card">
+        <div class="form-row">
+            <div class="form-group" style="flex:2;">
+                <label>URL</label>
+                <input type="url" id="url" placeholder="https://www.cainsballroom.com/events/" />
+            </div>
+            <div class="form-group">
+                <label>Source Name</label>
+                <input type="text" id="source" placeholder="Cain's Ballroom" />
+            </div>
+        </div>
+        
+        <div class="checkbox-row">
+            <input type="checkbox" id="playwright" checked />
+            <label for="playwright">Use Playwright (for JavaScript sites)</label>
+        </div>
+        
+        <div class="checkbox-row">
+            <input type="checkbox" id="future-only" checked />
+            <label for="future-only">Future events only (filter out past dates)</label>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn btn-primary" id="scrape-btn" onclick="scrape()">🔍 Scrape</button>
+            <button class="btn btn-secondary" onclick="saveCurrentUrl()">📌 Save URL</button>
+        </div>
+        
+        <div id="status" class="status hidden"></div>
+        <div id="log-box" class="log hidden"></div>
+        
+        <div id="saved-urls" style="margin-top:15px;"></div>
+    </div>
+    
+    <div id="results" class="card hidden">
+        <h3>📋 Extracted Events</h3>
+        <div class="stats">
+            <div class="stat"><div class="stat-val" id="stat-count">0</div><div class="stat-lbl">Events</div></div>
+            <div class="stat"><div class="stat-val" id="stat-html">0</div><div class="stat-lbl">HTML Size</div></div>
+        </div>
+        <div id="methods-used"></div>
+        <div class="event-list" id="event-list"></div>
+        <div class="btn-group" style="margin-top:12px;">
+            <button class="btn btn-success" onclick="saveToDb()">💾 Save to Database</button>
+        </div>
+    </div>
+    
+    <div class="footer">Scrape → Save → Done</div>
+</div>
+
+<script>
+let events = [];
+let lastFilename = '';
+
+function log(msg, type='') {
+    const box = document.getElementById('log-box');
+    box.classList.remove('hidden');
+    box.innerHTML += '<div class="'+(type?'log-'+type:'')+'">'+msg+'</div>';
+    box.scrollTop = box.scrollHeight;
+}
+
+function status(msg, type='loading') {
+    const el = document.getElementById('status');
+    el.className = 'status ' + type;
+    el.innerHTML = type==='loading' ? '<span class="spinner"></span>'+msg : msg;
+    el.classList.remove('hidden');
+}
+
+async function scrape() {
+    const url = document.getElementById('url').value.trim();
+    const source = document.getElementById('source').value.trim() || 'unknown';
+    const pw = document.getElementById('playwright').checked;
+    const futureOnly = document.getElementById('future-only').checked;
+    
+    if (!url) { status('Enter a URL', 'error'); return; }
+    
+    document.getElementById('log-box').innerHTML = '';
+    document.getElementById('scrape-btn').disabled = true;
+    document.getElementById('results').classList.add('hidden');
+    
+    log('Checking robots.txt...');
+    log('Fetching: ' + url);
+    log('Method: ' + (pw ? 'Playwright' : 'httpx'));
+    log('Future only: ' + futureOnly);
+    status('Scraping...');
+    
+    try {
+        const r = await fetch('/scrape', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({url, source_name: source, use_playwright: pw, future_only: futureOnly})
+        });
+        const d = await r.json();
+        
+        if (d.robots_blocked) {
+            log('🚫 BLOCKED by robots.txt', 'error');
+            log('This site has requested not to be scraped.', 'error');
+            status('🚫 ' + d.error, 'error');
+            return;
+        }
+        
+        if (d.error) {
+            log('ERROR: ' + d.error, 'error');
+            status('Error: ' + d.error, 'error');
+            return;
+        }
+        
+        log('✓ robots.txt allows scraping', 'success');
+        events = d.events;
+        lastFilename = d.filename;
+        
+        log('HTML size: ' + d.html_size.toLocaleString() + ' chars', 'success');
+        log('Found ' + events.length + ' events', 'success');
+        if (d.methods && d.methods.length) {
+            log('Extraction methods: ' + d.methods.join(', '), 'info');
+        }
+        
+        document.getElementById('stat-count').textContent = events.length;
+        document.getElementById('stat-html').textContent = (d.html_size/1024).toFixed(1)+'KB';
+        
+        // Show methods used
+        const methodsDiv = document.getElementById('methods-used');
+        if (d.methods && d.methods.length) {
+            methodsDiv.innerHTML = d.methods.map(m => '<span class="method-tag">'+m+'</span>').join('');
+        } else {
+            methodsDiv.innerHTML = '';
+        }
+        
+        const list = document.getElementById('event-list');
+        if (events.length === 0) {
+            list.innerHTML = '<p style="color:#888;">No events found. The site may use an unusual format.</p>';
+        } else {
+            list.innerHTML = events.map(e => `
+                <div class="event-item">
+                    <strong>${e.title || 'Untitled'}</strong>
+                    ${e.date ? '<p>📅 '+e.date+'</p>' : ''}
+                    ${e.venue && e.venue !== e.source ? '<p>📍 '+e.venue+'</p>' : ''}
+                    ${e.source_url ? '<a href="'+e.source_url+'" target="_blank">🔗 Link</a>' : ''}
+                </div>
+            `).join('');
+        }
+        
+        document.getElementById('results').classList.remove('hidden');
+        status('Done! Found ' + events.length + ' events.', 'success');
+        
+    } catch (e) {
+        log('ERROR: ' + e.message, 'error');
+        status('Error: ' + e.message, 'error');
+    } finally {
+        document.getElementById('scrape-btn').disabled = false;
+    }
+}
+
+async function saveToDb() {
+    if (!events.length) { status('No events to save', 'error'); return; }
+    
+    status('Saving ' + events.length + ' events to database...');
+    
+    try {
+        const r = await fetch('/to-database', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({events})
+        });
+        const d = await r.json();
+        
+        if (d.error) {
+            status('Error: ' + d.error, 'error');
+        } else {
+            log('Saved ' + d.saved + ' of ' + d.total + ' to database', 'success');
+            status('✓ Saved ' + d.saved + '/' + d.total + ' events to database!', 'success');
+        }
+    } catch (e) {
+        status('Error: ' + e.message + ' (Is backend running on port 3000?)', 'error');
+    }
+}
+
+// Saved URLs
+async function loadSavedUrls() {
+    try {
+        const r = await fetch('/saved-urls');
+        const urls = await r.json();
+        const container = document.getElementById('saved-urls');
+        
+        if (!urls.length) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = `
+            <div style="font-size:12px;color:#888;margin-bottom:8px;">📌 Saved URLs (click to load):</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${urls.map(u => `
+                    <div style="display:flex;align-items:center;background:rgba(0,0,0,0.3);border-radius:4px;padding:4px 8px;font-size:12px;">
+                        <span onclick="loadUrl('${u.url}', '${u.name}', ${u.playwright !== false})" style="cursor:pointer;color:#6cf;">${u.name}</span>
+                        <span onclick="deleteSavedUrl('${u.url}')" style="cursor:pointer;color:#666;margin-left:8px;">✕</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (e) {
+        console.error('Error loading saved URLs:', e);
+    }
+}
+
+async function saveCurrentUrl() {
+    const url = document.getElementById('url').value.trim();
+    const name = document.getElementById('source').value.trim() || 'Unnamed';
+    const playwright = document.getElementById('playwright').checked;
+    
+    if (!url) {
+        status('Enter a URL first', 'error');
+        return;
+    }
+    
+    try {
+        await fetch('/saved-urls', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ url, name, playwright })
+        });
+        loadSavedUrls();
+        status(`Saved "${name}"`, 'success');
+    } catch (e) {
+        status('Error saving URL', 'error');
+    }
+}
+
+async function deleteSavedUrl(url) {
+    try {
+        await fetch('/saved-urls', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ url })
+        });
+        loadSavedUrls();
+    } catch (e) {
+        console.error('Error deleting URL:', e);
+    }
+}
+
+function loadUrl(url, name, playwright) {
+    document.getElementById('url').value = url;
+    document.getElementById('source').value = name;
+    if (playwright !== undefined) {
+        document.getElementById('playwright').checked = playwright;
+    }
+}
+
+// Load saved URLs on page load
+document.addEventListener('DOMContentLoaded', loadSavedUrls);
+</script>
+</body>
+</html>
+'''
+
+
+# ============================================================================
+# FLASK ROUTES
+# ============================================================================
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
+
+@app.route('/saved-urls', methods=['GET'])
+def get_saved_urls():
+    return jsonify(load_saved_urls())
+
+
+@app.route('/saved-urls', methods=['POST'])
+def add_saved_url():
+    data = request.json
+    urls = save_url(data.get('url', ''), data.get('name', ''), data.get('playwright', True))
+    return jsonify(urls)
+
+
+@app.route('/saved-urls', methods=['DELETE'])
+def remove_saved_url():
+    data = request.json
+    urls = delete_saved_url(data.get('url', ''))
+    return jsonify(urls)
+
+
+
+@app.route('/scrape', methods=['POST'])
+def scrape():
+    data = request.json
+    url = data.get('url')
+    source_name = data.get('source_name', 'unknown')
+    use_playwright = data.get('use_playwright', True)
+    future_only = data.get('future_only', True)  # Default to future events only
+    ignore_robots = data.get('ignore_robots', False)  # Allow override
+
+    if not url:
+        return jsonify({"error": "URL required"}), 400
+
+    # Check robots.txt first
+    robots_result = check_robots_txt(url)
+    print(f"[robots.txt] {url}: {robots_result['message']}")
+
+    if not robots_result['allowed'] and not ignore_robots:
+        return jsonify({
+            "error": f"Blocked by robots.txt: {robots_result['message']}",
+            "robots_blocked": True,
+            "events": [],
+            "html_size": 0,
+            "methods": []
+        }), 403
+
+    # Auto-save this URL to history
+    save_url(url, source_name, use_playwright)
+
+    try:
+        # Fetch HTML
+        if use_playwright:
+            html = asyncio.run(fetch_with_playwright(url))
+        else:
+            html = asyncio.run(fetch_with_httpx(url))
+
+        methods = []
+        events = []
+
+        # PRIORITY 1: Try EventCalendarApp API (Guthrie Green, etc.)
+        eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, source_name, url, future_only))
+        if eca_detected and eca_events:
+            events = eca_events
+            methods.append(f"EventCalendarApp API ({len(events)})")
+            print(f"[EventCalendarApp] SUCCESS: {len(events)} events via direct API")
+
+        # PRIORITY 2: Try Timely API (Starlite Bar, etc.)
+        if not events:
+            timely_events, timely_detected = asyncio.run(extract_timely(html, source_name, url, future_only))
+            if timely_detected and timely_events:
+                events = timely_events
+                methods.append(f"Timely API ({len(events)})")
+                print(f"[Timely] SUCCESS: {len(events)} events via direct API")
+
+        # PRIORITY 3: Try BOK Center API
+        if not events:
+            bok_events, bok_detected = asyncio.run(extract_bok_center(html, source_name, url, future_only))
+            if bok_detected and bok_events:
+                events = bok_events
+                methods.append(f"BOK Center API ({len(events)})")
+                print(f"[BOK Center] SUCCESS: {len(events)} events via API")
+
+        # PRIORITY 4: Try Simpleview CMS API (VisitTulsa, etc.)
+        if not events:
+            sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, future_only))
+            if sv_detected and sv_events:
+                events = sv_events
+                methods.append(f"Simpleview API ({len(events)})")
+                print(f"[Simpleview] SUCCESS: {len(events)} events via API")
+
+        # FALLBACK: HTML-based extraction
+        if not events:
+            events = extract_events_universal(html, url, source_name)
+
+            # Get extraction methods used
+            if events and '_extraction_methods' in events[0]:
+                methods = events[0]['_extraction_methods']
+                # Remove internal metadata from events
+                for e in events:
+                    e.pop('_extraction_methods', None)
+
+        # Save HTML for reference
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = re.sub(r'[^\w\-]', '_', source_name)
+        filename = f"{safe_name}_{timestamp}.html"
+        (OUTPUT_DIR / filename).write_text(html, encoding='utf-8')
+
+        return jsonify({
+            "events": events,
+            "html_size": len(html),
+            "filename": filename,
+            "methods": methods
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/save', methods=['POST'])
+def save():
+    data = request.json
+    events = data.get('events', [])
+    source = data.get('source', 'unknown')
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = re.sub(r'[^\w\-]', '_', source)
+    filename = f"{safe_name}_{timestamp}.json"
+
+    (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
+
+    return jsonify({"filename": filename, "count": len(events)})
+
+
+def transform_event_for_backend(event: dict) -> dict:
+    """
+    Transform scraped event to match Rust backend's CreateEvent schema.
+
+    Backend expects:
+    - title: String (required)
+    - source_url: String (required)
+    - start_time: DateTime<Utc> (required) - ISO format
+    - source_name: Option<String>
+    - venue: Option<String>
+    - description: Option<String>
+    - image_url: Option<String>
+    - categories: Option<Vec<String>>
+    - price_min/price_max: Option<f64>
+    """
+    from dateutil import parser as date_parser
+    from datetime import timezone
+
+    # Start with required fields
+    transformed = {
+        'title': event.get('title', 'Untitled Event'),
+        'source_url': event.get('source_url') or event.get('tickets_url') or event.get('url', ''),
+    }
+
+    # Parse date string to ISO format for start_time
+    date_str = event.get('date', '') or event.get('start_time', '')
+    if date_str:
+        try:
+            # Try to parse the date string
+            parsed_date = date_parser.parse(date_str, fuzzy=True)
+            # Ensure it has timezone (assume UTC if none)
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            transformed['start_time'] = parsed_date.isoformat()
+        except:
+            # Fallback: use current time + 1 day if unparseable
+            from datetime import datetime, timedelta
+            fallback = datetime.now(timezone.utc) + timedelta(days=1)
+            transformed['start_time'] = fallback.isoformat()
+            print(f"[DB] Warning: Could not parse date '{date_str}', using fallback")
+    else:
+        # No date provided - use tomorrow as fallback
+        from datetime import datetime, timedelta
+        fallback = datetime.now(timezone.utc) + timedelta(days=1)
+        transformed['start_time'] = fallback.isoformat()
+
+    # Map optional fields
+    if event.get('source'):
+        transformed['source_name'] = event['source']
+    if event.get('source_name'):
+        transformed['source_name'] = event['source_name']
+    if event.get('venue'):
+        transformed['venue'] = event['venue']
+    if event.get('description'):
+        transformed['description'] = event['description']
+    if event.get('image_url'):
+        transformed['image_url'] = event['image_url']
+    if event.get('location'):
+        transformed['location'] = event['location']
+    if event.get('venue_address'):
+        transformed['venue_address'] = event['venue_address']
+
+    # Handle price
+    if event.get('price'):
+        try:
+            price = float(str(event['price']).replace('$', '').replace(',', '').split('-')[0].strip())
+            transformed['price_min'] = price
+        except:
+            pass
+
+    # Categories - convert string to list if needed
+    if event.get('categories'):
+        cats = event['categories']
+        if isinstance(cats, str):
+            transformed['categories'] = [cats]
+        elif isinstance(cats, list):
+            transformed['categories'] = cats
+
+    # Booleans default to False
+    transformed['outdoor'] = event.get('outdoor', False)
+    transformed['family_friendly'] = event.get('family_friendly', False)
+
+    return transformed
+
+
+@app.route('/to-database', methods=['POST'])
+def to_database():
+    """Send events to database via Rust backend (concurrent)."""
+    import concurrent.futures
+
+    data = request.json
+    events = data.get('events', [])
+
+    if not events:
+        return jsonify({"saved": 0, "total": 0})
+
+    print(f"[DB] Sending {len(events)} events to backend...")
+
+    def post_event(event):
+        try:
+            # Transform to backend schema
+            transformed = transform_event_for_backend(event)
+            resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+            if resp.status_code not in [200, 201]:
+                print(f"[DB] Rejected: {resp.status_code} - {resp.text[:100]}")
+            return resp.status_code in [200, 201]
+        except Exception as e:
+            print(f"[DB] Error: {e}")
+            return False
+
+    # Send 10 requests concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(post_event, events))
+
+    saved = sum(results)
+    print(f"[DB] Complete: {saved}/{len(events)} saved")
+
+    return jsonify({"saved": saved, "total": len(events)})
+
+
+@app.route('/upload-all-to-database', methods=['POST'])
+def upload_all_to_database():
+    """Read all saved JSON files and send events to database concurrently."""
+    import concurrent.futures
+
+    total_events = 0
+    total_saved = 0
+    files_processed = 0
+    errors = []
+
+    # Get all JSON files (excluding special files)
+    json_files = sorted(OUTPUT_DIR.glob("*.json"), reverse=True)
+    skip_files = {'venues.json', 'saved_urls.json'}
+
+    # Collect all events from all files
+    all_events = []
+    for f in json_files:
+        if f.name in skip_files:
+            continue
+        try:
+            events = json.loads(f.read_text())
+            if isinstance(events, list) and len(events) > 0:
+                files_processed += 1
+                all_events.extend(events)
+        except Exception as e:
+            errors.append(f"{f.name}: {str(e)}")
+
+    total_events = len(all_events)
+    print(f"[Upload] {total_events} events from {files_processed} files")
+
+    def post_event(event):
+        try:
+            # Transform to backend schema
+            transformed = transform_event_for_backend(event)
+            resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+            return resp.status_code in [200, 201]
+        except:
+            return False
+
+    # Send 10 requests concurrently
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(post_event, all_events))
+
+    total_saved = sum(results)
+    print(f"[Upload] Complete: {total_saved}/{total_events} saved")
+
+    return jsonify({
+        "files_processed": files_processed,
+        "total_events": total_events,
+        "saved": total_saved,
+        "errors": errors
+    })
+
+
+@app.route('/clear-files', methods=['POST'])
+def clear_files():
+    """Delete all saved JSON files."""
+    deleted = 0
+    for f in OUTPUT_DIR.glob("*.json"):
+        if f.name == 'venues.json':
+            continue
+        try:
+            f.unlink()
+            deleted += 1
+        except:
+            pass
+
+    # Also delete HTML files
+    for f in OUTPUT_DIR.glob("*.html"):
+        try:
+            f.unlink()
+            deleted += 1
+        except:
+            pass
+
+    return jsonify({"success": True, "deleted": deleted})
+
+
+@app.route('/files')
+def list_files():
+    files = []
+    for f in sorted(OUTPUT_DIR.glob("*.json"), reverse=True):
+        files.append({"name": f.name, "size": f"{f.stat().st_size/1024:.1f}KB"})
+    return jsonify({"files": files})
+
+
+@app.route('/download/<filename>')
+def download(filename):
+    path = OUTPUT_DIR / filename
+    if path.exists():
+        return send_file(path, as_attachment=True)
+    return jsonify({"error": "Not found"}), 404
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+if __name__ == '__main__':
+    print("=" * 50)
+    print("  Locate918 Universal Scraper")
+    print("  Smart extraction - No LLM required")
+    print("  ✓ Respects robots.txt")
+    print("=" * 50)
+    print(f"  Output: {OUTPUT_DIR.absolute()}")
+    print("=" * 50)
+    print("  http://localhost:5000")
+    print("=" * 50)
+
+    app.run(debug=True, port=5000)

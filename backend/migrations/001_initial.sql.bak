@@ -1,0 +1,228 @@
+-- Locate918 Database Schema
+-- Migration: 001_initial.sql
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- EVENTS TABLE
+-- ============================================================================
+-- Stores normalized event data from all sources (APIs and scrapers)
+
+CREATE TABLE IF NOT EXISTS events (
+                                      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- Core event info
+    title TEXT NOT NULL,
+    description TEXT,
+
+    -- Venue/Location
+    venue TEXT,
+    venue_address TEXT,
+    location TEXT,                              -- city/area (e.g., "Downtown Tulsa")
+
+-- Timing
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ,
+
+    -- Classification
+    categories TEXT[],                          -- array: ["concerts", "rock", "live music"]
+    outdoor BOOLEAN DEFAULT false,
+    family_friendly BOOLEAN DEFAULT false,
+
+    -- Pricing
+    price_min DECIMAL,
+    price_max DECIMAL,
+
+    -- Source tracking
+    source_url TEXT NOT NULL,                   -- link back to original
+    source_name TEXT,                           -- "Eventbrite", "Visit Tulsa", "Cain's Ballroom"
+
+-- Media
+    image_url TEXT,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Prevent duplicate events from same source
+    CONSTRAINT unique_source_url UNIQUE(source_url)
+    );
+
+-- Indexes for common queries
+CREATE INDEX idx_events_start_time ON events(start_time);
+CREATE INDEX idx_events_categories ON events USING GIN(categories);
+CREATE INDEX idx_events_location ON events(location);
+CREATE INDEX idx_events_source_name ON events(source_name);
+CREATE INDEX idx_events_outdoor ON events(outdoor) WHERE outdoor = true;
+CREATE INDEX idx_events_family_friendly ON events(family_friendly) WHERE family_friendly = true;
+
+-- ============================================================================
+-- USERS TABLE
+-- ============================================================================
+-- Stores user accounts and their explicit preferences
+
+CREATE TABLE IF NOT EXISTS users (
+                                     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- Account info
+    email TEXT UNIQUE NOT NULL,
+    name TEXT,
+
+    -- Location preferences
+    location_preference TEXT,                   -- preferred area (e.g., "Downtown Tulsa")
+    radius_miles INT DEFAULT 10,                -- how far they'll travel
+
+-- Content preferences
+    price_max DECIMAL,                          -- budget limit
+    family_friendly_only BOOLEAN DEFAULT false,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+CREATE INDEX idx_users_email ON users(email);
+
+-- ============================================================================
+-- USER PREFERENCES TABLE
+-- ============================================================================
+-- Explicit category preferences (user sets these in their profile)
+-- Weight: positive = likes, negative = dislikes
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+                                                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL,                     -- "concerts", "comedy", "sports", etc.
+    weight INT NOT NULL DEFAULT 1,              -- positive = like, negative = dislike
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT unique_user_category UNIQUE(user_id, category)
+    );
+
+CREATE INDEX idx_user_preferences_user_id ON user_preferences(user_id);
+
+-- ============================================================================
+-- USER INTERACTIONS TABLE
+-- ============================================================================
+-- Implicit learning from behavior (clicks, saves, dismisses)
+-- Used for ML recommendations in Phase 3
+
+CREATE TABLE IF NOT EXISTS user_interactions (
+                                                 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+
+    -- Interaction type: 'clicked', 'saved', 'dismissed', 'attended'
+    interaction_type TEXT NOT NULL,
+
+    -- Denormalized for faster ML queries (don't need to join events table)
+    event_category TEXT,
+    event_venue TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+CREATE INDEX idx_user_interactions_user_id ON user_interactions(user_id);
+CREATE INDEX idx_user_interactions_event_id ON user_interactions(event_id);
+CREATE INDEX idx_user_interactions_type ON user_interactions(interaction_type);
+CREATE INDEX idx_user_interactions_user_type ON user_interactions(user_id, interaction_type);
+
+-- ============================================================================
+-- VENUES TABLE (OPTIONAL - for richer venue data)
+-- ============================================================================
+-- Separate venue info for questions like "Is Cain's loud?" or "Where do I park?"
+
+CREATE TABLE IF NOT EXISTS venues (
+                                      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    address TEXT,
+    city TEXT DEFAULT 'Tulsa',
+
+    -- Venue characteristics
+    venue_type TEXT,                            -- "concert hall", "bar", "park", "arena"
+    capacity INT,
+    noise_level TEXT,                           -- "quiet", "moderate", "loud", "very loud"
+    indoor_outdoor TEXT,                        -- "indoor", "outdoor", "both"
+
+-- Amenities
+    parking_info TEXT,
+    accessibility BOOLEAN DEFAULT true,
+
+    -- Links
+    website_url TEXT,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT unique_venue_name UNIQUE(name)
+    );
+
+CREATE INDEX idx_venues_name ON venues(name);
+CREATE INDEX idx_venues_city ON venues(city);
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+-- Auto-update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply trigger to tables with updated_at
+CREATE TRIGGER update_events_updated_at
+    BEFORE UPDATE ON events
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_venues_updated_at
+    BEFORE UPDATE ON venues
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- SAMPLE DATA (for development/testing)
+-- ============================================================================
+
+-- Insert a test user
+INSERT INTO users (email, name, location_preference, radius_miles, price_max, family_friendly_only)
+VALUES ('test@example.com', 'Test User', 'Downtown Tulsa', 15, 50.00, false)
+    ON CONFLICT (email) DO NOTHING;
+
+-- Insert some test venues
+INSERT INTO venues (name, address, city, venue_type, capacity, noise_level, indoor_outdoor, parking_info)
+VALUES
+    ('Cain''s Ballroom', '423 N Main St', 'Tulsa', 'concert hall', 1800, 'loud', 'indoor', 'Street parking and lot across the street'),
+    ('BOK Center', '200 S Denver Ave', 'Tulsa', 'arena', 19199, 'loud', 'indoor', 'Multiple parking garages nearby'),
+    ('Gathering Place', '2650 S John Williams Way E', 'Tulsa', 'park', null, 'moderate', 'outdoor', 'Free parking lots on site'),
+    ('Guthrie Green', '111 E Reconciliation Way', 'Tulsa', 'park', null, 'moderate', 'outdoor', 'Street parking and nearby garages')
+    ON CONFLICT (name) DO NOTHING;
+
+-- Insert a test event
+INSERT INTO events (title, description, venue, venue_address, location, start_time, end_time, categories, outdoor, family_friendly, price_min, price_max, source_url, source_name)
+VALUES (
+           'Test Concert',
+           'A test concert for development',
+           'Cain''s Ballroom',
+           '423 N Main St, Tulsa, OK',
+           'Downtown Tulsa',
+           NOW() + INTERVAL '7 days',
+           NOW() + INTERVAL '7 days' + INTERVAL '3 hours',
+           ARRAY['concerts', 'rock', 'live music'],
+           false,
+           false,
+           25.00,
+           45.00,
+           'https://example.com/test-concert',
+           'Test Source'
+       )
+    ON CONFLICT (source_url) DO NOTHING;

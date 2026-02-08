@@ -1,0 +1,16 @@
+{
+  "The Joint": {
+    "name": "The Joint",
+    "urls": [
+      "https://www.hardrockcasinotulsa.com/entertainment",
+      "https://www.hardrockcasinotulsa.com/entertainment?page=1",
+      "https://www.hardrockcasinotulsa.com/entertainment?page=2",
+      "https://www.hardrockcasinotulsa.com/entertainment?page=3"
+    ],
+    "use_playwright": true,
+    "notes": "",
+    "added": "2026-02-06T16:49:31.314465",
+    "last_scraped": null,
+    "last_event_count": 0
+  }
+}

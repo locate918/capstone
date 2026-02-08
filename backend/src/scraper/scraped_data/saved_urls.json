@@ -1,0 +1,27 @@
+[
+  {
+    "url": "https://www.hardrockcasinotulsa.com/entertainment?page=1",
+    "name": "The joint",
+    "playwright": true
+  },
+  {
+    "url": "https://thestarlitebar.com/",
+    "name": "Starlite",
+    "playwright": true
+  },
+  {
+    "url": "https://www.etix.com/ticket/v/37123/the-cove-at-river-spirit-casino-resort",
+    "name": "the cove",
+    "playwright": true
+  },
+  {
+    "url": "https://www.ticketsales.com/river-spirit-casino-tickets/venue?utm_source=google&utm_medium=cpc&utm_campaign=18084531525&utm_placement=&utm_network=g&gad_source=1&gad_campaignid=18084531525&gclid=CjwKCAiAv5bMBhAIEiwAqP9GuFmrCxAQwXJwCILs9ojwbeh-WM0tyIrnN99l7WpXcBp-ddlX3judRRoCsWkQAvD_BwE",
+    "name": "the cove",
+    "playwright": true
+  },
+  {
+    "url": "https://www.visittulsa.com/events/",
+    "name": "visit tulsa",
+    "playwright": true
+  }
+]
