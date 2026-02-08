@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 class Event(BaseModel):
     """
@@ -64,9 +64,13 @@ class SearchResponse(BaseModel):
     parsed_params: Dict[str, Any]
 
 class ChatRequest(BaseModel):
-    user_id: str
+    # Allow frontend to send 'userId' and 'conversationHistory' (camelCase)
+    user_id: str = Field(..., alias="userId")
     message: str
-    conversation_history: List[Dict[str, Any]] = []
+    conversation_history: Optional[List[Dict[str, Any]]] = Field(default=[], alias="conversationHistory")
+    conversation_id: Optional[str] = Field(default=None, alias="conversationId")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class ChatResponse(BaseModel):
     text: Optional[str] = None
