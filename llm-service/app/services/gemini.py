@@ -80,9 +80,16 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     Current Date: {current_time}
     User Profile: {json.dumps(user_profile)}
     
-    If the user asks for events, use the `search_events` tool.
+    CRITICAL INSTRUCTIONS:
+    - You serve the Tulsa area ONLY. Do not ask for location. Assume all queries are for Tulsa, OK.
+    - If the user mentions relative dates (e.g., "this week", "weekend"), infer the start_date and end_date based on Current Date. Do not ask for clarification.
+    - Call `search_events` to find specific event listings (dates, prices, locations).
+    - Do not use Markdown formatting (e.g., **bold**, *italics*). Use plain text only.
+    - Use simple dashes (-) for lists.
+    - If an event description is brief, use your general knowledge to add context (e.g., about the band or activity), but stick to the provided facts for time and location.
+
     If the user asks about weather or directions, answer generally or suggest checking a map.
-    Be concise, enthusiastic, and helpful.
+    Be enthusiastic, engaging, and helpful. Avoid being too brief.
     """
 
     chat = client.aio.chats.create(
@@ -118,7 +125,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             else:
                 # If no handler is provided, return the tool call to the client
                 return {
-                    "text": None,
+                    "message": None,
                     "tool_call": {
                         "name": func_name,
                         "args": func_args
@@ -136,7 +143,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     except Exception:
         text_response = "I'm having trouble formulating a response right now."
 
-    return {"text": text_response, "tool_call": None}
+    return {"message": text_response, "tool_call": None}
 
 
 async def normalize_events(raw_content: str, source_url: str, content_type: str = "html") -> List[Dict]:
