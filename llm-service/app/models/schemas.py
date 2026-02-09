@@ -73,5 +73,5 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 class ChatResponse(BaseModel):
-    text: Optional[str] = None
+    message: Optional[str] = None
     tool_call: Optional[Dict[str, Any]] = None

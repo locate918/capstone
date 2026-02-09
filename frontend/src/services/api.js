@@ -106,7 +106,7 @@ export const smartSearch = async (query) => {
  * Send a chat message to Tully.
  * Returns a conversational response with optional event recommendations.
  */
-export const chatWithTully = async (message, userId = null, conversationId = null) => {
+export const chatWithTully = async (message, userId = null, conversationHistory = [], conversationId = null) => {
     if (USE_MOCKS) {
         return getMockChatResponse(message);
     }
@@ -118,6 +118,7 @@ export const chatWithTully = async (message, userId = null, conversationId = nul
             body: JSON.stringify({
                 message,
                 user_id: userId,
+                conversation_history: conversationHistory,
                 conversation_id: conversationId,
             }),
         });

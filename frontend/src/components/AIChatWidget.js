@@ -31,6 +31,15 @@ const AIChatWidget = () => {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
 
+  // Generate or retrieve a persistent guest ID
+  const [userId] = useState(() => {
+    const stored = localStorage.getItem('locate918_guest_id');
+    if (stored) return stored;
+    const newId = 'guest_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('locate918_guest_id', newId);
+    return newId;
+  });
+
   // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -44,8 +53,14 @@ const AIChatWidget = () => {
     setInputValue("");
     setIsTyping(true);
 
+    // Prepare conversation history for the backend
+    const conversationHistory = [...messages, userMessage].map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.text }]
+    }));
+
     try {
-      const response = await chatWithTully(inputValue, null, null);
+      const response = await chatWithTully(inputValue, userId, conversationHistory);
       setMessages(prev => [...prev, { role: 'assistant', text: response.message }]);
     } catch (error) {
       console.error("Chat error:", error);
