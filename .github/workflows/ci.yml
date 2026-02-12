@@ -4,10 +4,19 @@ on:
   pull_request:
   push:
     branches: [ "main", "develop" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     strategy:
       fail-fast: false
@@ -64,11 +73,12 @@ jobs:
           pip install -r llm-service/requirements.txt
 
       - name: Install pytest
+        if: matrix.service == 'llm-service'
         run: pip install pytest
 
       - name: Run Python tests
         if: matrix.service == 'llm-service'
-        run: pytest llm-service/app
+        run: PYTHONPATH=llm-service pytest -q llm-service/tests
 
       # ====================
       # Frontend (React)
@@ -87,4 +97,6 @@ jobs:
 
       - name: Run frontend tests
         if: matrix.service == 'frontend'
+        env:
+          CI: "true"
         run: npm test --prefix frontend -- --watch=false
