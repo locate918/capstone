@@ -30,11 +30,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in environment variables")
+_client = None
 
-client = genai.Client(api_key=API_KEY)
+
+def get_client():
+    global _client
+    if _client is not None:
+        return _client
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment variables")
+
+    _client = genai.Client(api_key=api_key)
+    return _client
 
 
 async def parse_user_intent(message: str) -> Dict[str, Any]:
@@ -53,6 +62,7 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
     For dates, convert "this weekend" or "tomorrow" to approximate ISO dates based on current context.
     """
 
+    client = get_client()
     response = await client.aio.models.generate_content(
         model='gemini-2.0-flash',
         contents=[base_prompt, message],
@@ -92,6 +102,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     Be enthusiastic, engaging, and helpful. Avoid being too brief.
     """
 
+    client = get_client()
     chat = client.aio.chats.create(
         model='gemini-2.0-flash',
         config=types.GenerateContentConfig(
@@ -176,6 +187,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     Input Data:
     """
 
+    client = get_client()
     response = await client.aio.models.generate_content(
         model='gemini-2.0-flash',
         contents=[base_prompt, raw_content[:150000]],
