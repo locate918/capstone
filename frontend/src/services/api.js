@@ -89,7 +89,7 @@ export const smartSearch = async (query) => {
         const data = await response.json();
         return {
             events: transformBackendEvents(data.events || []),
-            parsed: data.parsed || {},
+            parsed: data.parsed || data.parsed_params || {},
         };
     } catch (error) {
         console.error("Smart search failed:", error);

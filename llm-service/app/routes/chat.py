@@ -41,8 +41,20 @@ async def execute_search_events(args: dict):
             response = await client.get(f"{BACKEND_URL}/api/events/search", params=params)
             if response.status_code == 200:
                 events = response.json()
-                # Limit results to avoid overflowing the LLM context window
-                return {"events": events[:10], "count": len(events)}
+                
+                # Simplify event data to save tokens and avoid 429 errors
+                simplified_events = []
+                for e in events[:8]:  # Limit to 8 events
+                    simplified_events.append({
+                        "title": e.get("title"),
+                        "start_time": e.get("start_time"),
+                        "venue": e.get("venue"),
+                        "price": f"{e.get('price_min')} - {e.get('price_max')}",
+                        "description": (e.get("description") or "")[:200] + "...",  # Truncate description
+                        "categories": e.get("categories")
+                    })
+                
+                return {"events": simplified_events, "count": len(events)}
             print(f"DEBUG: Backend Error {response.status_code}: {response.text}")
             return {"error": f"Backend returned status {response.status_code}"}
         except Exception as e:
@@ -85,9 +97,14 @@ async def chat_with_tully(request: ChatRequest):
             "search_events": execute_search_events
         }
 
+        # Limit history to last 15 turns to prevent context exhaustion
+        history = sanitize_history(request.conversation_history)
+        if len(history) > 15:
+            history = history[-15:]
+
         response = await gemini.generate_chat_response(
             message=request.message,
-            history=sanitize_history(request.conversation_history),
+            history=history,
             user_profile=user_profile,
             tool_functions=tool_functions
         )
