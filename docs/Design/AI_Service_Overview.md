@@ -2,18 +2,18 @@
 
 **Author:** Ben Halcomb (AI Engineer)  
 **Service:** `llm-service` (Python/FastAPI)  
-**Model Provider:** Google Gemini API  
+**Model Provider:** Google Gemini API (Gemini 2.0 Flash)
 
 ---
 
 ## 1. Service Overview
 
-The **Locate918 AI Service** is a standalone Python application responsible for all non-deterministic logic within the platform. It acts as an intelligence layer between the raw data collected by scrapers and the user-facing application, ensuring that event data is clean and that user interactions are natural.
+The **Locate918 AI Service** is a standalone Python application responsible for all non-deterministic logic within the platform. It acts as an intelligence layer between the raw data collected by scrapers and the user-facing application.
 
 ### Core Goals
 1.  **Normalization:** Convert messy, unstructured scraper data into strict database schemas.
-2.  **Intent Extraction:** Translate natural language chat inputs into SQL-compatible search parameters.
-3.  **Summarization:** Provide friendly, conversational context for event results.
+2.  **Smart Search:** Parse natural language queries into structured parameters and retrieve results.
+3.  **Conversational Agent (Tully):** Provide a helpful, context-aware chat interface that can search the database.
 
 ---
 
@@ -22,65 +22,61 @@ The **Locate918 AI Service** is a standalone Python application responsible for 
 The service manages three distinct pipelines:
 
 ### A. Event Normalization (The "Cleaner")
-* **Input:** Raw text or HTML snippets from scrapers (Eventbrite, local calendars, Facebook events).
-* **Process:** Uses Gemini to extract structured entities (Date, Time, Location, Price, Category) and standardize formatting.
-* **Output:** Strict JSON matching the `events` table schema in the database.
-* **Why:** Scrapers are brittle; the LLM handles inconsistent HTML structures, missing tags, and varying date formats gracefully.
+* **Input:** Raw HTML or JSON from scrapers.
+* **Process:** Uses Gemini 2.0 Flash to extract structured entities (Date, Time, Location, Price, Category) and standardize formatting into `NormalizedEvent` objects.
+* **Output:** Strict JSON matching the `events` table schema.
+* **Why:** Scrapers are brittle; the LLM handles inconsistent HTML structures and varying date formats gracefully.
 
-### B. Intent Parsing (The "Translator")
-* **Input:** Natural language user queries (e.g., *"Find me something kid-friendly downtown this weekend"*).
+### B. Smart Search (The "Translator")
+* **Endpoint:** `POST /api/search`
+* **Input:** Natural language query (e.g., "jazz concerts this weekend under $30").
 * **Process:**
-    1.  Analyzes the string for **temporal entities** ("this weekend" → calculated `start_date` / `end_date`).
-    2.  Extracts **categorical intents** ("kid-friendly" → `tags: ['family', 'children']`).
-    3.  Identifies **geolocation context** ("downtown" → `zone_id` or lat/long radius).
-* **Output:** Structured search parameters for the Rust backend's SQL query.
+    1.  Uses Gemini to parse the query into structured parameters (`category`, `price_max`, `start_date`, etc.).
+    2.  Queries the Rust Backend (`/api/events/search`) with these parameters.
+* **Output:** A response containing both the parsed parameters and the list of matching events.
 
-### C. Conversational Agent (The "Concierge")
-* **Input:** A list of retrieved events (from the Rust backend) + the user's original message.
-* **Process:** Generates a friendly, summarized response. It does *not* hallucinate events; it only summarizes the JSON context provided to it.
-* **Output:** Natural language text response.
+### C. Conversational Agent (The "Concierge" - Tully)
+* **Endpoint:** `POST /api/chat`
+* **Input:** User message, user ID, and conversation history.
+* **Process:**
+    1.  Maintains conversation history.
+    2.  Uses **Gemini Function Calling**. If the user asks for events, the model generates a tool call (`search_events`).
+    3.  The service executes this tool against the Rust Backend.
+    4.  The results are fed back to the model to generate a natural language response.
+* **Output:** A friendly, text-based response (no Markdown, simple formatting).
 
 ---
 
 ## 3. Data Flow Architecture
 
 ### Workflow 1: Data Ingestion (Write Path)
-*This pipeline runs in the background when scrapers find new data.*
+*Runs in background via scrapers.*
 
-````mermaid
+```mermaid
 graph TD
-    A["Scraper (Rust/Python)"] -->|Raw HTML/Text| B("POST /api/normalize")
-    B -->|Prompt + Context| C["Gemini API"]
-    C -->|Structured JSON| B
-    B -->|Event Object| A
+    A["Scraper"] -->|Raw Content| B("POST /api/normalize")
+    B -->|Prompt| C["Gemini 2.0 Flash"]
+    C -->|Normalized JSON| B
+    B -->|Event Objects| A
     A -->|Insert| D[("PostgreSQL DB")]
-````
+```
 
-### Workflow 2: User Search (Read Path)
-
-*This pipeline runs in real-time when a user messages the chatbot.*
+### Workflow 2: Smart Search (Read Path)
+*Fast, single-turn query.*
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant R as Rust Backend
+    participant U as User (Frontend)
     participant P as Python LLM Service
     participant G as Gemini API
-    participant D as Database
+    participant R as Rust Backend
 
-    U->>R: "What's up tonight?"
-    R->>P: POST /api/parse-intent
-    P->>G: Extract Params (Date, Cat, Loc)
-    G-->>P: {date: today, cat: any}
-    P-->>R: Search Params
-    R->>D: SQL Query (using params)
-    D-->>R: Returns 5 Events
-    R->>P: POST /api/chat (Events + User Query)
-    P->>G: Summarize these 5 events
-    G-->>P: Natural Language Response
-    P-->>R: Final Text
-    R-->>U: Display Response
-
+    U->>P: POST /api/search (Query)
+    P->>G: Parse Intent
+    G-->>P: JSON Params
+    P->>R: GET /api/events/search (Params)
+    R-->>P: Event List
+    P-->>U: Events + Parsed Params
 ```
 
 ---
@@ -94,9 +90,9 @@ sequenceDiagram
 * **Request Body:**
 ```json
 {
-  "raw_text": "Live Jazz at The Colony! Doors 7pm, $10 cover. 21+ only.",
-  "source_url": "[https://example.com/events/123](https://example.com/events/123)",
-  "scraper_source": "venue_website"
+  "raw_content": "string",
+  "source_url": "string",
+  "content_type": "html"
 }
 
 ```
@@ -105,15 +101,20 @@ sequenceDiagram
 * **Response Model (Target Schema):**
 ```json
 {
-  "title": "Live Jazz",
-  "venue": "The Colony",
-  "start_time": "2026-01-18T19:00:00",
-  "end_time": null,
-  "price_min": 10.00,
-  "price_max": 10.00,
-  "age_restriction": "21+",
-  "tags": ["music", "jazz", "nightlife"],
-  "confidence_score": 0.95
+  "title": "string",
+  "venue": "string",
+  "venue_address": "string",
+  "start_time": "2026-02-09T20:50:27.364Z",
+  "end_time": "2026-02-09T20:50:27.364Z",
+  "description": "string",
+  "categories": [
+    "string"
+  ],
+  "price_min": 0,
+  "price_max": 0,
+  "outdoor": true,
+  "family_friendly": true,
+  "image_url": "string"
 }
 
 ```
@@ -210,4 +211,14 @@ While the MVP relies on Gemini for zero-shot inference, the following ML compone
 
 ### (Important)
 
-**This is just the first iteration of the AI/LLM documentation and it will in all likelyhood change as we continue to work through the project.**
+**This is just the first iteration of the AI/LLM documentation, and it will in all likelyhood change as we continue to work through the project.**
+## 6. Current Implementation Status
+### Implemented Features 
+*   Gemini Integration: Successfully using gemini-2.0-flash via google-genai SDK. 
+* *   Normalization: normalize_events function handles HTML/JSON parsing. 
+* *   Intent Parsing: parse_user_intent extracts search parameters. 
+* *   Chat Logic: generate_chat_response handles system prompts, history management, and tool execution loop. 
+* *   Tooling: search_events tool is defined and connected to the backend. 
+* ### Configuration 
+* *   System Prompts: Tuned to enforce Tulsa-specific context, date inference, and plain text formatting. 
+* *   Tools: Currently supports search_events. Google Search grounding was attempted but disabled due to conflict with Function Calling in the current API version.
