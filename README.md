@@ -244,7 +244,7 @@ cp .env.example .env
 # Edit and add the Gemini API key (get from Ben)
 
 # Run the service
-uvicorn main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8001
 ```
 
 **Verify:** http://localhost:8001/ should return `{"status": "online"}`
@@ -411,7 +411,7 @@ cargo run
 ```bash
 cd llm-service
 .\venv\Scripts\Activate   # Windows (or: source venv/bin/activate)
-uvicorn main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8001
 # Runs on http://localhost:8001
 ```
 

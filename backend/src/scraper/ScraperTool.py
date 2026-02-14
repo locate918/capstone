@@ -10,10 +10,12 @@ DIRECT APIs:
 1. EventCalendarApp API (Guthrie Green, Fly Loft, etc.)
 2. Timely API (Starlite Bar, etc.)
 3. BOK Center API
-4. Simpleview CMS API (VisitTulsa.com, etc.)
+4. Expo Square / Saffire CMS API
+5. Eventbrite API (any Eventbrite search/destination page)
+6. Simpleview CMS API (VisitTulsa.com, etc.)
 
 STRUCTURED DATA:
-5. Schema.org/JSON-LD
+7. Schema.org/JSON-LD
 
 TICKETING PLATFORMS:
 6. WordPress Events Calendar (Tribe)
@@ -1894,6 +1896,363 @@ async def extract_bok_center(html: str, source_name: str, url: str = '', future_
 
 
 # ============================================================================
+# EXPO SQUARE (SAFFIRE CMS) API EXTRACTOR
+# ============================================================================
+
+async def extract_expo_square_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Extract events from Expo Square using their Saffire CMS API.
+
+    API workflow:
+    1. GetEventDays - returns all dates with events
+    2. GetEventDaysByList - returns event details for given dates
+
+    Returns: (events_list, was_detected)
+    """
+    # Check if this is an Expo Square URL
+    if 'exposquare.com' not in url.lower():
+        return [], False
+
+    print(f"[Expo Square] Detected Expo Square URL, using Saffire API...")
+
+    events = []
+    seen_event_ids = set()  # Deduplicate multi-day events
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Content-Type': 'application/json; charset=utf-8',
+                'Origin': 'https://www.exposquare.com',
+                'Referer': 'https://www.exposquare.com/events',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+
+            # Step 1: Get all event dates
+            days_url = 'https://www.exposquare.com/services/eventsservice.asmx/GetEventDays'
+            days_payload = {
+                'day': '',
+                'startDate': '',
+                'endDate': '',
+                'categoryID': 0,
+                'currentUserItems': 'false',
+                'tagID': 0,
+                'keywords': '%25%25',
+                'isFeatured': 'false',
+                'fanPicks': 'false',
+                'myPicks': 'false',
+                'pastEvents': 'false',
+                'allEvents': 'false',
+                'memberEvents': 'false',
+                'memberOnly': 'false',
+                'showCategoryExceptionID': 0,
+                'isolatedSchedule': 0,
+                'customFieldFilters': [],
+                'searchInDescription': True
+            }
+
+            print(f"[Expo Square] Fetching event dates...")
+            days_response = await client.post(days_url, json=days_payload, headers=headers)
+
+            if days_response.status_code != 200:
+                print(f"[Expo Square] GetEventDays failed: {days_response.status_code}")
+                return [], False
+
+            days_data = days_response.json()
+            all_dates = days_data.get('d', [])
+
+            # Filter to only future dates (next 12 months)
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            max_date = today + timedelta(days=365)
+
+            future_dates = []
+            for date_str in all_dates:
+                try:
+                    dt = datetime.strptime(date_str, '%m/%d/%Y')
+                    if today <= dt <= max_date:
+                        future_dates.append(date_str)
+                except:
+                    continue
+
+            print(f"[Expo Square] Found {len(future_dates)} future event dates (from {len(all_dates)} total)")
+
+            # Step 2: Fetch events in batches of 30 dates
+            batch_size = 30
+            details_url = 'https://www.exposquare.com/services/eventsservice.asmx/GetEventDaysByList'
+
+            for i in range(0, len(future_dates), batch_size):
+                batch = future_dates[i:i+batch_size]
+                dates_str = ','.join(batch)
+
+                details_payload = {
+                    'dates': dates_str,
+                    'day': '',
+                    'categoryID': 0,
+                    'tagID': 0,
+                    'keywords': '%25%25',
+                    'isFeatured': 'false',
+                    'fanPicks': 'false',
+                    'pastEvents': 'false',
+                    'allEvents': 'false',
+                    'memberEvents': 'false',
+                    'memberOnly': 'false',
+                    'showCategoryExceptionID': 0,
+                    'isolatedSchedule': 0,
+                    'customFieldFilters': [],
+                    'searchInDescription': True
+                }
+
+                details_response = await client.post(details_url, json=details_payload, headers=headers)
+
+                if details_response.status_code != 200:
+                    print(f"[Expo Square] GetEventDaysByList failed for batch {i//batch_size + 1}")
+                    continue
+
+                details_data = details_response.json()
+                days = details_data.get('d', {}).get('Days', [])
+
+                for day in days:
+                    # Events are in Times[0].Unique or directly in Unique
+                    unique_events = day.get('Unique', [])
+                    if not unique_events:
+                        times = day.get('Times', [])
+                        if times:
+                            unique_events = times[0].get('Unique', [])
+
+                    for evt in unique_events:
+                        try:
+                            event_id = evt.get('EventID')
+                            if event_id in seen_event_ids:
+                                continue  # Skip duplicate (multi-day event)
+                            seen_event_ids.add(event_id)
+
+                            title = evt.get('Name', '')
+                            if not title:
+                                continue
+
+                            # Parse date range
+                            date_range = evt.get('EventDateRangeString', '')
+                            date_str = day.get('DateString', '')
+
+                            # Get detail URL
+                            detail_url = evt.get('DetailURL', '')
+
+                            # Get image
+                            image_url = evt.get('ImageOrVideoThumbnailWithPath', '')
+                            if 'no_img_available' in image_url:
+                                image_url = ''
+
+                            # Get description
+                            description = evt.get('ShortDescription', '') or evt.get('LongDescription', '') or ''
+
+                            # Get location
+                            locations = evt.get('Locations', [])
+                            venue = 'Expo Square'
+                            if locations and isinstance(locations, list) and len(locations) > 0:
+                                loc = locations[0]
+                                if isinstance(loc, dict):
+                                    venue = loc.get('Name', 'Expo Square') or 'Expo Square'
+
+                            event = {
+                                'title': title,
+                                'date': date_str,
+                                'venue': venue,
+                                'venue_address': '4145 E 21st St, Tulsa, OK 74114',
+                                'description': description[:500] if description else f'{date_range}',
+                                'url': detail_url,
+                                'image_url': image_url,
+                                'source': source_name or 'Expo Square',
+                                'categories': [],
+                            }
+
+                            events.append(event)
+
+                        except Exception as e:
+                            print(f"[Expo Square] Error parsing event: {e}")
+                            continue
+
+                # Small delay between batches
+                await asyncio.sleep(0.2)
+
+            print(f"[Expo Square] Successfully extracted {len(events)} unique events")
+            return events, True
+
+    except Exception as e:
+        print(f"[Expo Square] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return [], False
+
+
+# ============================================================================
+# EVENTBRITE API EXTRACTOR
+# ============================================================================
+
+# Known Eventbrite place IDs
+EVENTBRITE_PLACES = {
+    'tulsa': '101714291',
+    'oklahoma-city': '101714211',
+    'broken-arrow': '101712989',
+}
+
+async def extract_eventbrite_api_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Extract events from Eventbrite using their internal API.
+    Works for any Eventbrite search/destination page.
+
+    Returns: (events_list, was_detected)
+    """
+    # Check if this is an Eventbrite URL
+    if 'eventbrite.com' not in url.lower():
+        return [], False
+
+    print(f"[Eventbrite API] Detected Eventbrite URL, using API...")
+
+    # Determine place ID from URL or default to Tulsa
+    place_id = EVENTBRITE_PLACES['tulsa']  # Default
+    url_lower = url.lower()
+    for city, pid in EVENTBRITE_PLACES.items():
+        if city in url_lower:
+            place_id = pid
+            break
+
+    events = []
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # First, get cookies by visiting the main page
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Referer': 'https://www.eventbrite.com/',
+                'Origin': 'https://www.eventbrite.com',
+            }
+
+            # Call the search API
+            api_url = 'https://www.eventbrite.com/home/api/search/'
+            payload = {
+                'placeId': place_id,
+                'tab': 'all'
+            }
+
+            print(f"[Eventbrite API] Fetching events for place ID {place_id}...")
+            response = await client.post(api_url, json=payload, headers=headers)
+
+            if response.status_code != 200:
+                print(f"[Eventbrite API] API returned status {response.status_code}")
+                return [], False
+
+            data = response.json()
+            raw_events = data.get('events', [])
+            print(f"[Eventbrite API] Got {len(raw_events)} events")
+
+            for evt in raw_events:
+                try:
+                    # Extract basic info
+                    title = evt.get('name', '')
+                    if not title:
+                        continue
+
+                    # Build start datetime
+                    start_date = evt.get('start_date', '')
+                    start_time = evt.get('start_time', '00:00:00')
+                    if start_date:
+                        date_str = f"{start_date}T{start_time}"
+                    else:
+                        date_str = ''
+
+                    # Get venue info
+                    venue_data = evt.get('primary_venue', {}) or {}
+                    venue_name = venue_data.get('name', 'TBA')
+
+                    address_data = venue_data.get('address', {}) or {}
+                    venue_address = ''
+                    if address_data:
+                        parts = []
+                        if address_data.get('address_1'):
+                            parts.append(address_data['address_1'])
+                        if address_data.get('city'):
+                            parts.append(address_data['city'])
+                        if address_data.get('region'):
+                            parts.append(address_data['region'])
+                        if address_data.get('postal_code'):
+                            parts.append(address_data['postal_code'])
+                        venue_address = ', '.join(parts)
+
+                    # Get pricing
+                    ticket_info = evt.get('ticket_availability', {}) or {}
+                    is_free = ticket_info.get('is_free', False)
+
+                    price_min = None
+                    price_max = None
+                    if is_free:
+                        price_min = 0
+                        price_max = 0
+                    else:
+                        min_price = ticket_info.get('minimum_ticket_price', {})
+                        max_price = ticket_info.get('maximum_ticket_price', {})
+                        if min_price:
+                            try:
+                                price_min = float(min_price.get('major_value', 0))
+                            except (ValueError, TypeError):
+                                pass
+                        if max_price:
+                            try:
+                                price_max = float(max_price.get('major_value', 0))
+                            except (ValueError, TypeError):
+                                pass
+
+                    # Get image
+                    image_data = evt.get('image', {}) or {}
+                    image_url = image_data.get('url', '')
+
+                    # Get event URL
+                    event_url = evt.get('url', '')
+                    if not event_url:
+                        event_id = evt.get('id', '')
+                        if event_id:
+                            event_url = f"https://www.eventbrite.com/e/{event_id}"
+
+                    # Get description/summary
+                    description = evt.get('summary', '') or ''
+
+                    # Check if online event
+                    is_online = evt.get('is_online_event', False)
+                    if is_online:
+                        venue_name = 'Online Event'
+
+                    event = {
+                        'title': title,
+                        'date': date_str,
+                        'venue': venue_name,
+                        'venue_address': venue_address,
+                        'description': description[:500] if description else '',
+                        'url': event_url,
+                        'image_url': image_url,
+                        'price_min': price_min,
+                        'price_max': price_max,
+                        'source': source_name or 'Eventbrite',
+                        'categories': [],
+                    }
+
+                    events.append(event)
+
+                except Exception as e:
+                    print(f"[Eventbrite API] Error parsing event: {e}")
+                    continue
+
+            print(f"[Eventbrite API] Successfully extracted {len(events)} events")
+            return events, True
+
+    except Exception as e:
+        print(f"[Eventbrite API] Error: {e}")
+        return [], False
+
+
+# ============================================================================
 # VISITTULSA / SIMPLEVIEW CMS EXTRACTOR
 # ============================================================================
 
@@ -3028,7 +3387,23 @@ def scrape():
                 methods.append(f"BOK Center API ({len(events)})")
                 print(f"[BOK Center] SUCCESS: {len(events)} events via API")
 
-        # PRIORITY 4: Try Simpleview CMS API (VisitTulsa, etc.)
+        # PRIORITY 4: Try Expo Square (Saffire) API
+        if not events:
+            expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
+            if expo_detected and expo_events:
+                events = expo_events
+                methods.append(f"Expo Square API ({len(events)})")
+                print(f"[Expo Square] SUCCESS: {len(events)} events via API")
+
+        # PRIORITY 5: Try Eventbrite API
+        if not events:
+            eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, source_name, url, future_only))
+            if eb_detected and eb_events:
+                events = eb_events
+                methods.append(f"Eventbrite API ({len(events)})")
+                print(f"[Eventbrite] SUCCESS: {len(events)} events via API")
+
+        # PRIORITY 6: Try Simpleview CMS API (VisitTulsa, etc.)
         if not events:
             sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, future_only))
             if sv_detected and sv_events:

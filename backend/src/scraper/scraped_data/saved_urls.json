@@ -23,5 +23,55 @@
     "url": "https://www.visittulsa.com/events/",
     "name": "visit tulsa",
     "playwright": true
+  },
+  {
+    "url": "https://philbrook.org/calendar/",
+    "name": "Philbrook",
+    "playwright": true
+  },
+  {
+    "url": "https://my.gilcrease.org/events?view=list&span=month&k=public%20events&_gl=1*5lnc6k*_ga*MTk5ODE2Nzc3LjE3NzA5NDYzMDE.*_ga_G0ZQJL5W12*czE3NzA5NDYzMDEkbzEkZzAkdDE3NzA5NDYzMDEkajYwJGwwJGgw",
+    "name": "Gilcrease",
+    "playwright": true
+  },
+  {
+    "url": "https://bobdylancenter.com/events/",
+    "name": "Bob Dylan Center",
+    "playwright": true
+  },
+  {
+    "url": "https://www.gatheringplace.org/parkcalendar",
+    "name": "Gathering Place",
+    "playwright": true
+  },
+  {
+    "url": "https://cca.sandspringschamber.org/EvtListingMainSearch.aspx?class=B",
+    "name": "Sand Springs",
+    "playwright": true
+  },
+  {
+    "url": "https://www.cityoftulsa.org/apps/TulsaCouncilArchive",
+    "name": "City of tulsa",
+    "playwright": true
+  },
+  {
+    "url": "https://tulsaparks.recdesk.com/Community/Calendar",
+    "name": "Tulsa parks",
+    "playwright": true
+  },
+  {
+    "url": "https://www.eventbrite.com/",
+    "name": "Eventbrite",
+    "playwright": true
+  },
+  {
+    "url": "https://www.eventbrite.com/d/ok--tulsa/all-events/",
+    "name": "Eventbrite",
+    "playwright": true
+  },
+  {
+    "url": "https://www.exposquare.com/events",
+    "name": "expo",
+    "playwright": true
   }
 ]
