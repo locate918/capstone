@@ -33,7 +33,7 @@ use uuid::Uuid;
 // DATA STRUCTURES
 // =============================================================================
 
-/// Event model returned from API (includes venue_website from JOIN)
+/// Event model returned from API (includes venue data from JOIN)
 #[derive(Debug, Serialize, FromRow)]
 pub struct Event {
     pub id: Uuid,
@@ -54,11 +54,13 @@ pub struct Event {
     pub image_url: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    // NEW: venue website from venues table
+    // Venue data from venues table via LEFT JOIN
     pub venue_website: Option<String>,
+    pub venue_latitude: Option<f64>,
+    pub venue_longitude: Option<f64>,
 }
 
-/// Payload for creating/updating events (no venue_website - that comes from venues table)
+/// Payload for creating/updating events (no venue fields - those come from venues table)
 #[derive(Debug, Deserialize)]
 pub struct CreateEvent {
     pub title: String,
@@ -105,7 +107,7 @@ pub struct ListQuery {
 // =============================================================================
 
 /// Returns all upcoming events, sorted by start time.
-/// Includes venue_website from venues table via LEFT JOIN.
+/// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
 /// # Endpoint
 /// `GET /api/events`
@@ -123,7 +125,9 @@ async fn list_events(
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website
+            v.website AS venue_website,
+            v.latitude AS venue_latitude,
+            v.longitude AS venue_longitude
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.start_time >= NOW()
@@ -147,7 +151,7 @@ async fn list_events(
 // =============================================================================
 
 /// Returns a single event by its UUID.
-/// Includes venue_website from venues table via LEFT JOIN.
+/// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
 /// # Endpoint
 /// `GET /api/events/:id`
@@ -162,7 +166,9 @@ async fn get_event(
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website
+            v.website AS venue_website,
+            v.latitude AS venue_latitude,
+            v.longitude AS venue_longitude
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.id = $1
@@ -253,7 +259,7 @@ async fn create_event(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Then fetch the event with venue_website JOIN
+    // Then fetch the event with venue data JOIN
     let event = sqlx::query_as::<_, Event>(
         r#"
         SELECT
@@ -261,7 +267,9 @@ async fn create_event(
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website
+            v.website AS venue_website,
+            v.latitude AS venue_latitude,
+            v.longitude AS venue_longitude
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.source_url = $1
@@ -323,7 +331,7 @@ pub struct SearchQuery {
 // =============================================================================
 
 /// Advanced search with multiple filters.
-/// Includes venue_website from venues table via LEFT JOIN.
+/// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
 /// # Endpoint
 /// `GET /api/events/search?q=jazz&outdoor=true&limit=20`
@@ -403,7 +411,9 @@ async fn search_events(
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website
+            v.website AS venue_website,
+            v.latitude AS venue_latitude,
+            v.longitude AS venue_longitude
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE {}

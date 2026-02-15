@@ -150,6 +150,10 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
 /**
  * Transform backend event format to frontend format.
  * Maps database fields to what the UI components expect.
+ *
+ * Coordinates come from the venues table via LEFT JOIN in the backend.
+ * Events at venues without geocoded coordinates will have null coordinates
+ * and won't show map pins (but still appear in list/search results).
  */
 const transformBackendEvents = (events) => {
     return events.map((event) => ({
@@ -168,7 +172,10 @@ const transformBackendEvents = (events) => {
         price_max: event.price_max,
         outdoor: event.outdoor,
         family_friendly: event.family_friendly,
-        coordinates: event.coordinates || getDefaultCoordinates(event.location),
+        // Use real coordinates from venues table, null if not geocoded
+        coordinates: (event.venue_latitude && event.venue_longitude)
+            ? { lat: event.venue_latitude, lng: event.venue_longitude }
+            : null,
         ai_analysis: {
             noise_level: event.outdoor ? "Medium (Outdoor)" : "Medium",
             networking_pressure: "Medium",
@@ -217,16 +224,6 @@ const getDefaultImage = (categories) => {
     };
 
     return imageMap[firstCategory] || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80";
-};
-
-/**
- * Get default coordinates for Tulsa area.
- */
-const getDefaultCoordinates = (location) => {
-    return {
-        lat: 36.1539 + (Math.random() - 0.5) * 0.02,
-        lng: -95.9928 + (Math.random() - 0.5) * 0.02,
-    };
 };
 
 // =============================================================================
