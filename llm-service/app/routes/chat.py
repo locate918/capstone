@@ -51,7 +51,8 @@ async def execute_search_events(args: dict):
                         "venue": e.get("venue"),
                         "price": f"{e.get('price_min')} - {e.get('price_max')}",
                         "description": (e.get("description") or "")[:200] + "...",  # Truncate description
-                        "categories": e.get("categories")
+                        "categories": e.get("categories"),
+                        "source_url": e.get("source_url")
                     })
                 
                 return {"events": simplified_events, "count": len(events)}
