@@ -1321,20 +1321,18 @@ def extract_dice_events(soup, base_url: str, source_name: str) -> list:
 def extract_bandsintown_events(soup, base_url: str, source_name: str) -> list:
     """
     Extract events from Bandsintown embeds or widgets.
+    Only captures actual event links (containing /e/ in the URL path).
+    Filters out navigation elements, genre filters, and UI chrome.
     """
     events = []
     seen = set()
 
-    # Look for Bandsintown links or widgets
-    bit_links = soup.select('a[href*="bandsintown.com"], a[href*="bit.ly"], [class*="bandsintown"]')
-
-    # Also look for BIT widget data
-    bit_widgets = soup.select('[data-bit-widget], .bit-widget, #bandsintown-widget')
+    # Only match actual event detail links (they contain /e/ in the path)
+    # This filters out nav links like /today/, /all-dates/genre/, etc.
+    bit_links = soup.select('a[href*="bandsintown.com/e/"]')
 
     for link in bit_links:
         href = link.get('href', '')
-        if 'bandsintown.com' not in href and 'bit.ly' not in href:
-            continue
         if href in seen:
             continue
         seen.add(href)
@@ -1343,17 +1341,35 @@ def extract_bandsintown_events(soup, base_url: str, source_name: str) -> list:
         if not title or len(title) < 3:
             continue
 
-        # Get date from parent
-        date_str = ''
-        parent = link.find_parent(['div', 'li', 'tr'])
-        if parent:
-            date_el = parent.select_one('time, [class*="date"]')
-            if date_el:
-                date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+        # Clean up BIT titles that concatenate artist + venue + date
+        # Pattern: "Artist NameVenue NameFeb 14 - 9:00 PM"
+        # Look for date pattern and truncate there
+        date_match = re.search(
+            r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}',
+            title
+        )
+        event_date = ''
+        if date_match:
+            # Extract date portion
+            date_portion = title[date_match.start():]
+            event_date = date_portion.strip()
+            # Title is everything before the date
+            title = title[:date_match.start()].strip()
+
+        if not title:
+            continue
+
+        # Get date from parent if we didn't extract one
+        if not event_date:
+            parent = link.find_parent(['div', 'li', 'tr'])
+            if parent:
+                date_el = parent.select_one('time, [class*="date"]')
+                if date_el:
+                    event_date = date_el.get('datetime', '') or date_el.get_text(strip=True)
 
         events.append({
             'title': title,
-            'date': date_str,
+            'date': event_date,
             'source_url': href,
             'tickets_url': href,
             'source': source_name,
