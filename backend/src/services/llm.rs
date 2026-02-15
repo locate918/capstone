@@ -360,68 +360,64 @@ const EVENT_COLUMNS: &str = r#"
 
 /// Search events using the extracted parameters.
 ///
-/// Builds a dynamic query based on which parameters are present.
-/// Matches the logic in `routes/events.rs` search_events handler.
+/// Builds a dynamic query with parameterized bindings to prevent SQL injection.
+/// Uses the same bind-parameter pattern as `routes/events.rs::search_events`.
 async fn search_events_with_params(
     params: &SearchParams,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<Event>, sqlx::Error> {
-    // Build dynamic WHERE conditions
+    // Build dynamic WHERE clauses using bind parameter indices ($1, $2, etc.)
     let mut conditions: Vec<String> = vec![];
+    let mut bind_index: i32 = 1;
 
     // Text search in title/description
-    if let Some(ref q) = params.query {
+    if let Some(ref _q) = params.query {
         conditions.push(format!(
-            "(title ILIKE '%{}%' OR description ILIKE '%{}%')",
-            q.replace('\'', "''"),
-            q.replace('\'', "''")
+            "(title ILIKE ${} OR description ILIKE ${})",
+            bind_index, bind_index + 1
         ));
+        bind_index += 2;
     }
 
     // Category filter (check if category is in the categories array)
-    if let Some(ref cat) = params.category {
-        conditions.push(format!(
-            "'{}' = ANY(categories)",
-            cat.replace('\'', "''")
-        ));
+    if let Some(ref _cat) = params.category {
+        conditions.push(format!("${} = ANY(categories)", bind_index));
+        bind_index += 1;
     }
 
     // Date range filters
-    if let Some(ref date_from) = params.date_from {
-        conditions.push(format!("start_time >= '{}'", date_from));
+    if let Some(ref _date_from) = params.date_from {
+        conditions.push(format!("start_time >= ${}", bind_index));
+        bind_index += 1;
     } else {
         // Default: only future events
         conditions.push("start_time >= NOW()".to_string());
     }
 
-    if let Some(ref date_to) = params.date_to {
-        conditions.push(format!("start_time <= '{}'", date_to));
+    if let Some(ref _date_to) = params.date_to {
+        conditions.push(format!("start_time <= ${}", bind_index));
+        bind_index += 1;
     }
 
     // Location filter
-    if let Some(ref loc) = params.location {
-        conditions.push(format!(
-            "location ILIKE '%{}%'",
-            loc.replace('\'', "''")
-        ));
+    if let Some(ref _loc) = params.location {
+        conditions.push(format!("location ILIKE ${}", bind_index));
+        bind_index += 1;
     }
 
     // Price filter
-    if let Some(max_price) = params.price_max {
-        conditions.push(format!(
-            "(price_min IS NULL OR price_min <= {})",
-            max_price
-        ));
+    if let Some(ref _max_price) = params.price_max {
+        conditions.push(format!("(price_min IS NULL OR price_min <= ${})", bind_index));
+        bind_index += 1;
     }
 
-    // Outdoor filter
-    if let Some(outdoor) = params.outdoor {
-        conditions.push(format!("outdoor = {}", outdoor));
+    // Boolean filters (safe to inline — these are Rust bools, not user strings)
+    if let Some(true) = params.outdoor {
+        conditions.push("outdoor = TRUE".to_string());
     }
 
-    // Family-friendly filter
-    if let Some(ff) = params.family_friendly {
-        conditions.push(format!("family_friendly = {}", ff));
+    if let Some(true) = params.family_friendly {
+        conditions.push("family_friendly = TRUE".to_string());
     }
 
     // Build WHERE clause
@@ -431,13 +427,39 @@ async fn search_events_with_params(
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // Build and execute query
+    // Build query string
     let query = format!(
         "SELECT {} FROM events {} ORDER BY start_time ASC LIMIT 20",
         EVENT_COLUMNS, where_clause
     );
 
-    sqlx::query_as::<_, Event>(&query)
-        .fetch_all(pool)
-        .await
+    // Bind parameters in the same order they appear in the query
+    let mut query_builder = sqlx::query_as::<_, Event>(&query);
+
+    if let Some(ref q) = params.query {
+        let pattern = format!("%{}%", q);
+        query_builder = query_builder.bind(pattern.clone()).bind(pattern);
+    }
+
+    if let Some(ref cat) = params.category {
+        query_builder = query_builder.bind(cat);
+    }
+
+    if let Some(ref date_from) = params.date_from {
+        query_builder = query_builder.bind(date_from);
+    }
+
+    if let Some(ref date_to) = params.date_to {
+        query_builder = query_builder.bind(date_to);
+    }
+
+    if let Some(ref loc) = params.location {
+        query_builder = query_builder.bind(format!("%{}%", loc));
+    }
+
+    if let Some(ref max_price) = params.price_max {
+        query_builder = query_builder.bind(max_price);
+    }
+
+    query_builder.fetch_all(pool).await
 }

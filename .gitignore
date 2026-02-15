@@ -1,3 +1,5 @@
+# Overwrite .gitignore with fixed version
+@"
 # Rust
 target/
 Cargo.lock
@@ -28,4 +30,21 @@ npm-debug.log*
 # Secrets
 .env
 *.pem
-*.key*.bak
+*.key
+
+# Backup files
+*.bak
+
+# Scraped data output (transient, not source code)
+backend/src/scraper/scraped_data/
+
+# Data exports and database dumps
+*.csv
+locate918_backup.sql
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+"@ | Set-Content -Path .gitignore -Encoding UTF8
