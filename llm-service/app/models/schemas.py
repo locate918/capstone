@@ -62,6 +62,7 @@ class SearchRequest(BaseModel):
 
 class SearchResponse(BaseModel):
     parsed_params: Dict[str, Any]
+    events: List[Dict[str, Any]] = []
 
 class ChatRequest(BaseModel):
     # Allow frontend to send 'userId' and 'conversationHistory' (camelCase)

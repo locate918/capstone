@@ -59,12 +59,14 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
     Output a valid JSON object with any of the following keys based on the query: 
     q, category, start_date, end_date, price_max, location, family_friendly, outdoor.
     Use null for missing fields.
+    IMPORTANT: If the query contains keywords that are not categories or dates, map them to 'q'. Do not ignore short words like "bad" or "fun".
+    Do not infer categories or dates from proper nouns (e.g. band names, venues). Only extract categories if words like 'concert', 'festival', 'music' appear explicitly.
     For dates, convert "this weekend" or "tomorrow" to approximate ISO dates based on current context.
     """
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-2.5-flash-lite',
         contents=[base_prompt, message],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
@@ -104,7 +106,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
 
     client = get_client()
     chat = client.aio.chats.create(
-        model='gemini-2.0-flash',
+        model='gemini-2.5-flash-lite',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
             system_instruction=system_instruction
@@ -189,7 +191,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-2.5-flash-lite',
         contents=[base_prompt, raw_content[:150000]],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
