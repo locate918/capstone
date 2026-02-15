@@ -76,6 +76,82 @@ HEADERS = {"User-Agent": "Locate918 Event Aggregator (educational project)"}
 # Cache for robots.txt parsers (avoid re-fetching)
 _robots_cache = {}
 
+# Cache for venue websites (avoid re-fetching listing pages)
+_venue_website_cache = {}
+
+
+def fetch_venue_website_from_listing(listing_url: str, base_url: str = "https://www.visittulsa.com") -> str:
+    """
+    Fetch a venue's website URL from their VisitTulsa listing page.
+    Parses the HTML to find the "Visit Website" link.
+
+    Args:
+        listing_url: Relative URL like "/listing/circle-cinema/123/"
+        base_url: Base URL of the site
+
+    Returns:
+        The venue's website URL, or empty string if not found
+    """
+    if not listing_url:
+        return ''
+
+    # Check cache first
+    cache_key = listing_url
+    if cache_key in _venue_website_cache:
+        return _venue_website_cache[cache_key]
+
+    try:
+        # Build full URL
+        if listing_url.startswith('/'):
+            full_url = base_url + listing_url
+        elif not listing_url.startswith('http'):
+            full_url = base_url + '/' + listing_url
+        else:
+            full_url = listing_url
+
+        # Fetch the listing page
+        resp = httpx.get(full_url, headers=HEADERS, timeout=10, follow_redirects=True)
+        if resp.status_code != 200:
+            _venue_website_cache[cache_key] = ''
+            return ''
+
+        # Parse HTML
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Look for "Visit Website" link - common patterns
+        # 1. Link with text "Visit Website"
+        for link in soup.find_all('a', href=True):
+            link_text = link.get_text(strip=True).lower()
+            if 'visit website' in link_text or 'official website' in link_text:
+                href = link['href']
+                # Skip internal links and aggregator links
+                if href.startswith('http') and 'visittulsa.com' not in href:
+                    _venue_website_cache[cache_key] = href
+                    return href
+
+        # 2. Link with class containing "website"
+        for link in soup.find_all('a', class_=lambda c: c and 'website' in c.lower() if c else False):
+            href = link.get('href', '')
+            if href.startswith('http') and 'visittulsa.com' not in href:
+                _venue_website_cache[cache_key] = href
+                return href
+
+        # 3. Look for links in a "contact" or "info" section
+        for section in soup.find_all(['div', 'section'], class_=lambda c: c and any(x in c.lower() for x in ['contact', 'info', 'details']) if c else False):
+            for link in section.find_all('a', href=True):
+                href = link['href']
+                if href.startswith('http') and 'visittulsa.com' not in href and 'google.com' not in href and 'facebook.com' not in href:
+                    _venue_website_cache[cache_key] = href
+                    return href
+
+        _venue_website_cache[cache_key] = ''
+        return ''
+
+    except Exception as e:
+        print(f"[VenueWebsite] Error fetching {listing_url}: {e}")
+        _venue_website_cache[cache_key] = ''
+        return ''
+
 
 def check_robots_txt(url: str) -> dict:
     """
@@ -2032,11 +2108,25 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                             if not title:
                                 continue
 
-                            # Parse date range
+                            # Parse date range (e.g., "Feb 13 - Feb 15, 2026")
                             date_range = evt.get('EventDateRangeString', '')
-                            date_str = day.get('DateString', '')
+                            date_str = day.get('DateString', '')  # e.g., "02/13/2026"
 
-                            # Get detail URL
+                            # Try to extract end date from range
+                            end_date_str = None
+                            if date_range and '-' in date_range:
+                                # Parse "Feb 13 - Feb 15, 2026" format
+                                try:
+                                    parts = date_range.split('-')
+                                    if len(parts) == 2:
+                                        end_part = parts[1].strip()
+                                        # Parse the end date
+                                        from dateutil import parser as date_parser
+                                        end_date_str = str(date_parser.parse(end_part, fuzzy=True).date())
+                                except:
+                                    pass
+
+                            # Get detail URL - this is the actual event page
                             detail_url = evt.get('DetailURL', '')
 
                             # Get image
@@ -2046,8 +2136,10 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
 
                             # Get description
                             description = evt.get('ShortDescription', '') or evt.get('LongDescription', '') or ''
+                            if not description and date_range:
+                                description = date_range
 
-                            # Get location
+                            # Get location/venue
                             locations = evt.get('Locations', [])
                             venue = 'Expo Square'
                             if locations and isinstance(locations, list) and len(locations) > 0:
@@ -2055,16 +2147,30 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                                 if isinstance(loc, dict):
                                     venue = loc.get('Name', 'Expo Square') or 'Expo Square'
 
+                            # Get categories from CategoryMaps
+                            categories = []
+                            cat_maps = evt.get('CategoryMaps', [])
+                            if cat_maps and isinstance(cat_maps, list):
+                                for cat in cat_maps:
+                                    if isinstance(cat, dict):
+                                        cat_name = cat.get('CategoryName', '')
+                                        if cat_name:
+                                            categories.append(cat_name)
+
                             event = {
                                 'title': title,
-                                'date': date_str,
+                                'start_time': date_str,
+                                'end_time': end_date_str,
                                 'venue': venue,
                                 'venue_address': '4145 E 21st St, Tulsa, OK 74114',
-                                'description': description[:500] if description else f'{date_range}',
-                                'url': detail_url,
+                                'location': 'Tulsa',
+                                'description': description[:500] if description else '',
+                                'source_url': detail_url,  # Actual event page
                                 'image_url': image_url,
-                                'source': source_name or 'Expo Square',
-                                'categories': [],
+                                'source_name': source_name or 'Expo Square',
+                                'categories': categories if categories else [],
+                                'outdoor': False,
+                                'family_friendly': False,
                             }
 
                             events.append(event)
@@ -2209,7 +2315,7 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                     image_data = evt.get('image', {}) or {}
                     image_url = image_data.get('url', '')
 
-                    # Get event URL
+                    # Get event URL - this is the actual event detail page
                     event_url = evt.get('url', '')
                     if not event_url:
                         event_id = evt.get('id', '')
@@ -2224,18 +2330,33 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                     if is_online:
                         venue_name = 'Online Event'
 
+                    # Get end time
+                    end_date = evt.get('end_date', '')
+                    end_time = evt.get('end_time', '')
+                    end_datetime = ''
+                    if end_date:
+                        end_datetime = f"{end_date}T{end_time}" if end_time else end_date
+
+                    # Get city/location from address
+                    city = address_data.get('city', 'Tulsa') if address_data else 'Tulsa'
+
                     event = {
                         'title': title,
-                        'date': date_str,
+                        'start_time': date_str,  # Use start_time instead of date
+                        'end_time': end_datetime if end_datetime else None,
                         'venue': venue_name,
                         'venue_address': venue_address,
+                        'location': city,  # City/area
                         'description': description[:500] if description else '',
-                        'url': event_url,
+                        'source_url': event_url,  # Actual event page URL
                         'image_url': image_url,
                         'price_min': price_min,
                         'price_max': price_max,
-                        'source': source_name or 'Eventbrite',
+                        'is_free': is_free,
+                        'source_name': source_name or 'Eventbrite',
                         'categories': [],
+                        'outdoor': False,  # Could be inferred later
+                        'family_friendly': False,  # Could be inferred later
                     }
 
                     events.append(event)
@@ -2405,12 +2526,19 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
 
             print(f"[Simpleview] Got {len(docs)} events (total available: {total_count})")
 
-            # Debug first doc structure
+            # Debug first doc structure - print ALL keys and look for URL fields
             if docs and len(docs) > 0:
                 first_doc = docs[0]
                 print(f"[Simpleview] First doc type: {type(first_doc)}")
                 if isinstance(first_doc, dict):
-                    print(f"[Simpleview] First doc keys: {list(first_doc.keys())[:15]}")
+                    print(f"[Simpleview] First doc keys: {list(first_doc.keys())}")
+                    # Debug: print any field that might contain a URL
+                    for key in first_doc.keys():
+                        val = first_doc.get(key)
+                        if isinstance(val, str) and ('http' in val or 'url' in key.lower() or 'link' in key.lower() or 'ticket' in key.lower() or 'web' in key.lower()):
+                            print(f"[Simpleview] URL field '{key}': {val[:200]}")
+                        elif isinstance(val, dict):
+                            print(f"[Simpleview] Dict field '{key}' keys: {list(val.keys())}")
                 else:
                     print(f"[Simpleview] First doc value: {str(first_doc)[:200]}")
 
@@ -2440,10 +2568,50 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                     else:
                         date_str = doc.get('date', '')
 
-                    # Get URL
-                    event_url = doc.get('url', '')
-                    if event_url and not event_url.startswith('http'):
-                        event_url = base_url + event_url
+                    # Get URL - prioritize external ticket URL over listing page
+                    event_url = ''
+
+                    # First, look for external/ticket URLs (the actual event page, not VisitTulsa)
+                    external_url = (
+                            doc.get('ticketUrl') or
+                            doc.get('ticket_url') or
+                            doc.get('externalUrl') or
+                            doc.get('external_url') or
+                            doc.get('registrationUrl') or
+                            doc.get('registration_url') or
+                            doc.get('eventUrl') or
+                            doc.get('event_url') or
+                            doc.get('websiteUrl') or
+                            doc.get('website_url') or
+                            doc.get('link') or
+                            ''
+                    )
+
+                    # Check listing object for external URL
+                    listing = doc.get('listing')
+                    if not external_url and listing and isinstance(listing, dict):
+                        external_url = (
+                                listing.get('ticketUrl') or
+                                listing.get('externalUrl') or
+                                listing.get('websiteUrl') or
+                                listing.get('website') or
+                                listing.get('web') or
+                                ''
+                        )
+
+                    # Use external URL if found, otherwise fall back to listing page
+                    if external_url:
+                        event_url = external_url
+                        if not event_url.startswith('http'):
+                            if event_url.startswith('www.'):
+                                event_url = 'https://' + event_url
+                            elif '.' in event_url:
+                                event_url = 'https://' + event_url
+                    else:
+                        # Fall back to VisitTulsa event page
+                        event_url = doc.get('url', '')
+                        if event_url and not event_url.startswith('http'):
+                            event_url = base_url + event_url
 
                     # Get venue/location - prioritize 'location' field (has actual venue name)
                     venue = ''
@@ -2495,17 +2663,46 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                     lng = doc.get('longitude')
                     location = f"{lat},{lng}" if lat and lng else None
 
+                    # Get venue website directly from listing object in API response
+                    venue_website = ''
+                    listing = doc.get('listing')
+                    if listing and isinstance(listing, dict):
+                        # Debug: print listing keys on first event to see what's available
+                        if i == 0:
+                            print(f"[Simpleview] Listing object keys: {list(listing.keys())}")
+
+                        # Try common website field names
+                        venue_website = (
+                                listing.get('website') or
+                                listing.get('websiteUrl') or
+                                listing.get('web') or
+                                listing.get('url_website') or
+                                listing.get('externalUrl') or
+                                ''
+                        )
+
+                        # If website found, ensure it's a full URL
+                        if venue_website and not venue_website.startswith('http'):
+                            if venue_website.startswith('www.'):
+                                venue_website = 'https://' + venue_website
+                            elif '.' in venue_website:
+                                venue_website = 'https://' + venue_website
+
                     events.append({
                         'title': title,
-                        'date': date_str,
-                        'source_url': event_url or f"{base_url}/events/",
-                        'source': source_name,
+                        'start_time': date_str,  # Use start_time
+                        'end_time': doc.get('endDate'),  # Capture end date if available
+                        'source_url': event_url or f"{base_url}/events/",  # Actual event page
+                        'source_name': source_name,
                         'venue': venue or source_name,
                         'venue_address': address,
+                        'location': 'Tulsa',  # Default location
                         'description': description,
                         'image_url': image_url,
-                        'categories': categories if categories else None,
-                        'location': location,
+                        'categories': categories if categories else [],
+                        'outdoor': False,
+                        'family_friendly': False,
+                        '_venue_website': venue_website,  # Website from API listing object
                     })
                 except Exception as doc_err:
                     print(f"[Simpleview] Error processing doc {i}: {doc_err}")
@@ -3087,6 +3284,118 @@ HTML_TEMPLATE = '''
         </div>
     </div>
     
+    <!-- Venue Manager Section -->
+    <div class="card" id="venue-manager">
+        <h3>🏛️ Venue Manager</h3>
+        <p style="color:#666;font-size:12px;margin-bottom:15px;">
+            Fill in missing venue data. Generate SQL for Supabase.
+        </p>
+        
+        <div class="btn-group" style="margin-bottom:15px;">
+            <button class="btn btn-secondary" onclick="loadIncompleteVenues()">📋 Load Incomplete</button>
+            <button class="btn btn-secondary" onclick="toggleManualEntry()">✏️ Manual Entry</button>
+            <button class="btn btn-secondary" onclick="toggleSQLOutput()">📄 View SQL</button>
+        </div>
+        
+        <div id="venue-stats" class="hidden" style="margin-bottom:15px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;">
+            <span style="color:#D4AF37;font-weight:bold;" id="venue-count">0</span> total venues, 
+            <span style="color:#dc3545;font-weight:bold;" id="incomplete-count">0</span> need data
+        </div>
+        
+        <!-- Incomplete venues list -->
+        <div id="incomplete-venues" class="hidden" style="max-height:250px;overflow-y:auto;margin-bottom:15px;"></div>
+        
+        <!-- Manual entry form -->
+        <div id="manual-entry" class="hidden" style="background:rgba(0,0,0,0.2);padding:15px;border-radius:8px;margin-bottom:15px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Venue Name *</label>
+                    <input type="text" id="ve-name" placeholder="Cain's Ballroom" />
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" id="ve-address" placeholder="423 N Main St, Tulsa, OK 74103" />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Capacity</label>
+                    <input type="number" id="ve-capacity" placeholder="1700" />
+                </div>
+                <div class="form-group">
+                    <label>Venue Type</label>
+                    <select id="ve-type" style="width:100%;padding:10px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;">
+                        <option value="">Select type...</option>
+                        <option value="Arena">Arena</option>
+                        <option value="Concert Hall">Concert Hall</option>
+                        <option value="Bar/Club">Bar/Club</option>
+                        <option value="Theater">Theater</option>
+                        <option value="Museum">Museum</option>
+                        <option value="Gallery">Gallery</option>
+                        <option value="Restaurant">Restaurant</option>
+                        <option value="Brewery">Brewery</option>
+                        <option value="Coffee Shop">Coffee Shop</option>
+                        <option value="Park">Park</option>
+                        <option value="Church">Church</option>
+                        <option value="Library">Library</option>
+                        <option value="University">University</option>
+                        <option value="Casino">Casino</option>
+                        <option value="Hotel">Hotel</option>
+                        <option value="Conference Center">Conference Center</option>
+                        <option value="Venue">Other Venue</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Noise Level</label>
+                    <select id="ve-noise" style="width:100%;padding:10px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;">
+                        <option value="">Select...</option>
+                        <option value="Quiet">Quiet</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Loud">Loud</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Website</label>
+                    <input type="url" id="ve-website" placeholder="https://..." />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Parking Info</label>
+                <input type="text" id="ve-parking" placeholder="On-site parking available. Street parking free after 5pm." />
+            </div>
+            <div class="form-group">
+                <label>Accessibility Info</label>
+                <input type="text" id="ve-access" placeholder="Wheelchair accessible. Elevators available." />
+            </div>
+            
+            <div class="btn-group" style="margin-top:15px;">
+                <button class="btn btn-primary" onclick="lookupVenueGoogle()">🔍 Lookup (Google)</button>
+                <button class="btn btn-success" onclick="addToSQLQueue()">➕ Add to SQL</button>
+                <button class="btn btn-secondary" onclick="clearManualEntry()">Clear</button>
+            </div>
+        </div>
+        
+        <!-- Paste box for edge cases -->
+        <div id="paste-box" class="hidden" style="margin-bottom:15px;">
+            <label>📋 Paste Info (from web research)</label>
+            <textarea id="paste-text" style="width:100%;height:80px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:10px;font-size:12px;" placeholder="Paste venue info here... Address, hours, parking, etc."></textarea>
+            <button class="btn btn-secondary" style="margin-top:8px;" onclick="parseFromPaste()">Parse Info</button>
+        </div>
+        
+        <!-- SQL output -->
+        <div id="sql-output" class="hidden">
+            <label>Generated SQL <span style="color:#666;font-size:11px;">(copy to Supabase)</span></label>
+            <textarea id="sql-text" style="width:100%;height:180px;background:#0a0a0a;color:#0f0;font-family:monospace;font-size:11px;border:1px solid #333;border-radius:6px;padding:10px;"></textarea>
+            <div class="btn-group" style="margin-top:10px;">
+                <button class="btn btn-secondary" onclick="copySQL()">📋 Copy</button>
+                <button class="btn btn-secondary" onclick="downloadSQL()">💾 Download</button>
+                <button class="btn btn-secondary" onclick="clearSQL()">🗑️ Clear</button>
+            </div>
+        </div>
+    </div>
+    
     <div class="footer">Scrape → Save → Done</div>
 </div>
 
@@ -3289,6 +3598,260 @@ function loadUrl(url, name, playwright) {
     }
 }
 
+// ========================================
+// VENUE MANAGER
+// ========================================
+
+let venueQueue = [];  // Queue of venues for SQL generation
+
+function toggleManualEntry() {
+    const el = document.getElementById('manual-entry');
+    const paste = document.getElementById('paste-box');
+    el.classList.toggle('hidden');
+    paste.classList.toggle('hidden');
+}
+
+function toggleSQLOutput() {
+    document.getElementById('sql-output').classList.toggle('hidden');
+}
+
+async function loadIncompleteVenues() {
+    status('Loading venues...', 'loading');
+    
+    try {
+        const r = await fetch('/api/venues/incomplete');
+        const data = await r.json();
+        
+        if (data.error) {
+            status('Error: ' + data.error, 'error');
+            return;
+        }
+        
+        document.getElementById('venue-stats').classList.remove('hidden');
+        document.getElementById('venue-count').textContent = data.total;
+        document.getElementById('incomplete-count').textContent = data.incomplete;
+        
+        const container = document.getElementById('incomplete-venues');
+        container.classList.remove('hidden');
+        
+        if (data.venues.length === 0) {
+            container.innerHTML = '<p style="color:#28a745;padding:10px;">✓ All venues have complete data!</p>';
+        } else {
+            container.innerHTML = data.venues.map(v => `
+                <div class="event-item" style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="flex:1;">
+                        <strong>${v.name}</strong>
+                        <p style="color:#dc3545;font-size:11px;">Missing: ${v.missing.join(', ')}</p>
+                    </div>
+                    <div style="display:flex;gap:5px;">
+                        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px;" 
+                                onclick="editVenue('${v.name.replace(/'/g, "\\'")}', '${(v.address||'').replace(/'/g, "\\'")}', '${(v.website||'').replace(/'/g, "\\'")}')">
+                            Edit
+                        </button>
+                        <button class="btn btn-primary" style="padding:4px 8px;font-size:10px;"
+                                onclick="autoLookup('${v.name.replace(/'/g, "\\'")}')">
+                            Auto
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        status('Loaded ' + data.incomplete + ' incomplete venues', 'success');
+        
+    } catch (e) {
+        status('Error: ' + e.message + ' (Is backend running?)', 'error');
+    }
+}
+
+function editVenue(name, address, website) {
+    document.getElementById('ve-name').value = name;
+    document.getElementById('ve-address').value = address || '';
+    document.getElementById('ve-website').value = website || '';
+    document.getElementById('manual-entry').classList.remove('hidden');
+    document.getElementById('paste-box').classList.remove('hidden');
+}
+
+async function autoLookup(name) {
+    document.getElementById('ve-name').value = name;
+    document.getElementById('manual-entry').classList.remove('hidden');
+    await lookupVenueGoogle();
+}
+
+async function lookupVenueGoogle() {
+    const name = document.getElementById('ve-name').value.trim();
+    if (!name) {
+        status('Enter venue name first', 'error');
+        return;
+    }
+    
+    status('Looking up ' + name + ' on Google...', 'loading');
+    
+    try {
+        const r = await fetch('/api/venues/lookup', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, city: 'Tulsa, OK'})
+        });
+        const data = await r.json();
+        
+        if (data.error) {
+            status('Not found or API error: ' + data.error, 'error');
+            return;
+        }
+        
+        // Fill in the form with found data
+        if (data.address) document.getElementById('ve-address').value = data.address;
+        if (data.website) document.getElementById('ve-website').value = data.website;
+        if (data.inferred_type) {
+            const sel = document.getElementById('ve-type');
+            for (let opt of sel.options) {
+                if (opt.value === data.inferred_type) { opt.selected = true; break; }
+            }
+        }
+        if (data.wheelchair_accessible !== null) {
+            document.getElementById('ve-access').value = data.wheelchair_accessible 
+                ? 'Wheelchair accessible entrance' 
+                : 'Contact venue for accessibility';
+        }
+        
+        status('Found! Review data and add to SQL.', 'success');
+        
+    } catch (e) {
+        status('Lookup error: ' + e.message, 'error');
+    }
+}
+
+function parseFromPaste() {
+    const text = document.getElementById('paste-text').value;
+    if (!text.trim()) return;
+    
+    // Try to extract address (look for patterns like "123 N Main St")
+    const addrMatch = text.match(/\d+\s+[NSEW]\.?\s+\w+\s+(St|Ave|Blvd|Dr|Rd|Way|Pl)[^,]*,?\s*(Tulsa|OK)?[^,]*,?\s*(OK\s*\d{5})?/i);
+    if (addrMatch && !document.getElementById('ve-address').value) {
+        document.getElementById('ve-address').value = addrMatch[0].trim();
+    }
+    
+    // Try to extract capacity (look for numbers followed by "capacity", "seats", etc.)
+    const capMatch = text.match(/(\d{1,5})\s*(capacity|seats|people|guests)/i) || 
+                     text.match(/(capacity|seats)[:\s]*(\d{1,5})/i);
+    if (capMatch && !document.getElementById('ve-capacity').value) {
+        const cap = capMatch[1].match(/\d+/) ? capMatch[1] : capMatch[2];
+        document.getElementById('ve-capacity').value = cap;
+    }
+    
+    // Try to extract website
+    const urlMatch = text.match(/https?:\/\/[^\s<>"]+/i);
+    if (urlMatch && !document.getElementById('ve-website').value) {
+        document.getElementById('ve-website').value = urlMatch[0];
+    }
+    
+    // Look for parking info
+    const parkMatch = text.match(/parking[^.]*\./i);
+    if (parkMatch && !document.getElementById('ve-parking').value) {
+        document.getElementById('ve-parking').value = parkMatch[0];
+    }
+    
+    // Look for accessibility info  
+    const accessMatch = text.match(/(wheelchair|ada|accessible|accessibility)[^.]*\./i);
+    if (accessMatch && !document.getElementById('ve-access').value) {
+        document.getElementById('ve-access').value = accessMatch[0];
+    }
+    
+    status('Parsed! Review and adjust as needed.', 'success');
+}
+
+function addToSQLQueue() {
+    const venue = {
+        name: document.getElementById('ve-name').value.trim(),
+        address: document.getElementById('ve-address').value.trim(),
+        capacity: document.getElementById('ve-capacity').value.trim(),
+        venue_type: document.getElementById('ve-type').value,
+        noise_level: document.getElementById('ve-noise').value,
+        website: document.getElementById('ve-website').value.trim(),
+        parking_info: document.getElementById('ve-parking').value.trim(),
+        accessibility_info: document.getElementById('ve-access').value.trim(),
+    };
+    
+    if (!venue.name) {
+        status('Venue name is required', 'error');
+        return;
+    }
+    
+    // Check if already in queue, update if so
+    const idx = venueQueue.findIndex(v => v.name.toLowerCase() === venue.name.toLowerCase());
+    if (idx >= 0) {
+        venueQueue[idx] = {...venueQueue[idx], ...venue};
+    } else {
+        venueQueue.push(venue);
+    }
+    
+    updateSQLOutput();
+    clearManualEntry();
+    status('Added ' + venue.name + ' to SQL queue (' + venueQueue.length + ' total)', 'success');
+}
+
+function updateSQLOutput() {
+    const sqlLines = [
+        '-- Venue Updates - Generated by ScraperTool',
+        '-- Run in Supabase SQL Editor',
+        ''
+    ];
+    
+    for (const v of venueQueue) {
+        const sets = [];
+        if (v.address) sets.push(`address = '${v.address.replace(/'/g, "''")}'`);
+        if (v.capacity) sets.push(`capacity = ${parseInt(v.capacity)}`);
+        if (v.venue_type) sets.push(`venue_type = '${v.venue_type}'`);
+        if (v.noise_level) sets.push(`noise_level = '${v.noise_level}'`);
+        if (v.website) sets.push(`website = '${v.website.replace(/'/g, "''")}'`);
+        if (v.parking_info) sets.push(`parking_info = '${v.parking_info.replace(/'/g, "''")}'`);
+        if (v.accessibility_info) sets.push(`accessibility_info = '${v.accessibility_info.replace(/'/g, "''")}'`);
+        
+        if (sets.length > 0) {
+            sqlLines.push(`UPDATE venues SET`);
+            sqlLines.push(`    ${sets.join(',\\n    ')}`);
+            sqlLines.push(`WHERE name ILIKE '%${v.name.replace(/'/g, "''")}%';`);
+            sqlLines.push('');
+        }
+    }
+    
+    document.getElementById('sql-text').value = sqlLines.join('\\n');
+    document.getElementById('sql-output').classList.remove('hidden');
+}
+
+function clearManualEntry() {
+    ['ve-name','ve-address','ve-capacity','ve-website','ve-parking','ve-access'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('ve-type').value = '';
+    document.getElementById('ve-noise').value = '';
+    document.getElementById('paste-text').value = '';
+}
+
+function copySQL() {
+    const ta = document.getElementById('sql-text');
+    ta.select();
+    document.execCommand('copy');
+    status('SQL copied to clipboard!', 'success');
+}
+
+function downloadSQL() {
+    const sql = document.getElementById('sql-text').value;
+    const blob = new Blob([sql], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'venue_updates.sql';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function clearSQL() {
+    venueQueue = [];
+    document.getElementById('sql-text').value = '-- No venues in queue';
+}
+
 // Load saved URLs on page load
 document.addEventListener('DOMContentLoaded', loadSavedUrls);
 </script>
@@ -3460,71 +4023,161 @@ def transform_event_for_backend(event: dict) -> dict:
     """
     Transform scraped event to match Rust backend's CreateEvent schema.
 
-    Backend expects:
+    Backend schema:
     - title: String (required)
-    - source_url: String (required)
+    - source_url: String (required) - MUST be the actual event page URL
     - start_time: DateTime<Utc> (required) - ISO format
+    - end_time: Option<DateTime<Utc>>
     - source_name: Option<String>
     - venue: Option<String>
+    - venue_address: Option<String>
+    - location: Option<String> - city/area like "Tulsa", "Downtown"
     - description: Option<String>
     - image_url: Option<String>
     - categories: Option<Vec<String>>
+    - outdoor: Option<bool>
+    - family_friendly: Option<bool>
     - price_min/price_max: Option<f64>
     """
     from dateutil import parser as date_parser
-    from datetime import timezone
+    from datetime import timezone, datetime, timedelta
 
     # Start with required fields
     transformed = {
         'title': event.get('title', 'Untitled Event'),
-        'source_url': event.get('source_url') or event.get('tickets_url') or event.get('url', ''),
     }
 
-    # Parse date string to ISO format for start_time
-    date_str = event.get('date', '') or event.get('start_time', '')
+    # source_url - prefer the actual event detail page
+    source_url = (
+            event.get('source_url') or
+            event.get('detail_url') or
+            event.get('url') or
+            event.get('tickets_url') or
+            ''
+    )
+    transformed['source_url'] = source_url
+
+    # Parse start_time from various possible fields
+    date_str = (
+            event.get('start_time') or
+            event.get('startDate') or
+            event.get('date') or
+            event.get('start_date') or
+            ''
+    )
     if date_str:
         try:
             # Try to parse the date string
-            parsed_date = date_parser.parse(date_str, fuzzy=True)
-            # Ensure it has timezone (assume UTC if none)
+            parsed_date = date_parser.parse(str(date_str), fuzzy=True)
+            # Ensure it has timezone (assume Central Time if none)
             if parsed_date.tzinfo is None:
+                # Use UTC for consistency
                 parsed_date = parsed_date.replace(tzinfo=timezone.utc)
             transformed['start_time'] = parsed_date.isoformat()
         except:
             # Fallback: use current time + 1 day if unparseable
-            from datetime import datetime, timedelta
             fallback = datetime.now(timezone.utc) + timedelta(days=1)
             transformed['start_time'] = fallback.isoformat()
-            print(f"[DB] Warning: Could not parse date '{date_str}', using fallback")
+            print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
     else:
         # No date provided - use tomorrow as fallback
-        from datetime import datetime, timedelta
         fallback = datetime.now(timezone.utc) + timedelta(days=1)
         transformed['start_time'] = fallback.isoformat()
 
-    # Map optional fields
-    if event.get('source'):
-        transformed['source_name'] = event['source']
-    if event.get('source_name'):
-        transformed['source_name'] = event['source_name']
+    # Parse end_time if available
+    end_str = (
+            event.get('end_time') or
+            event.get('endDate') or
+            event.get('end_date') or
+            ''
+    )
+    if end_str:
+        try:
+            parsed_end = date_parser.parse(str(end_str), fuzzy=True)
+            if parsed_end.tzinfo is None:
+                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+            transformed['end_time'] = parsed_end.isoformat()
+        except:
+            pass  # Skip if unparseable
+
+    # Map source_name
+    source_name = event.get('source_name') or event.get('source') or ''
+    if source_name:
+        transformed['source_name'] = source_name
+
+    # Venue and address
     if event.get('venue'):
         transformed['venue'] = event['venue']
-    if event.get('description'):
-        transformed['description'] = event['description']
-    if event.get('image_url'):
-        transformed['image_url'] = event['image_url']
-    if event.get('location'):
-        transformed['location'] = event['location']
     if event.get('venue_address'):
         transformed['venue_address'] = event['venue_address']
 
-    # Handle price
-    if event.get('price'):
+    # Location (city/area, separate from venue_address)
+    if event.get('location'):
+        loc = event['location']
+        # If it's coordinates, skip (those should go elsewhere)
+        if isinstance(loc, str) and ',' in loc and loc.replace(',', '').replace('.', '').replace('-', '').isdigit():
+            pass  # Skip coordinate strings
+        else:
+            transformed['location'] = loc
+    elif event.get('city'):
+        transformed['location'] = event['city']
+
+    # Description
+    if event.get('description'):
+        desc = event['description']
+        # Clean up and truncate
+        if isinstance(desc, str):
+            desc = desc.strip()[:2000]  # Limit to 2000 chars
+            transformed['description'] = desc
+
+    # Image URL
+    if event.get('image_url'):
+        transformed['image_url'] = event['image_url']
+
+    # Handle price - support both combined 'price' and separate min/max
+    price_min = None
+    price_max = None
+
+    if event.get('price_min') is not None:
         try:
-            price = float(str(event['price']).replace('$', '').replace(',', '').split('-')[0].strip())
-            transformed['price_min'] = price
-        except:
+            price_min = float(event['price_min'])
+        except (ValueError, TypeError):
             pass
+    if event.get('price_max') is not None:
+        try:
+            price_max = float(event['price_max'])
+        except (ValueError, TypeError):
+            pass
+
+    # Parse combined 'price' field
+    if price_min is None and event.get('price'):
+        price_str = str(event['price']).replace('$', '').replace(',', '').strip()
+        if '-' in price_str:
+            # Range like "15-25"
+            parts = price_str.split('-')
+            try:
+                price_min = float(parts[0].strip())
+                price_max = float(parts[1].strip())
+            except:
+                pass
+        elif price_str.lower() in ['free', '0', '0.00']:
+            price_min = 0.0
+            price_max = 0.0
+        else:
+            try:
+                price_min = float(price_str)
+            except:
+                pass
+
+    # Handle is_free flag
+    if event.get('is_free') == True:
+        price_min = 0.0
+        price_max = 0.0
+
+    if price_min is not None:
+        transformed['price_min'] = price_min
+    if price_max is not None:
+        transformed['price_max'] = price_max
 
     # Categories - convert string to list if needed
     if event.get('categories'):
@@ -3532,11 +4185,19 @@ def transform_event_for_backend(event: dict) -> dict:
         if isinstance(cats, str):
             transformed['categories'] = [cats]
         elif isinstance(cats, list):
-            transformed['categories'] = cats
+            # Filter out empty strings
+            transformed['categories'] = [c for c in cats if c]
 
-    # Booleans default to False
-    transformed['outdoor'] = event.get('outdoor', False)
-    transformed['family_friendly'] = event.get('family_friendly', False)
+    # Boolean flags
+    if event.get('outdoor') is not None:
+        transformed['outdoor'] = bool(event['outdoor'])
+    else:
+        transformed['outdoor'] = False
+
+    if event.get('family_friendly') is not None:
+        transformed['family_friendly'] = bool(event['family_friendly'])
+    else:
+        transformed['family_friendly'] = False
 
     return transformed
 
@@ -3553,6 +4214,43 @@ def to_database():
         return jsonify({"saved": 0, "total": 0})
 
     print(f"[DB] Sending {len(events)} events to backend...")
+
+    # Collect unique venues from events (with website from API)
+    venues_to_save = {}
+    for event in events:
+        venue_name = event.get('venue', '').strip()
+        if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
+            venue_key = venue_name.lower()
+            if venue_key not in venues_to_save:
+                venues_to_save[venue_key] = {
+                    'name': venue_name,
+                    'address': event.get('venue_address', ''),
+                    'city': 'Tulsa',
+                    '_venue_website': event.get('_venue_website', ''),
+                }
+            # If this event has a website but the stored one doesn't, update it
+            elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
+                venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
+
+    # Register venues with websites from API
+    venues_with_websites = 0
+    if venues_to_save:
+        print(f"[DB] Registering {len(venues_to_save)} venues...")
+        for venue_key, venue_data in venues_to_save.items():
+            # Get website from API data
+            website = venue_data.pop('_venue_website', '')
+            if website:
+                venue_data['website'] = website
+                venues_with_websites += 1
+                print(f"[DB] Venue '{venue_data['name']}' has website: {website}")
+
+            # Send to backend
+            try:
+                httpx.post(f"{BACKEND_URL}/api/venues", json=venue_data, timeout=3)
+            except:
+                pass  # Best effort
+
+        print(f"[DB] Found websites for {venues_with_websites}/{len(venues_to_save)} venues")
 
     def post_event(event):
         try:
@@ -3573,7 +4271,12 @@ def to_database():
     saved = sum(results)
     print(f"[DB] Complete: {saved}/{len(events)} saved")
 
-    return jsonify({"saved": saved, "total": len(events)})
+    return jsonify({
+        "saved": saved,
+        "total": len(events),
+        "venues_registered": len(venues_to_save),
+        "venues_with_websites": venues_with_websites
+    })
 
 
 @app.route('/upload-all-to-database', methods=['POST'])
@@ -3668,6 +4371,210 @@ def download(filename):
     if path.exists():
         return send_file(path, as_attachment=True)
     return jsonify({"error": "Not found"}), 404
+
+
+@app.route('/venues-missing-urls')
+def venues_missing_urls():
+    """Fetch venues from backend that are missing website URLs."""
+    try:
+        resp = httpx.get(f"{BACKEND_URL}/api/venues/missing", timeout=10)
+        if resp.status_code == 200:
+            venues = resp.json()
+            # Return just the names for easy copy/paste
+            names = [v.get('name', '') for v in venues if v.get('name')]
+            return jsonify({
+                "count": len(names),
+                "venues": names
+            })
+        else:
+            return jsonify({"error": f"Backend returned {resp.status_code}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# VENUE MANAGER API
+# ============================================================================
+
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+
+
+@app.route('/api/venues/incomplete', methods=['GET'])
+def get_incomplete_venues():
+    """Fetch venues that are missing key data fields."""
+    try:
+        # Fetch all venues from backend
+        resp = httpx.get(f"{BACKEND_URL}/api/venues", timeout=10)
+        venues = resp.json() if resp.status_code == 200 else []
+
+        # Filter to venues missing data
+        incomplete = []
+        for v in venues:
+            missing = []
+            if not v.get('address'):
+                missing.append('address')
+            if not v.get('capacity'):
+                missing.append('capacity')
+            if not v.get('venue_type'):
+                missing.append('type')
+            if not v.get('parking_info'):
+                missing.append('parking')
+            if not v.get('website'):
+                missing.append('website')
+
+            if missing:
+                incomplete.append({
+                    'id': v.get('id'),
+                    'name': v.get('name'),
+                    'address': v.get('address', ''),
+                    'website': v.get('website', ''),
+                    'missing': missing,
+                    'missing_count': len(missing),
+                })
+
+        # Sort by most missing first
+        incomplete.sort(key=lambda x: -x['missing_count'])
+
+        return jsonify({
+            'total': len(venues),
+            'incomplete': len(incomplete),
+            'venues': incomplete
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/venues/lookup', methods=['POST'])
+def lookup_venue():
+    """Look up venue details from Google Places API."""
+    data = request.json
+    venue_name = data.get('name', '')
+    city = data.get('city', 'Tulsa, OK')
+
+    if not venue_name:
+        return jsonify({'error': 'Venue name required'}), 400
+
+    if not GOOGLE_PLACES_API_KEY:
+        return jsonify({'error': 'Google Places API key not configured. Add GOOGLE_PLACES_API_KEY to .env'}), 500
+
+    try:
+        result = asyncio.run(lookup_venue_google_places(venue_name, city))
+
+        if result.get('types'):
+            result['inferred_type'] = infer_venue_type_from_google(result['types'], venue_name)
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+async def lookup_venue_google_places(venue_name: str, city: str = "Tulsa, OK") -> dict:
+    """
+    Look up venue details from Google Places API.
+    """
+    result = {
+        "address": "",
+        "website": "",
+        "phone": "",
+        "place_id": "",
+        "types": [],
+        "rating": None,
+        "wheelchair_accessible": None,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Step 1: Text Search to find the place
+            search_query = f"{venue_name} {city}"
+            search_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+            search_resp = await client.get(search_url, params={
+                "query": search_query,
+                "key": GOOGLE_PLACES_API_KEY,
+            })
+            search_data = search_resp.json()
+
+            if search_data.get("status") != "OK" or not search_data.get("results"):
+                return {"error": f"Place not found: {venue_name}"}
+
+            place = search_data["results"][0]
+            result["place_id"] = place.get("place_id", "")
+            result["address"] = place.get("formatted_address", "")
+            result["types"] = place.get("types", [])
+            result["rating"] = place.get("rating")
+
+            # Step 2: Get detailed info (website, phone, accessibility)
+            if result["place_id"]:
+                details_url = "https://maps.googleapis.com/maps/api/place/details/json"
+                details_resp = await client.get(details_url, params={
+                    "place_id": result["place_id"],
+                    "fields": "website,formatted_phone_number,wheelchair_accessible_entrance",
+                    "key": GOOGLE_PLACES_API_KEY,
+                })
+                details_data = details_resp.json()
+
+                if details_data.get("status") == "OK" and details_data.get("result"):
+                    details = details_data["result"]
+                    result["website"] = details.get("website", "")
+                    result["phone"] = details.get("formatted_phone_number", "")
+                    result["wheelchair_accessible"] = details.get("wheelchair_accessible_entrance")
+
+            return result
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def infer_venue_type_from_google(types: list, name: str) -> str:
+    """Infer venue type from Google Places types."""
+    type_mapping = {
+        "bar": "Bar/Club",
+        "night_club": "Bar/Club",
+        "restaurant": "Restaurant",
+        "cafe": "Coffee Shop",
+        "museum": "Museum",
+        "art_gallery": "Gallery",
+        "movie_theater": "Theater",
+        "performing_arts_theater": "Theater",
+        "stadium": "Arena",
+        "church": "Church",
+        "park": "Park",
+        "library": "Library",
+        "university": "University",
+        "school": "University",
+        "casino": "Casino",
+        "lodging": "Hotel",
+        "bowling_alley": "Entertainment",
+        "amusement_park": "Entertainment",
+        "zoo": "Zoo/Aquarium",
+        "aquarium": "Zoo/Aquarium",
+    }
+
+    for place_type in types:
+        if place_type in type_mapping:
+            return type_mapping[place_type]
+
+    # Fallback: infer from name
+    name_lower = name.lower()
+    if "museum" in name_lower:
+        return "Museum"
+    elif "theater" in name_lower or "theatre" in name_lower:
+        return "Theater"
+    elif "bar" in name_lower or "pub" in name_lower:
+        return "Bar/Club"
+    elif "church" in name_lower:
+        return "Church"
+    elif "park" in name_lower:
+        return "Park"
+    elif "ballroom" in name_lower or "center" in name_lower:
+        return "Concert Hall"
+    elif "brewery" in name_lower or "brewing" in name_lower:
+        return "Brewery"
+    elif "coffee" in name_lower or "cafe" in name_lower:
+        return "Coffee Shop"
+
+    return "Venue"
 
 
 # ============================================================================

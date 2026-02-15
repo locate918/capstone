@@ -73,5 +73,10 @@
     "url": "https://www.exposquare.com/events",
     "name": "expo",
     "playwright": true
+  },
+  {
+    "url": "https://www.bandsintown.com/?city_id=4553433",
+    "name": "BIT",
+    "playwright": true
   }
 ]

@@ -21,6 +21,13 @@
 //! - `GET  /api/users/:id/interactions`   - Get user's event interactions
 //! - `POST /api/users/:id/interactions`   - Record a new interaction
 //!
+//! ### Venues (`/api/venues`)
+//! - `GET  /api/venues`           - List all venues
+//! - `POST /api/venues`           - Create/register a venue
+//! - `GET  /api/venues/:id`       - Get a single venue
+//! - `GET  /api/venues/missing`   - Get venues missing website URLs
+//! - `PATCH /api/venues/:id`      - Update venue (add website, etc.)
+//!
 //! ### Chat (`/api/chat`) - Coming Soon
 //! - `POST /api/chat`             - Natural language event search (Ben's task)
 
@@ -33,6 +40,7 @@
 mod events;  // Event-related endpoints (CRUD + search)
 mod chat;    // LLM-powered natural language chat (Ben - AI Engineer)
 mod users;   // User management, preferences, and interactions
+mod venues;  // Venue registry for source URL lookups
 
 // =============================================================================
 // IMPORTS
@@ -87,6 +95,14 @@ pub fn create_routes() -> Router<PgPool> {
         // These power the personalization system for LLM recommendations.
         // Owner: Will (Coordinator/Backend Lead)
         .nest("/users", users::routes())
+
+        // ---------------------------------------------------------------------
+        // Venues Routes
+        // ---------------------------------------------------------------------
+        // Venue registry populated by scraper. Used to look up venue websites
+        // so we can link to original sources instead of aggregators.
+        // Owner: Will (Coordinator/Backend Lead)
+        .nest("/venues", venues::routes())
 
     // ---------------------------------------------------------------------
     // Chat Routes (Coming Soon)

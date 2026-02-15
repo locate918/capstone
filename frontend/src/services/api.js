@@ -159,6 +159,7 @@ const transformBackendEvents = (events) => {
         date_iso: event.start_time,
         location: event.venue || event.location || "TBA",
         venue_address: event.venue_address,
+        venue_website: event.venue_website,
         imageUrl: event.image_url || getDefaultImage(event.categories),
         vibe_tags: mapCategoriesToVibes(event.categories),
         original_url: event.source_url,
