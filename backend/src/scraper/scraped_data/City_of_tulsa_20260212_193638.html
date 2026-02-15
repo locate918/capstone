@@ -1,0 +1,292 @@
+<!DOCTYPE html><html class=" js flexbox flexboxlegacy canvas canvastext webgl no-touch geolocation postmessage no-websqldatabase indexeddb hashchange history draganddrop websockets rgba hsla multiplebgs backgroundsize borderimage borderradius boxshadow textshadow opacity cssanimations csscolumns cssgradients cssreflections csstransforms csstransforms3d csstransitions fontface generatedcontent video audio localstorage sessionstorage webworkers no-applicationcache svg inlinesvg smil svgclippaths" style=""><head>
+    <link href="/apps/TulsaCouncilArchive/Content/css?v=-SOsd3YnGO90L5FxZTyopkaD6Sq9me1-De47jqVxuk01" rel="stylesheet">
+
+    <script src="/apps/TulsaCouncilArchive/bundles/modernizr?v=inCVuEFe6J4Q07A0AcRsbJic_UE5MwpRMNGcOtk94TE1"></script>
+
+    <link rel="stylesheet" href="/apps/TulsaCouncilArchive/Content/bootstrap-datepicker3.css">
+    <link rel="stylesheet" href="//cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+    
+    <link rel="icon" type="image/png" href="/apps/TulsaCouncilArchive/favicon.ico">
+</head>
+<body>
+    <div class="jumbotron header-jumbotron">
+    </div>
+    <div class="jumbotron social-jumbotron">
+        <div class="container main-container">
+            <div class="row">
+                <div class="col-xs-6">
+                    <span class="hidden-md hidden-sm hidden-xs">Connect with the City Council: </span>
+                    <a href="https://www.facebook.com/tulsacouncil" target="_blank"><img src="/apps/TulsaCouncilArchive/img/icon-facebook.png" border="0" alt="Facebook Icon"></a>
+                    <a href="https://twitter.com/TulsaCouncil" target="_blank"><img src="/apps/TulsaCouncilArchive/img/icon-twitter.png" border="0" alt="twitter icon"></a>
+                    <a href="https://www.youtube.com/user/tulsacouncil" target="_blank"><img src="/apps/TulsaCouncilArchive/img/icon-youtube.png" border="0" alt="youtube icon"></a>
+                    <a href="https://www.instagram.com/tulsacitycouncil" target="_blank"><img src="/apps/TulsaCouncilArchive/img/icon-instagram.png" border="0" alt="instagram icon"></a>
+                </div>
+                <div class="hidden-xs col-xs-2">
+                    <div id="google_translate_element"></div>
+                </div>
+                <div class="col-xs-4 text-right">
+                    <span class="fa fa-phone" aria-hidden="true" href="tel:918-596-1990 "></span>
+                    <span class="hidden-sm hidden-xs">Contact Us: <span class="text-primary"><strong><a href="tel:918-596-1990 ">918-596-1990 </a></strong></span></span>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    
+    <div class="container body-content">
+        
+
+
+<div class="row">
+    <div class="col-md-3"></div>
+    <div class="col-md-6">
+        <!--<div class="councilNavbar">
+            <div class="container">
+                <ul class="nav nav-tabs">
+                    <li><a href="#" id="aMeetingDateType">Meeting Date or Type</a></li>-->
+        
+        <!--</ul>
+            </div>
+        </div>-->
+        <h3>Search Agendas</h3>
+<form action="/apps/TulsaCouncilArchive/Home/Search" method="get">            <div id="pnlMeetingDateType" class="panel panel-default form-group ">
+                <div class="panel-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <label class="control-label">Meeting Date</label>
+                            <div>
+                                <div class="input-group date">
+                                    <input asp-for="Meeting_Date" name="Meeting_Date" class="form-control" value="02/11/2026"><span class="input-group-addon"><i class="glyphicon glyphicon-th"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <p></p>
+                    <div class="row">
+                        <div class="col-md-8">
+                            <label class="control-label">Meeting Type</label>
+                            <select class="form-control" id="Council_Meeting_Type" name="Council_Meeting_Type"><option selected="selected" value="-1">-- Select Meeting Type --</option>
+<option value="257">Budget and Special Projects Committee Meeting</option>
+<option value="263">Public Works Committee</option>
+<option value="0">Regular</option>
+<option value="265">Urban And Economic Development Committee</option>
+<option value="-2">-----------------------------</option>
+<option value="256">61st and Peoria Quality of Life Task Force</option>
+<option value="258">Capital Improvement Program Task Force</option>
+<option value="259">Eastern Flyer Passenger Rail Task Force</option>
+<option value="260">HUD Grant Fund Allocation Committee</option>
+<option value="290">Hunger and Food Taskforce Committee</option>
+<option value="261">Mayor-Council Retreat</option>
+<option value="262">Public Safety Task Force</option>
+<option value="264">River Infrastructure Task Force</option>
+<option value="280">Street Lighting Task Force</option>
+<option value="289">The Food Desert Task Force</option>
+<option value="334">Tribal Nations Relations Committee </option>
+<option value="288">Truancy Prevention Task Force</option>
+</select>
+                        </div>
+                    </div>
+                    <row>
+                        <input type="submit" name="btnMeetingSearch" class="btn btn-primary" value="Search">
+
+                    </row>
+                </div>
+            </div>
+            <div id="pnlKeyword" class="panel panel-default hidden">
+                <div class="panel-body">
+                    <span class="instructions" style="margin-bottom: 5px;">
+                        Find all meetings, documentation and minutes containing the phrase:
+                    </span>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <input type="text" id="txtMeetingDate" class="form-control">
+                        </div>
+                    </div>
+                    <row>
+                        <button type="button" id="btnDocumentSearch" class="btn btn-primary">Find Documents</button>
+                    </row>
+                </div>
+            </div>
+            <div id="pnlAgendaSearchResults" class="panel panel-default show ">
+                <div class="panel-body">
+                    <div id="tblMeetings_wrapper" class="dataTables_wrapper no-footer"><div class="top"><div class="dataTables_info" id="tblMeetings_info" role="status" aria-live="polite">6 meetings found.</div></div></div><table id="tblMeetings" class="table table-sm table-hover table-responsive dataTable no-footer" aria-describedby="tblMeetings_info">
+                        <thead>
+                            <tr><th class="sorting sorting_desc" tabindex="0" aria-controls="tblMeetings" rowspan="1" colspan="1" aria-sort="descending" aria-label="
+                                    Date
+                                : activate to sort column ascending" style="width: 69.5938px;">
+                                    <label for="Date">Date</label>
+                                </th><th class="sorting" tabindex="0" aria-controls="tblMeetings" rowspan="1" colspan="1" aria-label="
+                                    Meeting Type
+                                : activate to sort column ascending" style="width: 381.406px;">
+                                    <label for="Meeting_Type">Meeting Type</label>
+                                </th></tr>
+                        </thead>
+                        <tbody>
+                            
+                            
+                            
+                            
+                            
+                            
+                        <tr class="odd">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064260000000000</span>2/11/2026<br>
+                                    5:00 PM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31815">Regular</a>
+                                    
+                                </td>
+                            </tr><tr class="even">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064224000000000</span>2/11/2026<br>
+                                    4:00 PM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31814">Regular</a>
+                                    
+                                </td>
+                            </tr><tr class="odd">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064224000000000</span>2/11/2026<br>
+                                    4:00 PM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31827">Regular</a>
+                                    
+                                </td>
+                            </tr><tr class="even">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064170000000000</span>2/11/2026<br>
+                                    2:30 PM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31817">Public Works Committee</a>
+                                    
+                                </td>
+                            </tr><tr class="odd">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064116000000000</span>2/11/2026<br>
+                                    1:00 PM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31813">Budget and Special Projects Committee Meeting</a>
+                                    
+                                </td>
+                            </tr><tr class="even">
+                                <td class="sorting_1">
+                                    <span class="hidden">639064026000000000</span>2/11/2026<br>
+                                    10:30 AM
+                                </td>
+                                <td>
+                                    <a href="https://www.cityoftulsa.org/apps/COTDisplayDocument/?DocumentType=Agenda&amp;DocumentIdentifiers=31816">Urban And Economic Development Committee</a>
+                                    
+                                </td>
+                            </tr></tbody>
+                   </table>
+                </div>
+            </div>
+            <div id="pnlDocumentSearchResults" class="panel panel-default hidden">
+                <div class="panel-body">
+                    <div class="panel-body">
+
+                    </div>
+                </div>
+            </div>
+</form>    </div>
+    <div class="col-md-3"></div>
+</div>
+
+<!-- Modal dialog for displaying an error message -->
+<div id="modalError" class="modal fade customModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">×</button>
+                <h4 class="modal-title">Tulsa Council Archives</h4>
+            </div>
+            <div class="modal-body customModalBody">
+                <img src="/apps/TulsaCouncilArchive/img/exclaimation.png"><br>
+                An error occurred processing your request. If the error persists please contact the Customer Care Center @ 311.
+            </div>
+            <div class="modal-footer customModalFooter">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div><!-- modal-content -->
+    </div><!-- modal-dialog -->
+</div><!-- modal -->
+
+<script src="/apps/TulsaCouncilArchive/Scripts/jquery-3.4.1.min.js"></script>
+<script src="/apps/TulsaCouncilArchive/Scripts/bootstrap-datepicker.min.js"></script>
+<script src="/apps/TulsaCouncilArchive/Scripts/bootstrap.min.js"></script>
+<script src="//cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script>
+
+    $(document).ready(function () {
+
+        $('#aMeetingDateType').click(function () {
+            $('#pnlMeetingDateType').removeClass('hidden');
+            $('#pnlKeyword').addClass('hidden');
+        });
+
+        $('#aKeyword').click(function () {
+            $('#pnlMeetingDateType').addClass('hidden');
+            $('#pnlKeyword').removeClass('hidden');
+        });
+
+        $('#btnAgendaSearch').click(function () {
+            $('#pnlAgendaSearchResults').removeClass('hidden');
+            $('#pnlDocumentSearchResults').addClass('hidden');
+        });
+
+        $('#btnDocumentSearch').click(function () {
+            $('#pnlAgendaSearchResults').addClass('hidden');
+            $('#pnlDocumentSearchResults').removeClass('hidden');
+        });
+
+        $('#tblMeetings').DataTable({
+            paging: false,
+            searching: false,
+            dom: '<"top"i>',
+            order: [[0, 'desc']],
+            language: {
+                emptyTable: 'No meetings found.'
+            },
+            'infoCallback': function (settings, start, end, max, total, pre) {
+                if (1 > max) { return '' }
+                if (1 == max) { return ''; }
+                return max + ' meetings found.';
+            }
+        });
+
+        if (0 < 0) {
+            $('#modalError').modal('show');
+        }
+    });
+
+    var datesAndCountsString = '[{&quot;Meeting_Date&quot;:&quot;01/10/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/11/2017&quot;,&quot;Meeting_Count&quot;:10},{&quot;Meeting_Date&quot;:&quot;01/13/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/18/2017&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/25/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/01/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/08/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/21/2017&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;02/22/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/01/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;03/08/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/22/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/29/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/05/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/19/2017&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;04/26/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;05/02/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/03/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;05/10/2017&quot;,&quot;Meeting_Count&quot;:11},{&quot;Meeting_Date&quot;:&quot;05/17/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/24/2017&quot;,&quot;Meeting_Count&quot;:11},{&quot;Meeting_Date&quot;:&quot;05/31/2017&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;06/07/2017&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;06/21/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/27/2017&quot;,&quot;Meeting_Count&quot;:3},{&quot;Meeting_Date&quot;:&quot;06/28/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;07/12/2017&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;07/21/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;07/26/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/02/2017&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;08/09/2017&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;08/16/2017&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;08/29/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/30/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/13/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/20/2017&quot;,&quot;Meeting_Count&quot;:10},{&quot;Meeting_Date&quot;:&quot;09/27/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/11/2017&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;10/25/2017&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;11/01/2017&quot;,&quot;Meeting_Count&quot;:10},{&quot;Meeting_Date&quot;:&quot;11/10/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/15/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;11/16/2017&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/29/2017&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;12/06/2017&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;12/13/2017&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;12/20/2017&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/21/2017&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/01/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/10/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/24/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;01/25/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/31/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/07/2018&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;02/13/2018&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;02/21/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;02/22/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;02/28/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/07/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/09/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;03/14/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/28/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/04/2018&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;04/11/2018&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;04/25/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;05/02/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/07/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/09/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/16/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/21/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/23/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/04/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;06/06/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/13/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/18/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;06/20/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/09/2018&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;07/11/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/16/2018&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;07/18/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;07/23/2018&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;07/30/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/01/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/08/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;08/17/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/22/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/27/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/29/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/10/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/12/2018&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;09/17/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/21/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/24/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/26/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;09/28/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/01/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/03/2018&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;10/10/2018&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;10/24/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;11/07/2018&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/28/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/03/2018&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;12/05/2018&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;12/12/2018&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/19/2018&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;01/01/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/09/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;01/16/2019&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;01/23/2019&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/30/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/06/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/13/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/27/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/06/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/13/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;03/27/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/03/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;04/09/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/10/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/16/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/24/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;04/30/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/01/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/07/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/08/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;05/13/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/14/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/15/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/22/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/05/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/19/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/22/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;06/26/2019&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;07/10/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/12/2019&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;07/17/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/24/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;07/25/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;07/29/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;07/30/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;07/31/2019&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;08/07/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/14/2019&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;08/28/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/11/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;09/18/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;09/25/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/02/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;10/16/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/22/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/23/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/24/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/30/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/06/2019&quot;,&quot;Meeting_Count&quot;:4},{&quot;Meeting_Date&quot;:&quot;11/19/2019&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/20/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/04/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/11/2019&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/18/2019&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/01/2020&quot;,&quot;Meeting_Count&quot;:3},{&quot;Meeting_Date&quot;:&quot;01/08/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/15/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/29/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/05/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/12/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/26/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/04/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/11/2020&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;03/25/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;04/01/2020&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;04/07/2020&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;04/15/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/22/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/29/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/06/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;05/13/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/20/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/03/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/10/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;06/17/2020&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/24/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/15/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;07/22/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/29/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/05/2020&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/19/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/26/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/02/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/16/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/23/2020&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;09/30/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/07/2020&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/14/2020&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/27/2020&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/28/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/04/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/17/2020&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/18/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/24/2020&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;12/02/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/07/2020&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;12/09/2020&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/16/2020&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;01/01/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/06/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/13/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/27/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/03/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/10/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/11/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;02/24/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/03/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/10/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/24/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;04/07/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/14/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/21/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/28/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/05/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;05/12/2021&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;05/18/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/19/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/27/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;06/02/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/09/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/16/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/23/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/14/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/21/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/28/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/04/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/11/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/16/2021&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;08/25/2021&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;09/01/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/21/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/22/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/29/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/06/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/20/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/27/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/03/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/09/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/10/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/17/2021&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/01/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/08/2021&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/14/2021&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;12/15/2021&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;01/01/2022&quot;,&quot;Meeting_Count&quot;:3},{&quot;Meeting_Date&quot;:&quot;01/06/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/11/2022&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/12/2022&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;01/19/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/26/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/08/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;02/09/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/16/2022&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/02/2022&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/08/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;03/09/2022&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/23/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/30/2022&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;04/06/2022&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;04/20/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/27/2022&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;05/10/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/11/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/14/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/18/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/24/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/25/2022&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/08/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/15/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/22/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/13/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/20/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/03/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/10/2022&quot;,&quot;Meeting_Count&quot;:9},{&quot;Meeting_Date&quot;:&quot;08/24/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/31/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/07/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/14/2022&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/21/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/28/2022&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/19/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/26/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/01/2022&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;11/02/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/08/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/16/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/30/2022&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/05/2022&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;12/07/2022&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/14/2022&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;01/01/2023&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/04/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/11/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;01/17/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/25/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;02/01/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;02/08/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/22/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;02/28/2023&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;03/01/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/08/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/22/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;03/29/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/04/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/05/2023&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;04/12/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/18/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/19/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/24/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/25/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/26/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/01/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/03/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/17/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/24/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/07/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/14/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/21/2023&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;06/28/2023&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;07/18/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;07/19/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/26/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/02/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/09/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/23/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/30/2023&quot;,&quot;Meeting_Count&quot;:8},{&quot;Meeting_Date&quot;:&quot;09/13/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;09/20/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/27/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/04/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/11/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/17/2023&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/25/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;11/01/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;11/15/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/29/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/06/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/13/2023&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/20/2023&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/01/2024&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/10/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/24/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;01/31/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/01/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;02/07/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/21/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/28/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/06/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/12/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;03/13/2024&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/27/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/10/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/17/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/01/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/08/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/15/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;05/22/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/05/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;06/11/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;06/12/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/26/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/17/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/24/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;07/31/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/07/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/21/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/28/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/11/2024&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;09/18/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/24/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;09/25/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/09/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/16/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/30/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/06/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;11/20/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/02/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;12/04/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/11/2024&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;12/17/2024&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;12/18/2024&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/01/2025&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/08/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/15/2025&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;01/22/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/29/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/03/2025&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;02/05/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/12/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/26/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;02/27/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;03/05/2025&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;03/12/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;03/26/2025&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/02/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;04/16/2025&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;04/23/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;04/30/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/05/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;05/07/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/14/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;05/21/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/04/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/11/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/18/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;06/25/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/16/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/23/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;07/30/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/04/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/06/2025&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;08/20/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;08/22/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/25/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;08/27/2025&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;09/10/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;09/17/2025&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;10/01/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/08/2025&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/15/2025&quot;,&quot;Meeting_Count&quot;:7},{&quot;Meeting_Date&quot;:&quot;10/21/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;10/22/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;10/27/2025&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;10/30/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/05/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/07/2025&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;11/12/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;11/19/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/03/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/10/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;12/17/2025&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/01/2026&quot;,&quot;Meeting_Count&quot;:2},{&quot;Meeting_Date&quot;:&quot;01/14/2026&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/20/2026&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;01/21/2026&quot;,&quot;Meeting_Count&quot;:5},{&quot;Meeting_Date&quot;:&quot;01/28/2026&quot;,&quot;Meeting_Count&quot;:6},{&quot;Meeting_Date&quot;:&quot;02/02/2026&quot;,&quot;Meeting_Count&quot;:1},{&quot;Meeting_Date&quot;:&quot;02/11/2026&quot;,&quot;Meeting_Count&quot;:6}]';
+    var datesAndCounts = JSON.parse(datesAndCountsString.replace(/&quot;/g, '"'));
+    $(".input-group.date").datepicker({
+        autoclose: true,
+        todayHighlight: true,
+        beforeShowDay: function (date) {
+            var formattedDate = (((date.getMonth() > 8) ? (date.getMonth() + 1) : ('0' + (date.getMonth() + 1))) + '/' + ((date.getDate() > 9) ? date.getDate() : ('0' + date.getDate())) + '/' + date.getFullYear());
+            var matchedDate = datesAndCounts.filter(d => d.Meeting_Date === formattedDate);
+            if (matchedDate.length > 0) {
+                return { classes: 'activeMeetingDate', tooltip: matchedDate[0].Meeting_Count + ' Meeting(s)' };
+            }
+            else {
+                return false; /* { classes: 'inActiveMeetingDate', tooltip: 'No Meetings' }; */
+            }
+        }
+    });
+
+</script>
+        <hr>
+    </div>
+
+    
+    
+
+
+</body></html>

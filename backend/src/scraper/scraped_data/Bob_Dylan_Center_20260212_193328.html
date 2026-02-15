@@ -1,0 +1,1695 @@
+<!DOCTYPE html><html lang="en-US"><head>
+	<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="profile" href="https://gmpg.org/xfn/11">
+	<script async="" src="https://www.googletagmanager.com/gtm.js?id=GTM-T587BSD8"></script><script async="" src="https://s.vibe.co/vbpx.js"></script><script data-cfasync="false" data-no-defer="1" data-no-minify="1" data-no-optimize="1">var ewww_webp_supported=!1;function check_webp_feature(A,e){var w;e=void 0!==e?e:function(){},ewww_webp_supported?e(ewww_webp_supported):((w=new Image).onload=function(){ewww_webp_supported=0<w.width&&0<w.height,e&&e(ewww_webp_supported)},w.onerror=function(){e&&e(!1)},w.src="data:image/webp;base64,"+{alpha:"UklGRkoAAABXRUJQVlA4WAoAAAAQAAAAAAAAAAAAQUxQSAwAAAARBxAR/Q9ERP8DAABWUDggGAAAABQBAJ0BKgEAAQAAAP4AAA3AAP7mtQAAAA=="}[A])}check_webp_feature("alpha");</script><script data-cfasync="false" data-no-defer="1" data-no-minify="1" data-no-optimize="1">var Arrive=function(c,w){"use strict";if(c.MutationObserver&&"undefined"!=typeof HTMLElement){var r,a=0,u=(r=HTMLElement.prototype.matches||HTMLElement.prototype.webkitMatchesSelector||HTMLElement.prototype.mozMatchesSelector||HTMLElement.prototype.msMatchesSelector,{matchesSelector:function(e,t){return e instanceof HTMLElement&&r.call(e,t)},addMethod:function(e,t,r){var a=e[t];e[t]=function(){return r.length==arguments.length?r.apply(this,arguments):"function"==typeof a?a.apply(this,arguments):void 0}},callCallbacks:function(e,t){t&&t.options.onceOnly&&1==t.firedElems.length&&(e=[e[0]]);for(var r,a=0;r=e[a];a++)r&&r.callback&&r.callback.call(r.elem,r.elem);t&&t.options.onceOnly&&1==t.firedElems.length&&t.me.unbindEventWithSelectorAndCallback.call(t.target,t.selector,t.callback)},checkChildNodesRecursively:function(e,t,r,a){for(var i,n=0;i=e[n];n++)r(i,t,a)&&a.push({callback:t.callback,elem:i}),0<i.childNodes.length&&u.checkChildNodesRecursively(i.childNodes,t,r,a)},mergeArrays:function(e,t){var r,a={};for(r in e)e.hasOwnProperty(r)&&(a[r]=e[r]);for(r in t)t.hasOwnProperty(r)&&(a[r]=t[r]);return a},toElementsArray:function(e){return e=void 0!==e&&("number"!=typeof e.length||e===c)?[e]:e}}),e=(l.prototype.addEvent=function(e,t,r,a){a={target:e,selector:t,options:r,callback:a,firedElems:[]};return this._beforeAdding&&this._beforeAdding(a),this._eventsBucket.push(a),a},l.prototype.removeEvent=function(e){for(var t,r=this._eventsBucket.length-1;t=this._eventsBucket[r];r--)e(t)&&(this._beforeRemoving&&this._beforeRemoving(t),(t=this._eventsBucket.splice(r,1))&&t.length&&(t[0].callback=null))},l.prototype.beforeAdding=function(e){this._beforeAdding=e},l.prototype.beforeRemoving=function(e){this._beforeRemoving=e},l),t=function(i,n){var o=new e,l=this,s={fireOnAttributesModification:!1};return o.beforeAdding(function(t){var e=t.target;e!==c.document&&e!==c||(e=document.getElementsByTagName("html")[0]);var r=new MutationObserver(function(e){n.call(this,e,t)}),a=i(t.options);r.observe(e,a),t.observer=r,t.me=l}),o.beforeRemoving(function(e){e.observer.disconnect()}),this.bindEvent=function(e,t,r){t=u.mergeArrays(s,t);for(var a=u.toElementsArray(this),i=0;i<a.length;i++)o.addEvent(a[i],e,t,r)},this.unbindEvent=function(){var r=u.toElementsArray(this);o.removeEvent(function(e){for(var t=0;t<r.length;t++)if(this===w||e.target===r[t])return!0;return!1})},this.unbindEventWithSelectorOrCallback=function(r){var a=u.toElementsArray(this),i=r,e="function"==typeof r?function(e){for(var t=0;t<a.length;t++)if((this===w||e.target===a[t])&&e.callback===i)return!0;return!1}:function(e){for(var t=0;t<a.length;t++)if((this===w||e.target===a[t])&&e.selector===r)return!0;return!1};o.removeEvent(e)},this.unbindEventWithSelectorAndCallback=function(r,a){var i=u.toElementsArray(this);o.removeEvent(function(e){for(var t=0;t<i.length;t++)if((this===w||e.target===i[t])&&e.selector===r&&e.callback===a)return!0;return!1})},this},i=new function(){var s={fireOnAttributesModification:!1,onceOnly:!1,existing:!1};function n(e,t,r){return!(!u.matchesSelector(e,t.selector)||(e._id===w&&(e._id=a++),-1!=t.firedElems.indexOf(e._id)))&&(t.firedElems.push(e._id),!0)}var c=(i=new t(function(e){var t={attributes:!1,childList:!0,subtree:!0};return e.fireOnAttributesModification&&(t.attributes=!0),t},function(e,i){e.forEach(function(e){var t=e.addedNodes,r=e.target,a=[];null!==t&&0<t.length?u.checkChildNodesRecursively(t,i,n,a):"attributes"===e.type&&n(r,i)&&a.push({callback:i.callback,elem:r}),u.callCallbacks(a,i)})})).bindEvent;return i.bindEvent=function(e,t,r){t=void 0===r?(r=t,s):u.mergeArrays(s,t);var a=u.toElementsArray(this);if(t.existing){for(var i=[],n=0;n<a.length;n++)for(var o=a[n].querySelectorAll(e),l=0;l<o.length;l++)i.push({callback:r,elem:o[l]});if(t.onceOnly&&i.length)return r.call(i[0].elem,i[0].elem);setTimeout(u.callCallbacks,1,i)}c.call(this,e,t,r)},i},o=new function(){var a={};function i(e,t){return u.matchesSelector(e,t.selector)}var n=(o=new t(function(){return{childList:!0,subtree:!0}},function(e,r){e.forEach(function(e){var t=e.removedNodes,e=[];null!==t&&0<t.length&&u.checkChildNodesRecursively(t,r,i,e),u.callCallbacks(e,r)})})).bindEvent;return o.bindEvent=function(e,t,r){t=void 0===r?(r=t,a):u.mergeArrays(a,t),n.call(this,e,t,r)},o};d(HTMLElement.prototype),d(NodeList.prototype),d(HTMLCollection.prototype),d(HTMLDocument.prototype),d(Window.prototype);var n={};return s(i,n,"unbindAllArrive"),s(o,n,"unbindAllLeave"),n}function l(){this._eventsBucket=[],this._beforeAdding=null,this._beforeRemoving=null}function s(e,t,r){u.addMethod(t,r,e.unbindEvent),u.addMethod(t,r,e.unbindEventWithSelectorOrCallback),u.addMethod(t,r,e.unbindEventWithSelectorAndCallback)}function d(e){e.arrive=i.bindEvent,s(i,e,"unbindArrive"),e.leave=o.bindEvent,s(o,e,"unbindLeave")}}(window,void 0),ewww_webp_supported=!1;function check_webp_feature(e,t){var r;ewww_webp_supported?t(ewww_webp_supported):((r=new Image).onload=function(){ewww_webp_supported=0<r.width&&0<r.height,t(ewww_webp_supported)},r.onerror=function(){t(!1)},r.src="data:image/webp;base64,"+{alpha:"UklGRkoAAABXRUJQVlA4WAoAAAAQAAAAAAAAAAAAQUxQSAwAAAARBxAR/Q9ERP8DAABWUDggGAAAABQBAJ0BKgEAAQAAAP4AAA3AAP7mtQAAAA==",animation:"UklGRlIAAABXRUJQVlA4WAoAAAASAAAAAAAAAAAAQU5JTQYAAAD/////AABBTk1GJgAAAAAAAAAAAAAAAAAAAGQAAABWUDhMDQAAAC8AAAAQBxAREYiI/gcA"}[e])}function ewwwLoadImages(e){if(e){for(var t=document.querySelectorAll(".batch-image img, .image-wrapper a, .ngg-pro-masonry-item a, .ngg-galleria-offscreen-seo-wrapper a"),r=0,a=t.length;r<a;r++)ewwwAttr(t[r],"data-src",t[r].getAttribute("data-webp")),ewwwAttr(t[r],"data-thumbnail",t[r].getAttribute("data-webp-thumbnail"));for(var i=document.querySelectorAll("div.woocommerce-product-gallery__image"),r=0,a=i.length;r<a;r++)ewwwAttr(i[r],"data-thumb",i[r].getAttribute("data-webp-thumb"))}for(var n=document.querySelectorAll("video"),r=0,a=n.length;r<a;r++)ewwwAttr(n[r],"poster",e?n[r].getAttribute("data-poster-webp"):n[r].getAttribute("data-poster-image"));for(var o,l=document.querySelectorAll("img.ewww_webp_lazy_load"),r=0,a=l.length;r<a;r++)e&&(ewwwAttr(l[r],"data-lazy-srcset",l[r].getAttribute("data-lazy-srcset-webp")),ewwwAttr(l[r],"data-srcset",l[r].getAttribute("data-srcset-webp")),ewwwAttr(l[r],"data-lazy-src",l[r].getAttribute("data-lazy-src-webp")),ewwwAttr(l[r],"data-src",l[r].getAttribute("data-src-webp")),ewwwAttr(l[r],"data-orig-file",l[r].getAttribute("data-webp-orig-file")),ewwwAttr(l[r],"data-medium-file",l[r].getAttribute("data-webp-medium-file")),ewwwAttr(l[r],"data-large-file",l[r].getAttribute("data-webp-large-file")),null!=(o=l[r].getAttribute("srcset"))&&!1!==o&&o.includes("R0lGOD")&&ewwwAttr(l[r],"src",l[r].getAttribute("data-lazy-src-webp"))),l[r].className=l[r].className.replace(/\bewww_webp_lazy_load\b/,"");for(var s=document.querySelectorAll(".ewww_webp"),r=0,a=s.length;r<a;r++)e?(ewwwAttr(s[r],"srcset",s[r].getAttribute("data-srcset-webp")),ewwwAttr(s[r],"src",s[r].getAttribute("data-src-webp")),ewwwAttr(s[r],"data-orig-file",s[r].getAttribute("data-webp-orig-file")),ewwwAttr(s[r],"data-medium-file",s[r].getAttribute("data-webp-medium-file")),ewwwAttr(s[r],"data-large-file",s[r].getAttribute("data-webp-large-file")),ewwwAttr(s[r],"data-large_image",s[r].getAttribute("data-webp-large_image")),ewwwAttr(s[r],"data-src",s[r].getAttribute("data-webp-src"))):(ewwwAttr(s[r],"srcset",s[r].getAttribute("data-srcset-img")),ewwwAttr(s[r],"src",s[r].getAttribute("data-src-img"))),s[r].className=s[r].className.replace(/\bewww_webp\b/,"ewww_webp_loaded");window.jQuery&&jQuery.fn.isotope&&jQuery.fn.imagesLoaded&&(jQuery(".fusion-posts-container-infinite").imagesLoaded(function(){jQuery(".fusion-posts-container-infinite").hasClass("isotope")&&jQuery(".fusion-posts-container-infinite").isotope()}),jQuery(".fusion-portfolio:not(.fusion-recent-works) .fusion-portfolio-wrapper").imagesLoaded(function(){jQuery(".fusion-portfolio:not(.fusion-recent-works) .fusion-portfolio-wrapper").isotope()}))}function ewwwWebPInit(e){ewwwLoadImages(e),ewwwNggLoadGalleries(e),document.arrive(".ewww_webp",function(){ewwwLoadImages(e)}),document.arrive(".ewww_webp_lazy_load",function(){ewwwLoadImages(e)}),document.arrive("videos",function(){ewwwLoadImages(e)}),"loading"==document.readyState?document.addEventListener("DOMContentLoaded",ewwwJSONParserInit):("undefined"!=typeof galleries&&ewwwNggParseGalleries(e),ewwwWooParseVariations(e))}function ewwwAttr(e,t,r){null!=r&&!1!==r&&e.setAttribute(t,r)}function ewwwJSONParserInit(){"undefined"!=typeof galleries&&check_webp_feature("alpha",ewwwNggParseGalleries),check_webp_feature("alpha",ewwwWooParseVariations)}function ewwwWooParseVariations(e){if(e)for(var t=document.querySelectorAll("form.variations_form"),r=0,a=t.length;r<a;r++){var i=t[r].getAttribute("data-product_variations"),n=!1;try{for(var o in i=JSON.parse(i))void 0!==i[o]&&void 0!==i[o].image&&(void 0!==i[o].image.src_webp&&(i[o].image.src=i[o].image.src_webp,n=!0),void 0!==i[o].image.srcset_webp&&(i[o].image.srcset=i[o].image.srcset_webp,n=!0),void 0!==i[o].image.full_src_webp&&(i[o].image.full_src=i[o].image.full_src_webp,n=!0),void 0!==i[o].image.gallery_thumbnail_src_webp&&(i[o].image.gallery_thumbnail_src=i[o].image.gallery_thumbnail_src_webp,n=!0),void 0!==i[o].image.thumb_src_webp&&(i[o].image.thumb_src=i[o].image.thumb_src_webp,n=!0));n&&ewwwAttr(t[r],"data-product_variations",JSON.stringify(i))}catch(e){}}}function ewwwNggParseGalleries(e){if(e)for(var t in galleries){var r=galleries[t];galleries[t].images_list=ewwwNggParseImageList(r.images_list)}}function ewwwNggLoadGalleries(e){e&&document.addEventListener("ngg.galleria.themeadded",function(e,t){window.ngg_galleria._create_backup=window.ngg_galleria.create,window.ngg_galleria.create=function(e,t){var r=$(e).data("id");return galleries["gallery_"+r].images_list=ewwwNggParseImageList(galleries["gallery_"+r].images_list),window.ngg_galleria._create_backup(e,t)}})}function ewwwNggParseImageList(e){for(var t in e){var r=e[t];if(void 0!==r["image-webp"]&&(e[t].image=r["image-webp"],delete e[t]["image-webp"]),void 0!==r["thumb-webp"]&&(e[t].thumb=r["thumb-webp"],delete e[t]["thumb-webp"]),void 0!==r.full_image_webp&&(e[t].full_image=r.full_image_webp,delete e[t].full_image_webp),void 0!==r.srcsets)for(var a in r.srcsets)nggSrcset=r.srcsets[a],void 0!==r.srcsets[a+"-webp"]&&(e[t].srcsets[a]=r.srcsets[a+"-webp"],delete e[t].srcsets[a+"-webp"]);if(void 0!==r.full_srcsets)for(var i in r.full_srcsets)nggFSrcset=r.full_srcsets[i],void 0!==r.full_srcsets[i+"-webp"]&&(e[t].full_srcsets[i]=r.full_srcsets[i+"-webp"],delete e[t].full_srcsets[i+"-webp"])}return e}check_webp_feature("alpha",ewwwWebPInit);</script><title>Events - Bob Dylan Center | Tulsa, OK</title>
+<link rel="stylesheet" id="tribe-events-views-v2-bootstrap-datepicker-styles-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/vendor/bootstrap-datepicker/css/bootstrap-datepicker.standalone.min.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="tec-variables-skeleton-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/build/css/variables-skeleton.css?ver=6.10.1" media="all">
+<link rel="stylesheet" id="tribe-common-skeleton-style-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/build/css/common-skeleton.css?ver=6.10.1" media="all">
+<link rel="stylesheet" id="tribe-tooltipster-css-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/vendor/tooltipster/tooltipster.bundle.min.css?ver=6.10.1" media="all">
+<link rel="stylesheet" id="tribe-events-views-v2-skeleton-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/views-skeleton.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="tec-variables-full-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/build/css/variables-full.css?ver=6.10.1" media="all">
+<link rel="stylesheet" id="tribe-common-full-style-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/build/css/common-full.css?ver=6.10.1" media="all">
+<link rel="stylesheet" id="tribe-events-views-v2-full-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/views-full.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="tribe-events-views-v2-print-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/views-print.css?ver=6.15.13.1" media="print">
+
+<!-- The SEO Framework by Sybre Waaijer -->
+<meta name="robots" content="max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+<link rel="canonical" href="https://bobdylancenter.com/events/">
+<link rel="next" href="https://bobdylancenter.com/events/page/2/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
+<meta property="og:site_name" content="Bob Dylan Center | Tulsa, OK">
+<meta property="og:title" content="Events">
+<meta property="og:url" content="https://bobdylancenter.com/events/">
+<meta property="og:image" content="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/05/cropped-CenterExteriors_May2025-12-scaled-1.jpg">
+<meta property="og:image:width" content="1920">
+<meta property="og:image:height" content="1010">
+<meta property="og:image:alt" content="Bob Dylan Center exterior - May 2025">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Events">
+<meta name="twitter:image" content="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/05/cropped-CenterExteriors_May2025-12-scaled-1.jpg">
+<meta name="twitter:image:alt" content="Bob Dylan Center exterior - May 2025">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://bobdylancenter.com/#/schema/WebSite","url":"https://bobdylancenter.com/","name":"Bob Dylan Center | Tulsa, OK","inLanguage":"en-US","potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://bobdylancenter.com/search/{search_term_string}/"},"query-input":"required name=search_term_string"},"publisher":{"@type":"Organization","@id":"https://bobdylancenter.com/#/schema/Organization","name":"Bob Dylan Center | Tulsa, OK","url":"https://bobdylancenter.com/","logo":{"@type":"ImageObject","url":"https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon.png","contentUrl":"https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon.png","width":512,"height":512,"contentSize":"31016"}}},{"@type":"CollectionPage","@id":"https://bobdylancenter.com/events/","url":"https://bobdylancenter.com/events/","name":"Events - Bob Dylan Center | Tulsa, OK","inLanguage":"en-US","isPartOf":{"@id":"https://bobdylancenter.com/#/schema/WebSite"},"breadcrumb":{"@type":"BreadcrumbList","@id":"https://bobdylancenter.com/#/schema/BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"item":"https://bobdylancenter.com/","name":"Bob Dylan Center | Tulsa, OK"},{"@type":"ListItem","position":2,"name":"Events"}]}}]}</script>
+<!-- / The SEO Framework by Sybre Waaijer | 11.32ms meta | 5.56ms boot -->
+
+<link rel="dns-prefetch" href="//bobdylancenter.com">
+<link rel="dns-prefetch" href="//www.googletagmanager.com">
+<link rel="alternate" type="text/calendar" title="Bob Dylan Center | Tulsa, OK » iCal Feed" href="https://bobdylancenter.com/events/?ical=1">
+<style id="wp-img-auto-sizes-contain-inline-css">
+img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
+/*# sourceURL=wp-img-auto-sizes-contain-inline-css */
+</style>
+<link rel="stylesheet" id="custif-styles-css" href="https://bobdylancenter.com/wp-content/plugins/custom-iframe/assets/css/style.css?ver=2.0.2" media="all">
+<style id="global-styles-inline-css">
+:root{--wp--preset--aspect-ratio--square: 1;--wp--preset--aspect-ratio--4-3: 4/3;--wp--preset--aspect-ratio--3-4: 3/4;--wp--preset--aspect-ratio--3-2: 3/2;--wp--preset--aspect-ratio--2-3: 2/3;--wp--preset--aspect-ratio--16-9: 16/9;--wp--preset--aspect-ratio--9-16: 9/16;--wp--preset--color--black: #000000;--wp--preset--color--cyan-bluish-gray: #abb8c3;--wp--preset--color--white: #ffffff;--wp--preset--color--pale-pink: #f78da7;--wp--preset--color--vivid-red: #cf2e2e;--wp--preset--color--luminous-vivid-orange: #ff6900;--wp--preset--color--luminous-vivid-amber: #fcb900;--wp--preset--color--light-green-cyan: #7bdcb5;--wp--preset--color--vivid-green-cyan: #00d084;--wp--preset--color--pale-cyan-blue: #8ed1fc;--wp--preset--color--vivid-cyan-blue: #0693e3;--wp--preset--color--vivid-purple: #9b51e0;--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple: linear-gradient(135deg,rgb(6,147,227) 0%,rgb(155,81,224) 100%);--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan: linear-gradient(135deg,rgb(122,220,180) 0%,rgb(0,208,130) 100%);--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange: linear-gradient(135deg,rgb(252,185,0) 0%,rgb(255,105,0) 100%);--wp--preset--gradient--luminous-vivid-orange-to-vivid-red: linear-gradient(135deg,rgb(255,105,0) 0%,rgb(207,46,46) 100%);--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray: linear-gradient(135deg,rgb(238,238,238) 0%,rgb(169,184,195) 100%);--wp--preset--gradient--cool-to-warm-spectrum: linear-gradient(135deg,rgb(74,234,220) 0%,rgb(151,120,209) 20%,rgb(207,42,186) 40%,rgb(238,44,130) 60%,rgb(251,105,98) 80%,rgb(254,248,76) 100%);--wp--preset--gradient--blush-light-purple: linear-gradient(135deg,rgb(255,206,236) 0%,rgb(152,150,240) 100%);--wp--preset--gradient--blush-bordeaux: linear-gradient(135deg,rgb(254,205,165) 0%,rgb(254,45,45) 50%,rgb(107,0,62) 100%);--wp--preset--gradient--luminous-dusk: linear-gradient(135deg,rgb(255,203,112) 0%,rgb(199,81,192) 50%,rgb(65,88,208) 100%);--wp--preset--gradient--pale-ocean: linear-gradient(135deg,rgb(255,245,203) 0%,rgb(182,227,212) 50%,rgb(51,167,181) 100%);--wp--preset--gradient--electric-grass: linear-gradient(135deg,rgb(202,248,128) 0%,rgb(113,206,126) 100%);--wp--preset--gradient--midnight: linear-gradient(135deg,rgb(2,3,129) 0%,rgb(40,116,252) 100%);--wp--preset--font-size--small: 13px;--wp--preset--font-size--medium: 20px;--wp--preset--font-size--large: 36px;--wp--preset--font-size--x-large: 42px;--wp--preset--spacing--20: 0.44rem;--wp--preset--spacing--30: 0.67rem;--wp--preset--spacing--40: 1rem;--wp--preset--spacing--50: 1.5rem;--wp--preset--spacing--60: 2.25rem;--wp--preset--spacing--70: 3.38rem;--wp--preset--spacing--80: 5.06rem;--wp--preset--shadow--natural: 6px 6px 9px rgba(0, 0, 0, 0.2);--wp--preset--shadow--deep: 12px 12px 50px rgba(0, 0, 0, 0.4);--wp--preset--shadow--sharp: 6px 6px 0px rgba(0, 0, 0, 0.2);--wp--preset--shadow--outlined: 6px 6px 0px -3px rgb(255, 255, 255), 6px 6px rgb(0, 0, 0);--wp--preset--shadow--crisp: 6px 6px 0px rgb(0, 0, 0);}:root { --wp--style--global--content-size: 800px;--wp--style--global--wide-size: 1200px; }:where(body) { margin: 0; }.wp-site-blocks > .alignleft { float: left; margin-right: 2em; }.wp-site-blocks > .alignright { float: right; margin-left: 2em; }.wp-site-blocks > .aligncenter { justify-content: center; margin-left: auto; margin-right: auto; }:where(.wp-site-blocks) > * { margin-block-start: 24px; margin-block-end: 0; }:where(.wp-site-blocks) > :first-child { margin-block-start: 0; }:where(.wp-site-blocks) > :last-child { margin-block-end: 0; }:root { --wp--style--block-gap: 24px; }:root :where(.is-layout-flow) > :first-child{margin-block-start: 0;}:root :where(.is-layout-flow) > :last-child{margin-block-end: 0;}:root :where(.is-layout-flow) > *{margin-block-start: 24px;margin-block-end: 0;}:root :where(.is-layout-constrained) > :first-child{margin-block-start: 0;}:root :where(.is-layout-constrained) > :last-child{margin-block-end: 0;}:root :where(.is-layout-constrained) > *{margin-block-start: 24px;margin-block-end: 0;}:root :where(.is-layout-flex){gap: 24px;}:root :where(.is-layout-grid){gap: 24px;}.is-layout-flow > .alignleft{float: left;margin-inline-start: 0;margin-inline-end: 2em;}.is-layout-flow > .alignright{float: right;margin-inline-start: 2em;margin-inline-end: 0;}.is-layout-flow > .aligncenter{margin-left: auto !important;margin-right: auto !important;}.is-layout-constrained > .alignleft{float: left;margin-inline-start: 0;margin-inline-end: 2em;}.is-layout-constrained > .alignright{float: right;margin-inline-start: 2em;margin-inline-end: 0;}.is-layout-constrained > .aligncenter{margin-left: auto !important;margin-right: auto !important;}.is-layout-constrained > :where(:not(.alignleft):not(.alignright):not(.alignfull)){max-width: var(--wp--style--global--content-size);margin-left: auto !important;margin-right: auto !important;}.is-layout-constrained > .alignwide{max-width: var(--wp--style--global--wide-size);}body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}body{padding-top: 0px;padding-right: 0px;padding-bottom: 0px;padding-left: 0px;}a:where(:not(.wp-element-button)){text-decoration: underline;}:root :where(.wp-element-button, .wp-block-button__link){background-color: #32373c;border-width: 0;color: #fff;font-family: inherit;font-size: inherit;font-style: inherit;font-weight: inherit;letter-spacing: inherit;line-height: inherit;padding-top: calc(0.667em + 2px);padding-right: calc(1.333em + 2px);padding-bottom: calc(0.667em + 2px);padding-left: calc(1.333em + 2px);text-decoration: none;text-transform: inherit;}.has-black-color{color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-color{color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-color{color: var(--wp--preset--color--white) !important;}.has-pale-pink-color{color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-color{color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-color{color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-color{color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-color{color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-color{color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-color{color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-color{color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-color{color: var(--wp--preset--color--vivid-purple) !important;}.has-black-background-color{background-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-background-color{background-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-background-color{background-color: var(--wp--preset--color--white) !important;}.has-pale-pink-background-color{background-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-background-color{background-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-background-color{background-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-background-color{background-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-background-color{background-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-background-color{background-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-background-color{background-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-background-color{background-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-background-color{background-color: var(--wp--preset--color--vivid-purple) !important;}.has-black-border-color{border-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-border-color{border-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-border-color{border-color: var(--wp--preset--color--white) !important;}.has-pale-pink-border-color{border-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-border-color{border-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-border-color{border-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-border-color{border-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-border-color{border-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-border-color{border-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-border-color{border-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-border-color{border-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-border-color{border-color: var(--wp--preset--color--vivid-purple) !important;}.has-vivid-cyan-blue-to-vivid-purple-gradient-background{background: var(--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple) !important;}.has-light-green-cyan-to-vivid-green-cyan-gradient-background{background: var(--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan) !important;}.has-luminous-vivid-amber-to-luminous-vivid-orange-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange) !important;}.has-luminous-vivid-orange-to-vivid-red-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-orange-to-vivid-red) !important;}.has-very-light-gray-to-cyan-bluish-gray-gradient-background{background: var(--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray) !important;}.has-cool-to-warm-spectrum-gradient-background{background: var(--wp--preset--gradient--cool-to-warm-spectrum) !important;}.has-blush-light-purple-gradient-background{background: var(--wp--preset--gradient--blush-light-purple) !important;}.has-blush-bordeaux-gradient-background{background: var(--wp--preset--gradient--blush-bordeaux) !important;}.has-luminous-dusk-gradient-background{background: var(--wp--preset--gradient--luminous-dusk) !important;}.has-pale-ocean-gradient-background{background: var(--wp--preset--gradient--pale-ocean) !important;}.has-electric-grass-gradient-background{background: var(--wp--preset--gradient--electric-grass) !important;}.has-midnight-gradient-background{background: var(--wp--preset--gradient--midnight) !important;}.has-small-font-size{font-size: var(--wp--preset--font-size--small) !important;}.has-medium-font-size{font-size: var(--wp--preset--font-size--medium) !important;}.has-large-font-size{font-size: var(--wp--preset--font-size--large) !important;}.has-x-large-font-size{font-size: var(--wp--preset--font-size--x-large) !important;}
+:root :where(.wp-block-pullquote){font-size: 1.5em;line-height: 1.6;}
+/*# sourceURL=global-styles-inline-css */
+</style>
+<link rel="stylesheet" id="tribe-events-v2-single-skeleton-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/tribe-events-single-skeleton.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="tribe-events-v2-single-skeleton-full-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/tribe-events-single-full.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="tec-events-elementor-widgets-base-styles-css" href="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/build/css/integrations/plugins/elementor/widgets/widget-base.css?ver=6.15.13.1" media="all">
+<link rel="stylesheet" id="parent-style-css" href="https://bobdylancenter.com/wp-content/themes/hello-elementor/style.css?ver=6.9.1" media="all">
+<link rel="stylesheet" id="child-style-css" href="https://bobdylancenter.com/wp-content/themes/bdc/style.css?ver=1.1.04" media="all">
+<link rel="stylesheet" id="hello-elementor-header-footer-css" href="https://bobdylancenter.com/wp-content/themes/hello-elementor/assets/css/header-footer.css?ver=3.4.6" media="all">
+<link rel="stylesheet" id="elementor-frontend-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/custom-frontend.min.css?ver=1770762118" media="all">
+<link rel="stylesheet" id="widget-menu-anchor-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/css/widget-menu-anchor.min.css?ver=3.35.3" media="all">
+<link rel="stylesheet" id="widget-image-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/css/widget-image.min.css?ver=3.35.3" media="all">
+<link rel="stylesheet" id="widget-nav-menu-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/custom-pro-widget-nav-menu.min.css?ver=1770762118" media="all">
+<link rel="stylesheet" id="widget-heading-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/css/widget-heading.min.css?ver=3.35.3" media="all">
+<link rel="stylesheet" id="widget-social-icons-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/css/widget-social-icons.min.css?ver=3.35.3" media="all">
+<link rel="stylesheet" id="e-apple-webkit-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/custom-apple-webkit.min.css?ver=1770762118" media="all">
+<link rel="stylesheet" id="e-popup-css" href="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/css/conditionals/popup.min.css?ver=3.35.0" media="all">
+<link rel="stylesheet" id="widget-search-form-css" href="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/css/widget-search-form.min.css?ver=3.35.0" media="all">
+<link rel="stylesheet" id="elementor-icons-shared-0-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/lib/font-awesome/css/fontawesome.min.css?ver=5.15.3" media="all">
+<link rel="stylesheet" id="elementor-icons-fa-solid-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/lib/font-awesome/css/solid.min.css?ver=5.15.3" media="all">
+<link rel="stylesheet" id="elementor-post-525-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-525.css?ver=1770762119" media="all">
+<link rel="stylesheet" id="elementor-post-9-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-9.css?ver=1770762119" media="all">
+<link rel="stylesheet" id="elementor-post-276-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-276.css?ver=1770762119" media="all">
+<link rel="stylesheet" id="elementor-post-1192-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-1192.css?ver=1770930321" media="all">
+<link rel="stylesheet" id="elementor-post-203-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-203.css?ver=1770762119" media="all">
+<link rel="stylesheet" id="ecs-styles-css" href="https://bobdylancenter.com/wp-content/plugins/ele-custom-skin/assets/css/ecs-style.css?ver=3.1.9" media="all">
+<link rel="stylesheet" id="elementor-icons-fa-brands-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/lib/font-awesome/css/brands.min.css?ver=5.15.3" media="all">
+<script src="https://bobdylancenter.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1" id="jquery-core-js"></script>
+<script src="https://bobdylancenter.com/wp-includes/js/jquery/jquery-migrate.min.js?ver=3.4.1" id="jquery-migrate-js"></script>
+
+<!-- Google tag (gtag.js) snippet added by Site Kit -->
+<!-- Google Analytics snippet added by Site Kit -->
+<script src="https://www.googletagmanager.com/gtag/js?id=GT-NFJX5VD" id="google_gtagjs-js" async=""></script>
+<script id="google_gtagjs-js-after">
+window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}
+gtag("set","linker",{"domains":["bobdylancenter.com"]});
+gtag("js", new Date());
+gtag("set", "developer_id.dZTNiMT", true);
+gtag("config", "GT-NFJX5VD");
+//# sourceURL=google_gtagjs-js-after
+</script>
+<script id="ecs_ajax_load-js-extra">
+var ecs_ajax_params = {"ajaxurl":"https://bobdylancenter.com/wp-admin/admin-ajax.php","posts":"{\"post_type\":\"tribe_events\",\"eventDisplay\":\"default\",\"error\":\"\",\"m\":\"\",\"p\":0,\"post_parent\":\"\",\"subpost\":\"\",\"subpost_id\":\"\",\"attachment\":\"\",\"attachment_id\":0,\"name\":\"\",\"pagename\":\"\",\"page_id\":0,\"second\":\"\",\"minute\":\"\",\"hour\":\"\",\"day\":0,\"monthnum\":0,\"year\":0,\"w\":0,\"category_name\":\"\",\"tag\":\"\",\"cat\":\"\",\"tag_id\":\"\",\"author\":\"\",\"author_name\":\"\",\"feed\":\"\",\"tb\":\"\",\"paged\":0,\"meta_key\":\"\",\"meta_value\":\"\",\"preview\":\"\",\"s\":\"\",\"sentence\":\"\",\"title\":\"\",\"fields\":\"all\",\"menu_order\":\"\",\"embed\":\"\",\"category__in\":[],\"category__not_in\":[],\"category__and\":[],\"post__in\":[],\"post__not_in\":[],\"post_name__in\":[],\"tag__in\":[],\"tag__not_in\":[],\"tag__and\":[],\"tag_slug__in\":[],\"tag_slug__and\":[],\"post_parent__in\":[],\"post_parent__not_in\":[],\"author__in\":[],\"author__not_in\":[],\"search_columns\":[],\"tribe_suppress_query_filters\":true,\"tribe_remove_date_filters\":true,\"tribe_include_date_meta\":false,\"ignore_sticky_posts\":false,\"suppress_filters\":false,\"cache_results\":true,\"update_post_term_cache\":true,\"update_menu_item_cache\":false,\"lazy_load_term_meta\":true,\"update_post_meta_cache\":true,\"posts_per_page\":10,\"nopaging\":false,\"comments_per_page\":\"50\",\"no_found_rows\":false,\"order\":\"DESC\"}"};
+//# sourceURL=ecs_ajax_load-js-extra
+</script>
+<script src="https://bobdylancenter.com/wp-content/plugins/ele-custom-skin/assets/js/ecs_ajax_pagination.js?ver=3.1.9" id="ecs_ajax_load-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/ele-custom-skin/assets/js/ecs.js?ver=3.1.9" id="ecs-script-js"></script>
+<link rel="https://api.w.org/" href="https://bobdylancenter.com/wp-json/"><!-- start Simple Custom CSS and JS -->
+<script>
+  !function(v,i,b,e,c,o){if(!v[c]){var s=v[c]=function(){s.process?s.process.apply(s,arguments):s.queue.push(arguments)};s.queue=[],s.b=1*new Date;var t=i.createElement(b);t.async=!0,t.src=e;var n=i.getElementsByTagName(b)[0];n.parentNode.insertBefore(t,n)}}(window,document,"script","https://s.vibe.co/vbpx.js","vbpx");
+  vbpx('init','hgrQW8');
+  vbpx('event', 'page_view');
+</script><!-- end Simple Custom CSS and JS -->
+<!-- start Simple Custom CSS and JS -->
+<script>
+jQuery(document).ready(function($) {
+    setTimeout(function() {
+        var hash = window.location.hash;
+        if (hash) {
+            var activeTab = $(hash);
+            if (activeTab.length) {
+                activeTab.trigger('click'); // General case
+            }
+            if (hash == '#leadership') {  // Specific fallback for the third tab
+                $('.elementor-tab-title:nth-child(3)').trigger('click'); 
+            }
+        } else {
+            // Optionally, set a default tab if no hash is present
+            $('#general').trigger('click');  // Replace with your desired default tab ID
+        }
+    }, 500); // Adjust the delay if necessary
+});
+
+
+</script>
+<!-- end Simple Custom CSS and JS -->
+<meta name="generator" content="Site Kit by Google 1.172.0"><meta name="tec-api-version" content="v1"><meta name="tec-api-origin" content="https://bobdylancenter.com"><link rel="alternate" href="https://bobdylancenter.com/wp-json/tribe/events/v1/"><meta name="generator" content="Elementor 3.35.3; features: additional_custom_breakpoints; settings: css_print_method-external, google_font-enabled, font_display-swap">
+			<style>
+				.e-con.e-parent:nth-of-type(n+4):not(.e-lazyloaded):not(.e-no-lazyload),
+				.e-con.e-parent:nth-of-type(n+4):not(.e-lazyloaded):not(.e-no-lazyload) * {
+					background-image: none !important;
+				}
+				@media screen and (max-height: 1024px) {
+					.e-con.e-parent:nth-of-type(n+3):not(.e-lazyloaded):not(.e-no-lazyload),
+					.e-con.e-parent:nth-of-type(n+3):not(.e-lazyloaded):not(.e-no-lazyload) * {
+						background-image: none !important;
+					}
+				}
+				@media screen and (max-height: 640px) {
+					.e-con.e-parent:nth-of-type(n+2):not(.e-lazyloaded):not(.e-no-lazyload),
+					.e-con.e-parent:nth-of-type(n+2):not(.e-lazyloaded):not(.e-no-lazyload) * {
+						background-image: none !important;
+					}
+				}
+			</style>
+			
+<!-- Google Tag Manager snippet added by Site Kit -->
+<script>
+			( function( w, d, s, l, i ) {
+				w[l] = w[l] || [];
+				w[l].push( {'gtm.start': new Date().getTime(), event: 'gtm.js'} );
+				var f = d.getElementsByTagName( s )[0],
+					j = d.createElement( s ), dl = l != 'dataLayer' ? '&l=' + l : '';
+				j.async = true;
+				j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+				f.parentNode.insertBefore( j, f );
+			} )( window, document, 'script', 'dataLayer', 'GTM-T587BSD8' );
+			
+</script>
+
+<!-- End Google Tag Manager snippet added by Site Kit -->
+		<script>
+		 if (history.scrollRestoration) {
+			history.scrollRestoration = 'manual';
+		} else {
+			window.onbeforeunload = function () {
+				window.scrollTo(0, 0);
+			}
+		}
+		</script>
+		<link rel="icon" href="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon-150x150.png" sizes="32x32">
+<link rel="icon" href="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon-300x300.png" sizes="192x192">
+<link rel="apple-touch-icon" href="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon-300x300.png">
+<meta name="msapplication-TileImage" content="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/icon-300x300.png">
+		<style id="wp-custom-css">
+			body {overflow-x: hidden;}
+.page-id-66 {background: #ffffff;}
+
+.elementor-element-edfaa0d{
+	display: block !important;
+}
+
+main#tribe-events-pg-template img[alt="Ribbon-Cutting Ceremony"] {
+	display: none !important;
+}
+
+
+.accord-bi .elementor-accordion-item {
+    border-bottom: 1px solid #a9a9a9 !important;
+}
+
+.accord-bi .elementor-accordion-item:first-child {
+    border-top: 1px solid #a9a9a9 !important;
+}
+
+.accord-bi a.btn {
+    padding: 11px 18px;
+    background: #283796;
+    color: #fff !important;
+    border: 2px solid #283796;
+    font-size: 20px !important;
+	    display: inline-block;margin-right: 15px;
+}
+
+.accord-bi a.btn:hover {
+    background: #000;
+    border: 2px solid #000;
+    transition: 0.3s;
+    color: #fff !important;
+	
+}
+
+.accord-bi a.whitebtn {
+    color: #000 !important;
+    background: #fff;
+    border-color: #000;
+    
+}
+
+.btn-p-bi p:last-child{
+    margin-top: 40px;
+}
+
+@media (max-width:767px){
+    .accord-bi a.btn {
+    padding: 10px 7px;
+    font-size: 18px !important;margin-bottom: 15px;
+}
+}
+
+
+
+
+
+@media (max-width: 1103px) {
+.elementor-section-wrap > .elementor-section.elementor-section-boxed > .elementor-container {max-width: 100%;}
+}
+
+#site-header {border-bottom:none;}
+
+.tribe-events-event-meta .tribe-events-time-divider,
+.tribe-events-event-meta .tribe-event-time-end {
+    display: none;
+}
+A.tribe-events-widget-events-list__view-more-link {
+	color: #ffffff !important;
+}
+
+A.tribe-events-widget-events-list__view-more-link:hover {
+	color: #283796 !important;
+}
+
+.postid-3245 .entry-title {
+    display: none;
+}
+
+.elementor .elementor-widget-text-editor a {
+  text-decoration-line: underline !important;
+  text-underline-offset: 2px;
+}
+		</style>
+		<script type="text/javascript" async="" src="https://googleads.g.doubleclick.net/pagead/viewthroughconversion/941139099/?random=1770946405299&amp;cv=11&amp;fst=1770946405299&amp;bg=ffffff&amp;guid=ON&amp;async=1&amp;en=gtag.config&amp;gtm=45Pe62b1v9175959379za200zd9175959379xec&amp;gcd=13l3l3l3l1l1&amp;dma=0&amp;tag_exp=103116026~103200004~104527906~104528500~104573694~104684208~104684211~115616986~115938465~115938468~116988315~117447493~117455673~117455675&amp;u_w=1280&amp;u_h=720&amp;url=https%3A%2F%2Fbobdylancenter.com%2Fevents%2F&amp;frm=0&amp;tiba=Events%20-%20Bob%20Dylan%20Center%20%7C%20Tulsa%2C%20OK&amp;did=dZTNiMT&amp;gdid=dZTNiMT&amp;hn=www.googleadservices.com&amp;npa=0&amp;pscdl=noapi&amp;auid=1405992452.1770946405&amp;uaa=x86&amp;uab=64&amp;uafvl=Not%253AA-Brand%3B99.0.0.0%7CHeadlessChrome%3B145.0.7632.6%7CChromium%3B145.0.7632.6&amp;uamb=0&amp;uam=&amp;uap=Windows&amp;uapv=19.0.0&amp;uaw=0&amp;data=event%3Dgtag.config&amp;rfmt=3&amp;fmt=4"></script></head>
+<body class="archive post-type-archive post-type-archive-tribe_events wp-custom-logo wp-embed-responsive wp-theme-hello-elementor wp-child-theme-bdc tribe-events-page-template tribe-js tribe-filter-live header-notactive-bi hello-elementor-default elementor-default elementor-kit-525 nowhitenav e--ua-blink e--ua-webkit" data-elementor-device-mode="desktop">
+
+		<!-- Google Tag Manager (noscript) snippet added by Site Kit -->
+		<noscript>
+			<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T587BSD8" height="0" width="0" style="display:none;visibility:hidden"></iframe>
+		</noscript>
+		<!-- End Google Tag Manager (noscript) snippet added by Site Kit -->
+				<header data-elementor-type="header" data-elementor-id="9" class="elementor elementor-9 elementor-location-header" data-elementor-post-type="elementor_library">
+					<section class="elementor-section elementor-top-section elementor-element elementor-element-9543ba8 elementor-section-boxed elementor-section-height-default elementor-section-height-default" data-id="9543ba8" data-element_type="section" data-e-type="section">
+						<div class="elementor-container elementor-column-gap-no">
+					<div class="elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-a311d78" data-id="a311d78" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-b4c2ed0 elementor-widget elementor-widget-menu-anchor" data-id="b4c2ed0" data-element_type="widget" data-e-type="widget" data-widget_type="menu-anchor.default">
+				<div class="elementor-widget-container">
+							<div class="elementor-menu-anchor" id="top"></div>
+						</div>
+				</div>
+					</div>
+		</div>
+					</div>
+		</section>
+				<section class="elementor-section elementor-top-section elementor-element elementor-element-5cab90a9 elementor-section-full_width elementor-section-height-min-height elementor-section-stretched elementor-hidden-desktop elementor-section-height-default elementor-section-items-middle" data-id="5cab90a9" data-element_type="section" data-e-type="section" data-settings="{&quot;stretch_section&quot;:&quot;section-stretched&quot;,&quot;background_background&quot;:&quot;classic&quot;}" style="width: 1280px; left: 0px;">
+						<div class="elementor-container elementor-column-gap-default">
+					<div class="elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-12a2a7a0" data-id="12a2a7a0" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-a810bb5 elementor-widget__width-auto elementor-widget elementor-widget-image" data-id="a810bb5" data-element_type="widget" data-e-type="widget" data-widget_type="image.default">
+				<div class="elementor-widget-container">
+																<a href="https://bobdylancenter.com">
+							<img fetchpriority="high" width="800" height="212" src="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png.webp" class="attachment-large size-large wp-image-1418 ewww_webp_loaded" alt="Bob Dylan Center Tulsa, OK" srcset="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png.webp 1024w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-768x203.png.webp 768w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1536x407.png.webp 1536w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines.png.webp 1787w" sizes="(max-width: 800px) 100vw, 800px" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png.webp" data-srcset-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png.webp 1024w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-768x203.png.webp 768w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1536x407.png.webp 1536w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines.png.webp 1787w" data-srcset-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png 1024w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-768x203.png 768w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1536x407.png 1536w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines.png 1787w" data-eio="j"><noscript><img fetchpriority="high" width="800" height="212" src="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png" class="attachment-large size-large wp-image-1418" alt="Bob Dylan Center Tulsa, OK" srcset="https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1024x271.png 1024w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-768x203.png 768w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines-1536x407.png 1536w, https://bobdylancenter.com/wp-content/uploads/sites/4/2021/10/BDC-Logo_white_2-lines.png 1787w" sizes="(max-width: 800px) 100vw, 800px" /></noscript>								</a>
+															</div>
+				</div>
+				<div class="elementor-element elementor-element-4bda382c elementor-widget__width-auto elementor-view-default elementor-widget elementor-widget-icon" data-id="4bda382c" data-element_type="widget" data-e-type="widget" id="navicon" data-widget_type="icon.default">
+				<div class="elementor-widget-container">
+							<div class="elementor-icon-wrapper">
+			<div class="elementor-icon">
+			<svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" data-name="Layer 1" viewBox="0 0 47 40"><g id="r9X0PI"><path d="M5.5941,9.3052v-2.67H41.3834v2.67Z"></path><path d="M5.6165,21.3282v-2.71H41.4059v2.71Z"></path><path d="M41.4037,30.6548v2.71H5.6143v-2.71Z"></path></g></svg>			</div>
+		</div>
+						</div>
+				</div>
+					</div>
+		</div>
+					</div>
+		</section>
+				<section class="elementor-section elementor-top-section elementor-element elementor-element-6e1c0c3 elementor-section-stretched elementor-section-boxed elementor-section-height-default elementor-section-height-default" data-id="6e1c0c3" data-element_type="section" data-e-type="section" id="breadcrumb-section" data-settings="{&quot;stretch_section&quot;:&quot;section-stretched&quot;}" style="width: 1280px; left: 0px;">
+						<div class="elementor-container elementor-column-gap-no">
+					<div class="elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-baf69bb topmiddle elementor-hidden-desktop elementor-hidden-tablet elementor-hidden-mobile" data-id="baf69bb" data-element_type="column" data-e-type="column" data-settings="{&quot;background_background&quot;:&quot;classic&quot;}">
+			<div class="elementor-widget-wrap">
+							</div>
+		</div>
+					</div>
+		</section>
+				</header>
+		
+<div class="header">
+	<div class="header-container">
+		<div class="utility-nav">
+			<div class="menu-utility-menu-container"><ul id="menu-utility-menu" class="menu"><li id="menu-item-538" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-538"><a target="_blank" href="https://secure.americansongarchives.org/events?theme=BDC&amp;kid=271,272,273,274,276,275,277,&amp;_ga=2.24172986.185358829.1649908855-1118953787.1649707098">Tickets</a></li>
+<li id="menu-item-2617" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-2617"><a href="https://give.bobdylancenter.com/support">Donate</a></li>
+<li id="menu-item-537" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-537"><a target="_blank" href="https://shop.bobdylancenter.com/">Shop</a></li>
+</ul></div>		</div>
+
+		<div class="menu-container">
+			<div class="logo">
+				<a href="/">
+					<img src="/wp-content/themes/bdc/images/BDC-Logo_white_2-lines.png">
+				</a>
+			</div>
+
+			<div class="main-nav">
+				<div class="menu-main-menu-container"><ul id="menu-main-menu" class="menu"><li id="menu-item-405" class="menu-item menu-item-type-post_type menu-item-object-page current-menu-ancestor current-menu-parent current_page_parent current_page_ancestor menu-item-has-children menu-item-405"><a href="https://bobdylancenter.com/visit/">Visit<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a>
+<ul class="sub-menu">
+	<li id="menu-item-660" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-660"><a href="/visit/exhibits/">Exhibits<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-438" class="menu-item menu-item-type-custom menu-item-object-custom current-menu-item menu-item-438"><a href="/events/" aria-current="page">Events<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-4022" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-4022"><a href="https://bobdylancenter.com/visit/education/">Education<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+</ul>
+</li>
+<li id="menu-item-210" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-210"><a href="https://bobdylancenter.com/support/">Support<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a>
+<ul class="sub-menu">
+	<li id="menu-item-6649" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-6649"><a href="https://give.bobdylancenter.com/support">Donate<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-212" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-212"><a href="https://bobdylancenter.com/support/memberships/">Memberships<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-5125" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5125"><a href="https://bobdylancenter.com/support/planned-giving/">Bequests &amp; Planned Giving<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-5126" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5126"><a href="https://bobdylancenter.com/support/ways-to-give/">Ways To Give<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-5681" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5681"><a href="https://bobdylancenter.com/support/freedomhighwayandbeyond/">Freedom Highway and Beyond Education Fund<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-380" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-380"><a target="_blank" href="https://secure.americansongarchives.org/gift/giftcertificate?theme=BDC">Gift Certificates<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-389" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-389"><a href="https://bobdylancenter.com/support/volunteer/">Volunteer<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+</ul>
+</li>
+<li id="menu-item-222" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-222"><a href="https://bobdylancenter.com/about/">About<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a>
+<ul class="sub-menu">
+	<li id="menu-item-221" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-221"><a href="https://bobdylancenter.com/about/biography/">Biography<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-406" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-406"><a href="https://bobdylancenter.com/about/faq/">FAQ<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-224" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-224"><a href="https://bobdylancenter.com/about/press-room/">Press Room<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-5897" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5897"><a href="https://bobdylancenter.com/job-openings/">Job Openings<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+	<li id="menu-item-1995" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-1995"><a href="https://bobdylancenter.com/songwriterfellowship/">Songwriter Fellowship<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+</ul>
+</li>
+<li id="menu-item-225" class="menu-item menu-item-type-post_type menu-item-object-page menu-item-225"><a href="https://bobdylancenter.com/archive/">Archive<div class="dropdown-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="14.596" height="14.596" viewBox="0 0 14.596 14.596"> <path id="Union_6" data-name="Union 6" d="M14368.629,23456.82h-7.938a1.192,1.192,0,0,1-1.19-1.191v-7.937a1.191,1.191,0,1,1,2.382,0v6.746h6.747a1.191,1.191,0,0,1,0,2.383Z" transform="translate(-26733 -6418.211) rotate(-45)" fill="#fff"></path> </svg>
+							</div></a></li>
+</ul></div>			</div>
+
+			<div class="search">
+				<form action="/" id="searchform" method="get">
+					<div class="form-container">
+						<div class="search-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="13" height="18.877" viewBox="0 0 13 18.877"> <g id="Group_1323" data-name="Group 1323" transform="translate(17141.727 23035.768)"> <line id="Line_109" data-name="Line 109" x1="3.51" y1="8.631" transform="translate(-17133.736 -23025.898)" fill="none" stroke="#fff" stroke-width="2"></line> <g id="Ellipse_5" data-name="Ellipse 5" transform="translate(-17141.727 -23035.768)" stroke="#fff" stroke-width="2"> <circle cx="6.5" cy="6.5" r="6.5" stroke="none"></circle> <circle cx="6.5" cy="6.5" r="5.5" fill="none"></circle> </g> </g> </svg>
+						</div>
+
+						<input type="text" id="wp_search_from" name="s" value="" placeholder="Search">
+
+						<button class="arrow-icon">
+							<svg xmlns="http://www.w3.org/2000/svg" width="21.5" height="9.824" viewBox="0 0 21.5 9.824"> <g id="Group_1321" data-name="Group 1321" transform="translate(17375.494 23149.994)"> <line id="Line_108" data-name="Line 108" x2="19" transform="translate(-17375.494 -23145.082)" fill="none" stroke="#fff" stroke-width="1"></line> <path id="Polygon_1" data-name="Polygon 1" d="M4.912,0,9.824,5H0Z" transform="translate(-17353.994 -23149.994) rotate(90)" fill="#fff"></path> </g> </svg>
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- <div class="breadcrumbs" role="main">
+	</div> -->
+
+
+<div class="tribe-common tribe-common--breakpoint-medium tribe-events tribe-events-view tribe-events-view--list" data-js="tribe-events-view" data-view-rest-nonce="" data-view-rest-url="https://bobdylancenter.com/wp-json/tribe/views/v2/html" data-view-rest-method="GET" data-view-manage-url="1" data-view-breakpoint-pointer="5f52bfd2-046d-4b36-a3d5-06a0d4322fb2">
+	<div class="tribe-common-l-container tribe-events-l-container">
+		
+		<div class="eventshead">
+					<div data-elementor-type="section" data-elementor-id="267" class="elementor elementor-267" data-elementor-post-type="elementor_library">
+					<section class="elementor-section elementor-top-section elementor-element elementor-element-2e30f3c elementor-section-stretched topsection blacknav elementor-section-boxed elementor-section-height-default elementor-section-height-default" data-id="2e30f3c" data-element_type="section" data-e-type="section" data-settings="{&quot;stretch_section&quot;:&quot;section-stretched&quot;}" style="width: 1280px; left: 0px;">
+						<div class="elementor-container elementor-column-gap-no">
+					<div class="elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-68d4a0f topmiddle" data-id="68d4a0f" data-element_type="column" data-e-type="column" data-settings="{&quot;background_background&quot;:&quot;classic&quot;}">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-b1550ff elementor-widget elementor-widget-heading" data-id="b1550ff" data-element_type="widget" data-e-type="widget" data-widget_type="heading.default">
+				<div class="elementor-widget-container">
+					<h1 class="elementor-heading-title elementor-size-default">UPCOMING EVENTS</h1>				</div>
+				</div>
+				<div class="elementor-element elementor-element-42c12d4 elementor-widget elementor-widget-heading" data-id="42c12d4" data-element_type="widget" data-e-type="widget" data-widget_type="heading.default">
+				<div class="elementor-widget-container">
+					<p class="elementor-heading-title elementor-size-default">From concerts to discussions to curated exhibits, the Bob Dylan Center has something for everyone.</p>				</div>
+				</div>
+				<div class="elementor-element elementor-element-2e512ae elementor-widget-divider--view-line elementor-widget elementor-widget-divider" data-id="2e512ae" data-element_type="widget" data-e-type="widget" data-widget_type="divider.default">
+				<div class="elementor-widget-container">
+							<div class="elementor-divider">
+			<span class="elementor-divider-separator">
+						</span>
+		</div>
+						</div>
+				</div>
+					</div>
+		</div>
+					</div>
+		</section>
+				</div>
+				</div>
+		
+		<div class="tribe-events-view-loader tribe-common-a11y-hidden" role="alert" aria-live="polite">
+	<span class="tribe-events-view-loader__text tribe-common-a11y-visual-hide">
+		10 events found.	</span>
+	<div class="tribe-events-view-loader__dots tribe-common-c-loader">
+		<svg class="tribe-common-c-svgicon tribe-common-c-svgicon--dot tribe-common-c-loader__dot tribe-common-c-loader__dot--first" aria-hidden="true" viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg">
+	<circle cx="7.5" cy="7.5" r="7.5"></circle>
+</svg>
+		<svg class="tribe-common-c-svgicon tribe-common-c-svgicon--dot tribe-common-c-loader__dot tribe-common-c-loader__dot--second" aria-hidden="true" viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg">
+	<circle cx="7.5" cy="7.5" r="7.5"></circle>
+</svg>
+		<svg class="tribe-common-c-svgicon tribe-common-c-svgicon--dot tribe-common-c-loader__dot tribe-common-c-loader__dot--third" aria-hidden="true" viewBox="0 0 15 15" xmlns="http://www.w3.org/2000/svg">
+	<circle cx="7.5" cy="7.5" r="7.5"></circle>
+</svg>
+	</div>
+</div>
+
+		<script type="application/ld+json">
+[{"@context":"http://schema.org","@type":"Event","name":"Sooner or Later: Celebrating the 60th Anniversary of \u201cBlonde on Blonde\u201d","description":"&lt;p&gt;In celebration of the sixtieth anniversary of Bob Dylan\u2019s classic album \u201cBlonde on Blonde,\u201d the Bob Dylan Center will present a major multi-artist concert featuring an exciting array of musicians for whom Dylan and his 1966 double-disc landmark remain marvels of omnivorous musicality and lyrical brilliance. This one-night-only event will take place on Friday, Feb. [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE.jpg","url":"https://bobdylancenter.com/event/sooner-or-later/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-02-20T20:00:00-06:00","endDate":"2026-02-20T21:00:00-06:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"eTown Hall (Boulder, CO): &#8220;Stepping Into the Unknown: Films from the Bob Dylan Center&#8221;","description":"&lt;p&gt;This event features a screening and conversation with the Bob Dylan Center Director, Steven Jenkins. Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the studio. Selections include Dylan\u2019s first film soundtrack for [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night.jpg","url":"https://bobdylancenter.com/event/e-town-hall-boulder-co/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-08T19:00:00-05:00","endDate":"2026-03-08T21:00:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Natalie&#8217;s Grandview (Columbus, OH): &#8220;Stepping Into the Unknown: Films from the Bob Dylan Center&#8221;","description":"&lt;p&gt;Stepping Into the Unknown: Films from the Bob Dylan Center Screening and Conversation with Director Steven Jenkins Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the studio\u2014all different from last year\u2019s presentation. [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies.jpg","url":"https://bobdylancenter.com/event/natalies-grandview-columbus-oh/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-15T19:00:00-05:00","endDate":"2026-03-15T21:00:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Rock and Roll Hall of Fame (Cleveland, OH): \u201cStepping Into the Unknown: Films from the Bob Dylan Center\u201d","description":"&lt;p&gt;Screening and Conversation with Director Steven Jenkins Musical Performance by Rock &amp; Roll Hall of Fame Staff Members Monday, March 16, 2026 7:00 pm E.T. Rock &amp; Roll Hall of Fame 1100 E. 9th Street Cleveland, OH 44114 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-scaled.jpg","url":"https://bobdylancenter.com/event/rock-hall-film-screening/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-16T18:00:00-05:00","endDate":"2026-03-16T18:00:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Bob Dylan Center Book Club: &#8220;Ain&#8217;t Nobody&#8217;s Fool: The Life and Times of Dolly Parton&#8221;","description":"&lt;p&gt;\u201cPeople talk of situations, read books, repeat quotations.\u201d \u2014Bob Dylan, \u201cLove Minus Zero/No Limit\u201d Join Bob Dylan Center Director Steven Jenkins for an online discussion with journalist and author Martha Ackmann about her sweeping and incisive biography of one of the most beloved musicians and entertainers of our time, the inimitable Dolly Parton. In \u201cAin\u2019t [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1.png","url":"https://bobdylancenter.com/event/martha-ackmann/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-19T18:00:00-05:00","endDate":"2026-03-19T19:00:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo","description":"&lt;p&gt;In celebration of his 75th birthday this year, genre-blurring guitar virtuoso, composer and band leader Bill Frisell has planned a handful of one-off events that span his varied musical interests and talents. For this very special evening presented by the Bob Dylan Center, Frisell will premiere stunning new arrangements of some of his favorite Dylan [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1.jpg","url":"https://bobdylancenter.com/event/bill-frisell/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-22T19:30:00-05:00","endDate":"2026-03-22T21:30:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"The Lyric Theatre (Oxford, MS): \u201cStepping Into the Unknown: Films from the Bob Dylan Center\u201d","description":"&lt;p&gt;Screening and Conversation with Director Steven Jenkins and Dylan Scholar Elizabeth Nelson The Lyric Theatre Oxford 1006 Van Buren Ave. Oxford, MS 38655 Wednesday, March 25, 2026 7:00 p.m. CT Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater.jpg","url":"https://bobdylancenter.com/event/lyric-theatre-oxford-ms/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-25T19:00:00-07:00","endDate":"2026-03-25T20:00:00-07:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Crosstown Arts (Memphis, TN): \u201cStepping Into the Unknown: Films from the Bob Dylan Center\u201d","description":"&lt;p&gt;Screening and Conversation with Director Steven Jenkins Tuesday, April 21, 2026 6:30 p.m. PT Roxie Theater 3117 16th St. San Francisco, CA 94103 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1.jpg","url":"https://bobdylancenter.com/event/crosstown-arts-memphis-tn/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-03-26T19:00:00-07:00","endDate":"2026-03-26T20:00:00-07:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Ten Songs (Plus One or Two)","description":"&lt;p&gt;As the chill of winter subsides, leaving earth and air receptive to the awakenings of spring, \u201cTen Songs (Plus One or Two)\u201d moves with the seasons and embraces the vernal equinox, ushering in music by Low, Los Lobos and Suzanne Vega redolent of sleepy-eyed contentment and dreamy wonder. Lest that sound a bit New Age [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large.jpg","url":"https://bobdylancenter.com/event/ten-songs-april-2026/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-04-02T18:00:00-05:00","endDate":"2026-04-02T20:00:00-05:00","performer":"Organization"},{"@context":"http://schema.org","@type":"Event","name":"Coolidge Corner Theatre (Brookline, MA): \u201cStepping Into the Unknown: Films from the Bob Dylan Center\u201d","description":"&lt;p&gt;Screening and Conversation with Director Steven Jenkins Acoustic Performance by Special Guest Bill Janovitz Thursday, April 9, 2026 7 p.m. Eastern Time Coolidge Corner Theatre 290 Harvard St. Brookline, MA 02446 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased [&hellip;]&lt;/p&gt;\\n","image":"https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle.jpg","url":"https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/","eventAttendanceMode":"https://schema.org/OfflineEventAttendanceMode","eventStatus":"https://schema.org/EventScheduled","startDate":"2026-04-09T18:00:00-05:00","endDate":"2026-04-09T20:00:00-05:00","performer":"Organization"}]
+</script>
+		<script data-js="tribe-events-view-data" type="application/json">
+	{"slug":"list","prev_url":"https:\/\/bobdylancenter.com\/events\/list\/?eventDisplay=past","next_url":"https:\/\/bobdylancenter.com\/events\/list\/page\/2\/","view_class":"Tribe\\Events\\Views\\V2\\Views\\List_View","view_slug":"list","view_label":"List","title":"Events - Bob Dylan Center | Tulsa, OK","events":[6813,7104,7176,7165,6788,7138,7191,7190,6979,7167],"url":"https:\/\/bobdylancenter.com\/events\/list\/","url_event_date":false,"bar":{"keyword":"","date":""},"today":"2026-02-12 00:00:00","now":"2026-02-12 19:33:04","home_url":"https:\/\/bobdylancenter.com","rest_url":"https:\/\/bobdylancenter.com\/wp-json\/tribe\/views\/v2\/html","rest_method":"GET","rest_nonce":"","should_manage_url":true,"today_url":"https:\/\/bobdylancenter.com\/events\/list\/","today_title":"Click to select today's date","today_label":"Today","prev_label":"","next_label":"","date_formats":{"compact":"n\/j\/Y","month_and_year_compact":"n\/Y","month_and_year":"F Y","time_range_separator":" - ","date_time_separator":" @ "},"messages":[],"start_of_week":"1","header_title":"","header_title_element":"h1","content_title":"","breadcrumbs":[],"backlink":false,"before_events":"","after_events":"\n<!--\nThis calendar is powered by The Events Calendar.\nhttp:\/\/evnt.is\/18wn\n-->\n","display_events_bar":true,"disable_event_search":false,"live_refresh":true,"ical":{"display_link":true,"link":{"url":"https:\/\/bobdylancenter.com\/events\/list\/?ical=1","text":"Export Events","title":"Use this to share calendar data with Google Calendar, Apple iCal and other compatible apps"}},"container_classes":["tribe-common","tribe-events","tribe-events-view","tribe-events-view--list"],"container_data":[],"is_past":false,"breakpoints":{"xsmall":500,"medium":768,"full":960},"breakpoint_pointer":"5f52bfd2-046d-4b36-a3d5-06a0d4322fb2","is_initial_load":true,"public_views":{"list":{"view_class":"Tribe\\Events\\Views\\V2\\Views\\List_View","view_url":"https:\/\/bobdylancenter.com\/events\/list\/","view_label":"List","aria_label":"Display Events in List View"},"month":{"view_class":"Tribe\\Events\\Views\\V2\\Views\\Month_View","view_url":"https:\/\/bobdylancenter.com\/events\/month\/","view_label":"Month","aria_label":"Display Events in Month View"},"day":{"view_class":"Tribe\\Events\\Views\\V2\\Views\\Day_View","view_url":"https:\/\/bobdylancenter.com\/events\/today\/","view_label":"Day","aria_label":"Display Events in Day View"}},"show_latest_past":true,"past":false,"show_now":true,"now_label":"Now","now_label_mobile":"Now","show_end":true,"selected_start_datetime":"2026-02-12","selected_start_date_mobile":"2\/12\/2026","selected_start_date_label":"February 12","selected_end_datetime":"2026-04-09","selected_end_date_mobile":"4\/9\/2026","selected_end_date_label":"April 9","datepicker_date":"2\/12\/2026","subscribe_links":{"gcal":{"label":"Google Calendar","single_label":"Add to Google Calendar","visible":true,"block_slug":"hasGoogleCalendar"},"ical":{"label":"iCalendar","single_label":"Add to iCalendar","visible":true,"block_slug":"hasiCal"},"outlook-365":{"label":"Outlook 365","single_label":"Outlook 365","visible":true,"block_slug":"hasOutlook365"},"outlook-live":{"label":"Outlook Live","single_label":"Outlook Live","visible":true,"block_slug":"hasOutlookLive"},"ics":{"label":"Export .ics file","single_label":"Export .ics file","visible":true,"block_slug":null},"outlook-ics":{"label":"Export Outlook .ics file","single_label":"Export Outlook .ics file","visible":true,"block_slug":null}},"_context":{"slug":"list"},"text":"Loading...","classes":["tribe-common-c-loader__dot","tribe-common-c-loader__dot--third"]}</script>
+		
+<div class="eventsbefore">
+		<div></div>
+</div>
+
+		<header class="tribe-events-header tribe-events-header--has-event-search">
+			
+						
+			
+					</header>
+		
+		
+		<div class="tribe-events-calendar-list">
+			<div class="tribe-events-calendar-list-container">
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-6813 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-concert cat_concert">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/sooner-or-later/" title="Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/sooner-or-later/" title="Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" alt="Sooner or Later - Feb. 20, 2026" title="2026_1_SOONER_OR_LATER_SQUARE" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Sooner or Later - Feb. 20, 2026"
+										title="2026_1_SOONER_OR_LATER_SQUARE"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg"
+							alt="Sooner or Later - Feb. 20, 2026"
+										title="2026_1_SOONER_OR_LATER_SQUARE"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/sooner-or-later/" title="Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>February 20, 2026 <span class="time_event">8-9pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/sooner-or-later/" title="Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" alt="Sooner or Later - Feb. 20, 2026" title="2026_1_SOONER_OR_LATER_SQUARE" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Sooner or Later - Feb. 20, 2026"
+										title="2026_1_SOONER_OR_LATER_SQUARE"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2026_1_SOONER_OR_LATER_SQUARE-500x500.jpg"
+							alt="Sooner or Later - Feb. 20, 2026"
+										title="2026_1_SOONER_OR_LATER_SQUARE"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>In celebration of the sixtieth anniversary of Bob Dylan’s classic album “Blonde on Blonde,” the Bob Dylan Center will present a major multi-artist concert featuring an exciting array of musicians for whom Dylan and his 1966 double-disc landmark remain marvels of omnivorous musicality and lyrical brilliance. This one-night-only event will take place on Friday, Feb. […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/sooner-or-later/" title="Sooner or Later: Celebrating the 60th Anniversary of “Blonde on Blonde”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7104 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event tribe_events_cat-screening cat_partner-event cat_screening">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/e-town-hall-boulder-co/" title="eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/e-town-hall-boulder-co/" title="eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" alt="eTown Hall, Boulder, CO" title="eTown-Hall-at-Night" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="eTown Hall, Boulder, CO"
+										title="eTown-Hall-at-Night"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg"
+							alt="eTown Hall, Boulder, CO"
+										title="eTown-Hall-at-Night"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/e-town-hall-boulder-co/" title="eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 8, 2026 <span class="time_event">7-9pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/e-town-hall-boulder-co/" title="eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" alt="eTown Hall, Boulder, CO" title="eTown-Hall-at-Night" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="eTown Hall, Boulder, CO"
+										title="eTown-Hall-at-Night"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/eTown-Hall-at-Night-500x500.jpg"
+							alt="eTown Hall, Boulder, CO"
+										title="eTown-Hall-at-Night"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>This event features a screening and conversation with the Bob Dylan Center Director, Steven Jenkins. Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the studio. Selections include Dylan’s first film soundtrack for […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/e-town-hall-boulder-co/" title="eTown Hall (Boulder, CO): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7176 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event tribe_events_cat-screening cat_partner-event cat_screening">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/natalies-grandview-columbus-oh/" title="Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/natalies-grandview-columbus-oh/" title="Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" title="natalies" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+										title="natalies"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg"
+										title="natalies"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/natalies-grandview-columbus-oh/" title="Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 15, 2026 <span class="time_event">7-9pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/natalies-grandview-columbus-oh/" title="Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" title="natalies" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+										title="natalies"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/02/natalies-500x500.jpg"
+										title="natalies"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>Stepping Into the Unknown: Films from the Bob Dylan Center Screening and Conversation with Director Steven Jenkins Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the studio—all different from last year’s presentation. […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/natalies-grandview-columbus-oh/" title="Natalie’s Grandview (Columbus, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7165 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event cat_partner-event">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/rock-hall-film-screening/" title="Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/rock-hall-film-screening/" title="Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" alt="Rock and Roll Hall of Fame" title="Rock &amp; Roll Hall of Fame Aerial Select" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Rock and Roll Hall of Fame"
+										title="Rock &#038; Roll Hall of Fame Aerial Select"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg"
+							alt="Rock and Roll Hall of Fame"
+										title="Rock &#038; Roll Hall of Fame Aerial Select"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/rock-hall-film-screening/" title="Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 16, 2026 <span class="time_event">6-6pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/rock-hall-film-screening/" title="Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" alt="Rock and Roll Hall of Fame" title="Rock &amp; Roll Hall of Fame Aerial Select" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Rock and Roll Hall of Fame"
+										title="Rock &#038; Roll Hall of Fame Aerial Select"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/01/Rock-Roll-Hall-of-Fame-Aerial-Select-500x500.jpg"
+							alt="Rock and Roll Hall of Fame"
+										title="Rock &#038; Roll Hall of Fame Aerial Select"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>Screening and Conversation with Director Steven Jenkins Musical Performance by Rock &amp; Roll Hall of Fame Staff Members Monday, March 16, 2026 7:00 pm E.T. Rock &amp; Roll Hall of Fame 1100 E. 9th Street Cleveland, OH 44114 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/rock-hall-film-screening/" title="Rock and Roll Hall of Fame (Cleveland, OH): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-6788 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-talk tribe_events_cat-virtual cat_talk cat_virtual">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/martha-ackmann/" title="Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/martha-ackmann/" title="Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" alt="Ain't Nobody's Fool: The Life and Times of Dolly Parton" title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Ain&#039;t Nobody&#039;s Fool: The Life and Times of Dolly Parton"
+										title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png"
+							alt="Ain&#039;t Nobody&#039;s Fool: The Life and Times of Dolly Parton"
+										title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/martha-ackmann/" title="Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 19, 2026 <span class="time_event">6-7pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/martha-ackmann/" title="Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" alt="Ain't Nobody's Fool: The Life and Times of Dolly Parton" title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Ain&#039;t Nobody&#039;s Fool: The Life and Times of Dolly Parton"
+										title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/11/2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square-1-500x500.png"
+							alt="Ain&#039;t Nobody&#039;s Fool: The Life and Times of Dolly Parton"
+										title="2025_08_BDC_BOOK_CLUB_MARTHA_ACKMANN_V2_Square (1)"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>“People talk of situations, read books, repeat quotations.” —Bob Dylan, “Love Minus Zero/No Limit” Join Bob Dylan Center Director Steven Jenkins for an online discussion with journalist and author Martha Ackmann about her sweeping and incisive biography of one of the most beloved musicians and entertainers of our time, the inimitable Dolly Parton. In “Ain’t […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/martha-ackmann/" title="Bob Dylan Center Book Club: “Ain’t Nobody’s Fool: The Life and Times of Dolly Parton”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7138 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-concert tribe_events_cat-partner-event cat_concert cat_partner-event">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/bill-frisell/" title="Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/bill-frisell/" title="Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" alt="Bill Frisell with Luke Bergman and Tim Angulo" title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Bill Frisell with Luke Bergman and Tim Angulo"
+										title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg"
+							alt="Bill Frisell with Luke Bergman and Tim Angulo"
+										title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/bill-frisell/" title="Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 22, 2026 <span class="time_event">7:30-9:30pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/bill-frisell/" title="Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" alt="Bill Frisell with Luke Bergman and Tim Angulo" title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Bill Frisell with Luke Bergman and Tim Angulo"
+										title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/01/BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL1-500x500.jpg"
+							alt="Bill Frisell with Luke Bergman and Tim Angulo"
+										title="BILL_FRISELL_GRAPHICS__SQUARE_SOCIAL(1)"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>In celebration of his 75th birthday this year, genre-blurring guitar virtuoso, composer and band leader Bill Frisell has planned a handful of one-off events that span his varied musical interests and talents. For this very special evening presented by the Bob Dylan Center, Frisell will premiere stunning new arrangements of some of his favorite Dylan […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/bill-frisell/" title="Bill Frisell: 75th Birthday Celebration with Luke Bergman and Tim Angulo"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7191 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event tribe_events_cat-screening cat_partner-event cat_screening">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/lyric-theatre-oxford-ms/" title="The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/lyric-theatre-oxford-ms/" title="The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" alt="Lyric Theatre Oxford" title="lyric-theater" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Lyric Theatre Oxford"
+										title="lyric-theater"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg"
+							alt="Lyric Theatre Oxford"
+										title="lyric-theater"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/lyric-theatre-oxford-ms/" title="The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 25, 2026 <span class="time_event">7-8pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/lyric-theatre-oxford-ms/" title="The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" alt="Lyric Theatre Oxford" title="lyric-theater" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Lyric Theatre Oxford"
+										title="lyric-theater"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/lyric-theater-500x500.jpg"
+							alt="Lyric Theatre Oxford"
+										title="lyric-theater"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>Screening and Conversation with Director Steven Jenkins and Dylan Scholar Elizabeth Nelson The Lyric Theatre Oxford 1006 Van Buren Ave. Oxford, MS 38655 Wednesday, March 25, 2026 7:00 p.m. CT Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/lyric-theatre-oxford-ms/" title="The Lyric Theatre (Oxford, MS): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7190 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event tribe_events_cat-screening cat_partner-event cat_screening">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/crosstown-arts-memphis-tn/" title="Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/crosstown-arts-memphis-tn/" title="Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" alt="Crosstown Arts - Memphis, TN" title="9I6A6945-660×270" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Crosstown Arts - Memphis, TN"
+										title="9I6A6945-660&#215;270"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg"
+							alt="Crosstown Arts - Memphis, TN"
+										title="9I6A6945-660&#215;270"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/crosstown-arts-memphis-tn/" title="Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>March 26, 2026 <span class="time_event">7-8pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/crosstown-arts-memphis-tn/" title="Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" alt="Crosstown Arts - Memphis, TN" title="9I6A6945-660×270" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Crosstown Arts - Memphis, TN"
+										title="9I6A6945-660&#215;270"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/9I6A6945-660x270-1-500x270.jpg"
+							alt="Crosstown Arts - Memphis, TN"
+										title="9I6A6945-660&#215;270"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>Screening and Conversation with Director Steven Jenkins Tuesday, April 21, 2026 6:30 p.m. PT Roxie Theater 3117 16th St. San Francisco, CA 94103 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased clips of Dylan on stage and in the […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/crosstown-arts-memphis-tn/" title="Crosstown Arts (Memphis, TN): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-6979 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-member-event cat_member-event">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/ten-songs-april-2026/" title="Ten Songs (Plus One or Two)"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/ten-songs-april-2026/" title="Ten Songs (Plus One or Two)" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" alt="Ten Songs (Plus One or Two) - April 2026" title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Ten Songs (Plus One or Two) - April 2026"
+										title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg"
+							alt="Ten Songs (Plus One or Two) - April 2026"
+										title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/ten-songs-april-2026/" title="Ten Songs (Plus One or Two)" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Ten Songs (Plus One or Two)	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>April 2, 2026 <span class="time_event">6-8pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/ten-songs-april-2026/" title="Ten Songs (Plus One or Two)" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" alt="Ten Songs (Plus One or Two) - April 2026" title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Ten Songs (Plus One or Two) - April 2026"
+										title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2025/12/APR-TEN-SONGS-TEMPLATE__SQUARE_SOCIAL-Large-500x500.jpg"
+							alt="Ten Songs (Plus One or Two) - April 2026"
+										title="APR TEN SONGS TEMPLATE__SQUARE_SOCIAL Large"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>As the chill of winter subsides, leaving earth and air receptive to the awakenings of spring, “Ten Songs (Plus One or Two)” moves with the seasons and embraces the vernal equinox, ushering in music by Low, Los Lobos and Suzanne Vega redolent of sleepy-eyed contentment and dreamy wonder. Lest that sound a bit New Age […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/ten-songs-april-2026/" title="Ten Songs (Plus One or Two)"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+							
+				
+				<div class="tribe-common-g-row tribe-events-calendar-list__event-row tribe-events-calendar-list__event-row--featured">
+
+	
+	<div class="tribe-events-calendar-list__event-wrapper tribe-common-g-col">
+		<article class="tribe-events-calendar-list__event tribe-common-g-row tribe-common-g-row--gutters post-7167 tribe_events type-tribe_events status-publish has-post-thumbnail hentry tribe_events_cat-partner-event cat_partner-event">
+			
+			<div class="tribe-events-calendar-list__event-details tribe-common-g-col">
+				
+				<div class="eventlistcontainer">
+					<a class="eventalllink" href="https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/" title="Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”"></a>
+
+					<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/" title="Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" alt="Coolidge Corner Theatre, Brookline, MA" title="14-Garfinkle" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Coolidge Corner Theatre, Brookline, MA"
+										title="14-Garfinkle"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg"
+							alt="Coolidge Corner Theatre, Brookline, MA"
+										title="14-Garfinkle"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+
+					<header class="tribe-events-calendar-list__event-header">
+						<h2 class="tribe-events-calendar-list__event-title tribe-common-h6 tribe-common-h4--min-medium">
+	<a href="https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/" title="Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-title-link tribe-common-anchor-thin">
+		Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”	</a>
+</h2>
+						<div class="tribe-events-calendar-list__event-datetime-wrapper tribe-common-b2">
+	<span>April 9, 2026 <span class="time_event">6-8pm</span></span></div>
+						<div class="tribe-events-calendar-list__event-featured-image-wrapper tribe-common-g-col">
+	<a href="https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/" title="Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”" rel="bookmark" class="tribe-events-calendar-list__event-featured-image-link">
+		
+		<img src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" alt="Coolidge Corner Theatre, Brookline, MA" title="14-Garfinkle" class="tribe-events-calendar-list__event-featured-image ewww_webp_loaded" data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" data-eio="j"><noscript><img
+		 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+							alt="Coolidge Corner Theatre, Brookline, MA"
+										title="14-Garfinkle"
+					 class="tribe-events-calendar-list__event-featured-image ewww_webp"
+		 data-src-img="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg" data-src-webp="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg.webp" data-eio="j" /><noscript><img
+			src="https://bobdylancenter.com/wp-content/uploads/sites/4/2026/02/14-Garfinkle-500x400.jpg"
+							alt="Coolidge Corner Theatre, Brookline, MA"
+										title="14-Garfinkle"
+						class="tribe-events-calendar-list__event-featured-image"
+		/></noscript>
+		</a>
+</div>
+						<div class="tribe-events-calendar-list__event-description tribe-common-b2 tribe-common-a11y-hidden">
+	<p>Screening and Conversation with Director Steven Jenkins Acoustic Performance by Special Guest Bill Janovitz Thursday, April 9, 2026 7 p.m. Eastern Time Coolidge Corner Theatre 290 Harvard St. Brookline, MA 02446 Spanning decades and musical styles, this far-ranging one-hour program of short films and videos from the Bob Dylan Archive features rare and previously unreleased […]</p>
+</div>
+						<a href="https://bobdylancenter.com/event/coolidge-corner-theatre-brookline-ma/" title="Coolidge Corner Theatre (Brookline, MA): “Stepping Into the Unknown: Films from the Bob Dylan Center”"><span class="eventbtn">Details</span></a>
+					</header>
+
+				</div>	
+
+			</div>
+		</article>
+	</div>
+
+</div>
+
+						</div>
+		</div>
+
+		<div class="eventspagination">
+<div class="containeryo">
+<span aria-current="page" class="page-numbers current">1</span>
+<a class="page-numbers" href="/events/list/page/2">2</a>
+<a class="next page-numbers" href="/events/list/page/2">&gt;&gt;</a></div>
+</div>
+		<div class="tribe-events-c-subscribe-dropdown__container">
+	<div class="tribe-events-c-subscribe-dropdown">
+		<div class="tribe-common-c-btn-border tribe-events-c-subscribe-dropdown__button">
+			<button class="tribe-events-c-subscribe-dropdown__button-text tribe-common-c-btn--clear" aria-expanded="false" aria-controls="tribe-events-subscribe-dropdown-content" aria-label="">
+				Subscribe to calendar			</button>
+			<svg class="tribe-common-c-svgicon tribe-common-c-svgicon--caret-down tribe-events-c-subscribe-dropdown__button-icon" aria-hidden="true" viewBox="0 0 10 7" xmlns="http://www.w3.org/2000/svg">
+	<path fill-rule="evenodd" clip-rule="evenodd" d="M1.008.609L5 4.6 8.992.61l.958.958L5 6.517.05 1.566l.958-.958z" class="tribe-common-c-svgicon__svg-fill"></path>
+</svg>
+		</div>
+		<div id="tribe-events-c-subscribe-dropdown-content" class="tribe-events-c-subscribe-dropdown__content">
+			<ul class="tribe-events-c-subscribe-dropdown__list">
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--gcal">
+	<a href="https://www.google.com/calendar/render?cid=webcal%3A%2F%2Fbobdylancenter.com%2F%3Fpost_type%3Dtribe_events%26ical%3D1%26eventDisplay%3Dlist" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		Google Calendar	</a>
+</li>
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--ical">
+	<a href="webcal://bobdylancenter.com/?post_type=tribe_events&amp;ical=1&amp;eventDisplay=list" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		iCalendar	</a>
+</li>
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--outlook-365">
+	<a href="https://outlook.office.com/owa?path=/calendar/action/compose&amp;rru=addsubscription&amp;url=webcal%3A%2F%2Fbobdylancenter.com%2F%3Fpost_type%3Dtribe_events%26ical%3D1%26eventDisplay%3Dlist&amp;name=Bob+Dylan+Center+|+Tulsa,+OK+Events+-+Bob+Dylan+Center+|+Tulsa,+OK" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		Outlook 365	</a>
+</li>
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--outlook-live">
+	<a href="https://outlook.live.com/owa?path=/calendar/action/compose&amp;rru=addsubscription&amp;url=webcal%3A%2F%2Fbobdylancenter.com%2F%3Fpost_type%3Dtribe_events%26ical%3D1%26eventDisplay%3Dlist&amp;name=Bob+Dylan+Center+|+Tulsa,+OK+Events+-+Bob+Dylan+Center+|+Tulsa,+OK" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		Outlook Live	</a>
+</li>
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--ics">
+	<a href="https://bobdylancenter.com/events/list/?ical=1" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		Export .ics file	</a>
+</li>
+									
+<li class="tribe-events-c-subscribe-dropdown__list-item tribe-events-c-subscribe-dropdown__list-item--outlook-ics">
+	<a href="https://bobdylancenter.com/events/list/?outlook-ical=1" class="tribe-events-c-subscribe-dropdown__list-item-link" target="_blank" rel="noopener noreferrer nofollow noindex">
+		Export Outlook .ics file	</a>
+</li>
+							</ul>
+		</div>
+	</div>
+</div>
+
+				
+	</div>
+</div>
+
+<script class="tribe-events-breakpoints">
+	( function () {
+		var completed = false;
+
+		function initBreakpoints() {
+			if ( completed ) {
+				// This was fired already and completed no need to attach to the event listener.
+				document.removeEventListener( 'DOMContentLoaded', initBreakpoints );
+				return;
+			}
+
+			if ( 'undefined' === typeof window.tribe ) {
+				return;
+			}
+
+			if ( 'undefined' === typeof window.tribe.events ) {
+				return;
+			}
+
+			if ( 'undefined' === typeof window.tribe.events.views ) {
+				return;
+			}
+
+			if ( 'undefined' === typeof window.tribe.events.views.breakpoints ) {
+				return;
+			}
+
+			if ( 'function' !== typeof (window.tribe.events.views.breakpoints.setup) ) {
+				return;
+			}
+
+			var container = document.querySelectorAll( '[data-view-breakpoint-pointer="5f52bfd2-046d-4b36-a3d5-06a0d4322fb2"]' );
+			if ( ! container ) {
+				return;
+			}
+
+			window.tribe.events.views.breakpoints.setup( container );
+			completed = true;
+			// This was fired already and completed no need to attach to the event listener.
+			document.removeEventListener( 'DOMContentLoaded', initBreakpoints );
+		}
+
+		// Try to init the breakpoints right away.
+		initBreakpoints();
+		document.addEventListener( 'DOMContentLoaded', initBreakpoints );
+	})();
+</script>
+<script data-js="tribe-events-view-nonce-data" type="application/json">{"tvn1":"55db19aa65","tvn2":""}</script>		<footer data-elementor-type="footer" data-elementor-id="276" class="elementor elementor-276 elementor-location-footer" data-elementor-post-type="elementor_library">
+					<section class="elementor-section elementor-top-section elementor-element elementor-element-558b8cd elementor-section-boxed elementor-section-height-default elementor-section-height-default" data-id="558b8cd" data-element_type="section" data-e-type="section" data-settings="{&quot;background_background&quot;:&quot;classic&quot;}">
+						<div class="elementor-container elementor-column-gap-default">
+					<div class="elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-0d0ef07" data-id="0d0ef07" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-196f73e elementor-widget elementor-widget-html" data-id="196f73e" data-element_type="widget" data-e-type="widget" data-widget_type="html.default">
+				<div class="elementor-widget-container">
+					<div class="footer-newsletter-form">
+    <form method="GET" action="https://pages.wordfly.com/woodyguthriecenter/pages/Subscribe/" target="_blank">
+        <div class="form-container">
+            <input type="email" id="wordfly-email" name="email" placeholder="Sign up for our newsletter" required="">
+
+            <button class="arrow-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="21.5" height="9.824" viewBox="0 0 21.5 9.824"> <g id="Group_1321" data-name="Group 1321" transform="translate(17375.494 23149.994)"> <line id="Line_108" data-name="Line 108" x2="19" transform="translate(-17375.494 -23145.082)" fill="none" stroke="#fff" stroke-width="1"></line> <path id="Polygon_1" data-name="Polygon 1" d="M4.912,0,9.824,5H0Z" transform="translate(-17353.994 -23149.994) rotate(90)" fill="#fff"></path> </g> </svg>
+            </button>
+        </div>
+    </form>
+</div>				</div>
+				</div>
+				<div class="elementor-element elementor-element-11722fa elementor-nav-menu__align-justify elementor-nav-menu--dropdown-none elementor-widget__width-inherit footernav elementor-widget elementor-widget-nav-menu" data-id="11722fa" data-element_type="widget" data-e-type="widget" data-settings="{&quot;submenu_icon&quot;:{&quot;value&quot;:&quot;&lt;i class=\&quot;\&quot; aria-hidden=\&quot;true\&quot;&gt;&lt;\/i&gt;&quot;,&quot;library&quot;:&quot;&quot;},&quot;layout&quot;:&quot;horizontal&quot;}" data-widget_type="nav-menu.default">
+				<div class="elementor-widget-container">
+								<nav aria-label="Menu" class="elementor-nav-menu--main elementor-nav-menu__container elementor-nav-menu--layout-horizontal e--pointer-none">
+				<ul id="menu-1-11722fa" class="elementor-nav-menu" data-smartmenus-id="17709464052330972"><li class="menu-item menu-item-type-post_type menu-item-object-page current-menu-ancestor current-menu-parent current_page_parent current_page_ancestor menu-item-has-children menu-item-604"><a href="https://bobdylancenter.com/visit/" class="elementor-item has-submenu" id="sm-17709464052330972-1" aria-haspopup="true" aria-controls="sm-17709464052330972-2" aria-expanded="false">Visit<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052330972-2" role="group" aria-hidden="true" aria-labelledby="sm-17709464052330972-1" aria-expanded="false">
+	<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-661"><a href="/visit/exhibits/" class="elementor-sub-item">Exhibits</a></li>
+	<li class="menu-item menu-item-type-custom menu-item-object-custom current-menu-item menu-item-605"><a href="/events/" aria-current="page" class="elementor-sub-item elementor-item-active">Events</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-606"><a href="https://bobdylancenter.com/support/" class="elementor-item has-submenu" id="sm-17709464052330972-3" aria-haspopup="true" aria-controls="sm-17709464052330972-4" aria-expanded="false">Support<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052330972-4" role="group" aria-hidden="true" aria-labelledby="sm-17709464052330972-3" aria-expanded="false">
+	<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-6648"><a href="https://give.bobdylancenter.com/support" class="elementor-sub-item">Donate</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-608"><a href="https://bobdylancenter.com/support/memberships/" class="elementor-sub-item">Memberships</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5130"><a href="https://bobdylancenter.com/support/planned-giving/" class="elementor-sub-item">Bequests &amp; Planned Giving</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5129"><a href="https://bobdylancenter.com/support/ways-to-give/" class="elementor-sub-item">Ways To Give</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5682"><a href="https://bobdylancenter.com/support/freedomhighwayandbeyond/" class="elementor-sub-item">Freedom Highway and Beyond Education Fund</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-609"><a target="_blank" href="https://shop.bobdylancenter.com/" class="elementor-item">Shop</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-610"><a href="https://bobdylancenter.com/about/" class="elementor-item has-submenu" id="sm-17709464052330972-5" aria-haspopup="true" aria-controls="sm-17709464052330972-6" aria-expanded="false">About<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052330972-6" role="group" aria-hidden="true" aria-labelledby="sm-17709464052330972-5" aria-expanded="false">
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-611"><a href="https://bobdylancenter.com/about/biography/" class="elementor-sub-item">Biography</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-612"><a href="https://bobdylancenter.com/about/faq/" class="elementor-sub-item">FAQ</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-613"><a href="https://bobdylancenter.com/about/press-room/" class="elementor-sub-item">Press Room</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5896"><a href="https://bobdylancenter.com/job-openings/" class="elementor-sub-item">Job Openings</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-1997"><a href="https://bobdylancenter.com/songwriterfellowship/" class="elementor-sub-item">Songwriter Fellowship</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-614"><a href="https://bobdylancenter.com/archive/" class="elementor-item">Archive</a></li>
+</ul>			</nav>
+						<nav class="elementor-nav-menu--dropdown elementor-nav-menu__container" aria-hidden="true">
+				<ul id="menu-2-11722fa" class="elementor-nav-menu" data-smartmenus-id="17709464052345044"><li class="menu-item menu-item-type-post_type menu-item-object-page current-menu-ancestor current-menu-parent current_page_parent current_page_ancestor menu-item-has-children menu-item-604"><a href="https://bobdylancenter.com/visit/" class="elementor-item has-submenu" tabindex="-1" id="sm-17709464052345044-1" aria-haspopup="true" aria-controls="sm-17709464052345044-2" aria-expanded="false">Visit<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052345044-2" role="group" aria-hidden="true" aria-labelledby="sm-17709464052345044-1" aria-expanded="false">
+	<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-661"><a href="/visit/exhibits/" class="elementor-sub-item" tabindex="-1">Exhibits</a></li>
+	<li class="menu-item menu-item-type-custom menu-item-object-custom current-menu-item menu-item-605"><a href="/events/" aria-current="page" class="elementor-sub-item elementor-item-active" tabindex="-1">Events</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-606"><a href="https://bobdylancenter.com/support/" class="elementor-item has-submenu" tabindex="-1" id="sm-17709464052345044-3" aria-haspopup="true" aria-controls="sm-17709464052345044-4" aria-expanded="false">Support<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052345044-4" role="group" aria-hidden="true" aria-labelledby="sm-17709464052345044-3" aria-expanded="false">
+	<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-6648"><a href="https://give.bobdylancenter.com/support" class="elementor-sub-item" tabindex="-1">Donate</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-608"><a href="https://bobdylancenter.com/support/memberships/" class="elementor-sub-item" tabindex="-1">Memberships</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5130"><a href="https://bobdylancenter.com/support/planned-giving/" class="elementor-sub-item" tabindex="-1">Bequests &amp; Planned Giving</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5129"><a href="https://bobdylancenter.com/support/ways-to-give/" class="elementor-sub-item" tabindex="-1">Ways To Give</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5682"><a href="https://bobdylancenter.com/support/freedomhighwayandbeyond/" class="elementor-sub-item" tabindex="-1">Freedom Highway and Beyond Education Fund</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-custom menu-item-object-custom menu-item-609"><a target="_blank" href="https://shop.bobdylancenter.com/" class="elementor-item" tabindex="-1">Shop</a></li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-has-children menu-item-610"><a href="https://bobdylancenter.com/about/" class="elementor-item has-submenu" tabindex="-1" id="sm-17709464052345044-5" aria-haspopup="true" aria-controls="sm-17709464052345044-6" aria-expanded="false">About<span class="sub-arrow"><i class="" aria-hidden="true"></i></span></a>
+<ul class="sub-menu elementor-nav-menu--dropdown" id="sm-17709464052345044-6" role="group" aria-hidden="true" aria-labelledby="sm-17709464052345044-5" aria-expanded="false">
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-611"><a href="https://bobdylancenter.com/about/biography/" class="elementor-sub-item" tabindex="-1">Biography</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-612"><a href="https://bobdylancenter.com/about/faq/" class="elementor-sub-item" tabindex="-1">FAQ</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-613"><a href="https://bobdylancenter.com/about/press-room/" class="elementor-sub-item" tabindex="-1">Press Room</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-5896"><a href="https://bobdylancenter.com/job-openings/" class="elementor-sub-item" tabindex="-1">Job Openings</a></li>
+	<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-1997"><a href="https://bobdylancenter.com/songwriterfellowship/" class="elementor-sub-item" tabindex="-1">Songwriter Fellowship</a></li>
+</ul>
+</li>
+<li class="menu-item menu-item-type-post_type menu-item-object-page menu-item-614"><a href="https://bobdylancenter.com/archive/" class="elementor-item" tabindex="-1">Archive</a></li>
+</ul>			</nav>
+						</div>
+				</div>
+				<section class="elementor-section elementor-inner-section elementor-element elementor-element-371255f elementor-section-full_width elementor-section-height-default elementor-section-height-default" data-id="371255f" data-element_type="section" data-e-type="section">
+						<div class="elementor-container elementor-column-gap-no">
+					<div class="elementor-column elementor-col-50 elementor-inner-column elementor-element elementor-element-cd29674" data-id="cd29674" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-643c699 elementor-widget elementor-widget-text-editor" data-id="643c699" data-element_type="widget" data-e-type="widget" data-widget_type="text-editor.default">
+				<div class="elementor-widget-container">
+									<p>Bob Dylan Center<br><a href="https://goo.gl/maps/poDCa9mchEMyXKx99" target="_blank" rel="noopener">116 E Reconciliation Way, Tulsa, OK 74103</a></p>								</div>
+				</div>
+					</div>
+		</div>
+				<div class="elementor-column elementor-col-50 elementor-inner-column elementor-element elementor-element-3567639" data-id="3567639" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-51115ad elementor-widget elementor-widget-text-editor" data-id="51115ad" data-element_type="widget" data-e-type="widget" data-widget_type="text-editor.default">
+				<div class="elementor-widget-container">
+									<p>Wednesday – Sunday: 10AM – 6PM<br>918.392.3353 | <a href="mailto:info@bobdylancenter.com"><span style="font-weight: 400;">info@bobdylancenter.com</span></a></p>								</div>
+				</div>
+					</div>
+		</div>
+					</div>
+		</section>
+				<section class="elementor-section elementor-inner-section elementor-element elementor-element-b11681f elementor-section-content-middle elementor-section-full_width elementor-section-height-default elementor-section-height-default" data-id="b11681f" data-element_type="section" data-e-type="section">
+						<div class="elementor-container elementor-column-gap-no">
+					<div class="elementor-column elementor-col-50 elementor-inner-column elementor-element elementor-element-e6b0866" data-id="e6b0866" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-389322d elementor-widget__width-auto elementor-widget-mobile__width-inherit elementor-widget-tablet__width-inherit elementor-widget elementor-widget-heading" data-id="389322d" data-element_type="widget" data-e-type="widget" data-widget_type="heading.default">
+				<div class="elementor-widget-container">
+					<div class="elementor-heading-title elementor-size-default">© Copyright 2026 American Song Archives, LLC</div>				</div>
+				</div>
+				<div class="elementor-element elementor-element-fe450c4 elementor-widget__width-auto elementor-widget elementor-widget-heading" data-id="fe450c4" data-element_type="widget" data-e-type="widget" data-widget_type="heading.default">
+				<div class="elementor-widget-container">
+					<div class="elementor-heading-title elementor-size-default"><a href="https://bobdylancenter.com/privacy-policy-terms/">Privacy Policy &amp; Terms of Use</a></div>				</div>
+				</div>
+					</div>
+		</div>
+				<div class="elementor-column elementor-col-50 elementor-inner-column elementor-element elementor-element-0585d78" data-id="0585d78" data-element_type="column" data-e-type="column">
+			<div class="elementor-widget-wrap elementor-element-populated">
+						<div class="elementor-element elementor-element-ae6fc8a e-grid-align-right e-grid-align-mobile-center elementor-shape-rounded elementor-grid-0 elementor-widget elementor-widget-social-icons" data-id="ae6fc8a" data-element_type="widget" data-e-type="widget" data-widget_type="social-icons.default">
+				<div class="elementor-widget-container">
+							<div class="elementor-social-icons-wrapper elementor-grid" role="list">
+							<span class="elementor-grid-item" role="listitem">
+					<a class="elementor-icon elementor-social-icon elementor-social-icon-facebook-f elementor-repeater-item-3b250fe" href="https://www.facebook.com/bobdylancenter" target="_blank">
+						<span class="elementor-screen-only">Facebook-f</span>
+						<i aria-hidden="true" class="fab fa-facebook-f"></i>					</a>
+				</span>
+							<span class="elementor-grid-item" role="listitem">
+					<a class="elementor-icon elementor-social-icon elementor-social-icon-instagram elementor-repeater-item-7521c11" href="https://www.instagram.com/bobdylancenter/" target="_blank">
+						<span class="elementor-screen-only">Instagram</span>
+						<i aria-hidden="true" class="fab fa-instagram"></i>					</a>
+				</span>
+							<span class="elementor-grid-item" role="listitem">
+					<a class="elementor-icon elementor-social-icon elementor-social-icon-youtube elementor-repeater-item-06d0390" href="https://www.youtube.com/channel/UCkxv7FUeKqdT7wIS_OqL3Gg" target="_blank">
+						<span class="elementor-screen-only">Youtube</span>
+						<i aria-hidden="true" class="fab fa-youtube"></i>					</a>
+				</span>
+							<span class="elementor-grid-item" role="listitem">
+					<a class="elementor-icon elementor-social-icon elementor-social-icon-Bluesky elementor-repeater-item-b365b48" href="https://bsky.app/profile/bobdylancenter.bsky.social" target="_blank">
+						<span class="elementor-screen-only">Bluesky</span>
+						<svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" viewBox="0 0 2232 2500"><path d="M483.8,303.7c255.9,192.8,531.1,583.5,632.2,793.2v553.9c0-11.8-4.5,1.5-14.3,30.2-52.7,155.4-258.7,761.9-729.7,277-248-255.3-133.2-510.6,318.2-587.6-258.2,44.1-548.6-28.8-628.2-314.4C39.1,973.9,0,467.8,0,399.4,0,57,299.2,164.7,483.8,303.7ZM1748.2,303.7c-255.9,192.8-531.1,583.5-632.2,793.2v553.9c0-11.8,4.5,1.5,14.3,30.2,52.7,155.4,258.7,761.9,729.7,277,248-255.3,133.2-510.6-318.2-587.6,258.2,44.1,548.6-28.8,628.2-314.4,22.9-82.2,62-588.3,62-656.6,0-342.4-299.2-234.8-483.8-95.7h0Z"></path></svg>					</a>
+				</span>
+							<span class="elementor-grid-item" role="listitem">
+					<a class="elementor-icon elementor-social-icon elementor-social-icon-linkedin elementor-repeater-item-0c2594e" href="https://www.linkedin.com/showcase/bobdylancenter/" target="_blank">
+						<span class="elementor-screen-only">Linkedin</span>
+						<i aria-hidden="true" class="fab fa-linkedin"></i>					</a>
+				</span>
+					</div>
+						</div>
+				</div>
+				<div class="elementor-element elementor-element-8e6ba71 elementor-widget__width-auto elementor-widget elementor-widget-heading" data-id="8e6ba71" data-element_type="widget" data-e-type="widget" data-widget_type="heading.default">
+				<div class="elementor-widget-container">
+					<div class="elementor-heading-title elementor-size-default"><a href="https://www.bobdylan.com">Visit the official Bob Dylan website.</a></div>				</div>
+				</div>
+					</div>
+		</div>
+					</div>
+		</section>
+					</div>
+		</div>
+					</div>
+		</section>
+				</footer>
+		
+		<script>
+			// New scripts
+			jQuery(document).ready(function($)
+			{
+				// On window scroll
+				$(window).scroll(function(event) {
+					var scrollTop = $(this).scrollTop();
+
+					// If we are
+					if (scrollTop > 30) {
+						// Hide the header
+						$('.header').addClass('small');
+					}
+
+					// If we are at the very top
+					else {
+						// Show the header
+						$('.header').removeClass('small');
+					}
+
+					lastScrollTop = scrollTop;
+				});
+
+				// Footer menu
+				$footerMenu = $('.footernav nav.elementor-nav-menu--main > ul');
+
+				// Prevent nav from opening on mobile click (default Elementor behavior)
+				$footerMenu.bind('activate.smapi', function(e, item) {
+					return false;
+				});
+
+				// Prevent nav from closing on desktop mouseleave (default Elementor behavior)
+				$footerMenu.bind('beforehide.smapi', function(e, menu) {
+					return false;
+				});
+
+				// Don't follow anchor link if clicking on sub-arrow
+				$footerMenu.on('click', '.sub-arrow', function(e) {
+					e.preventDefault();
+
+					// Expand/collapse sub-menu below anchor link
+					$a = $(this).closest('a');
+					if (!$a.hasClass('expanded')) {
+						$a.addClass('expanded');
+						$a.next('.sub-menu').slideDown();
+					}
+					else {
+						$a.removeClass('expanded');
+						$a.next('.sub-menu').slideUp();
+					}
+				});
+
+				// Check if we've opened the hamburger menu
+				$(document).on('elementor/popup/show', function(event, id, instance) {
+
+					// If it's not the hamburger menu, ignore
+					if (id != 203) {
+						return false;
+					}
+
+					// Find our menu
+					$mobileMenu = $('.elementor-location-popup nav.elementor-nav-menu--main > ul');
+
+					// Prevent nav from opening on mobile click (default Elementor behavior)
+					$mobileMenu.bind('activate.smapi', function(e, item) {
+						return false;
+					});
+
+					// Don't follow anchor link if clicking on sub-arrow
+					$mobileMenu.on('click', '.sub-arrow', function(e) {
+						e.preventDefault();
+
+						// Expand/collapse sub-menu below anchor link
+						$a = $(this).closest('a');
+						if (!$a.hasClass('expanded')) {
+							$a.addClass('expanded');
+							$a.next('.sub-menu').slideDown();
+						}
+						else {
+							$a.removeClass('expanded');
+							$a.next('.sub-menu').slideUp();
+						}
+					});
+				});
+
+				$("a[href^='#']").click(function(e) {
+				    e.preventDefault();
+
+				    $('html, body').animate({
+				        scrollTop: $($.attr(this, 'href')).offset().top - 150
+				    }, 500);
+				});
+			});
+
+	 		jQuery(document).ready(function( $ ) {
+				if ($(".whitenav")[0]) {
+					var top_of_element = $(".whitenav").offset().top;
+					if ($(".blacknav")[0]) { var top_of_otherelement = $(".blacknav").offset().top; }
+					var bottom_of_element = $(".whitenav").offset().top + $(".whitenav").outerHeight();
+					$(window).on("scroll", function(){
+						var wScroll = $(this).scrollTop();
+						if ( (wScroll + 36) > top_of_otherelement ) {
+							$("body").removeClass("whitenavnow");
+						} else if ( (wScroll + 36) > top_of_element ) {
+							$("body").addClass("whitenavnow");
+						} else {
+							$("body").removeClass("whitenavnow");
+						}
+					});
+				} else {
+				  $("body").addClass("nowhitenav");
+				}
+			});
+
+			jQuery(document).ready(function( $ ) {
+				$('input[type^="tel"]').each(function(){ //attach event handler to select's change event.
+					$(this).attr("maxLength",12);
+					$(this).attr("minLength",12);
+					$(this).attr("onKeyup","addDashes(this)");
+				});
+			});
+
+			window.addDashes = function addDashes(f) {
+			    var r = /(\D+)/g,
+			        npa = '',
+			        nxx = '',
+			        last4 = '';
+			    f.value = f.value.replace(r, '');
+			    npa = f.value.substr(0, 3);
+			    nxx = f.value.substr(3, 3);
+			    last4 = f.value.substr(6, 4);
+			    f.value = npa + '-' + nxx + '-' + last4;
+			}
+
+			jQuery(document).ready(function($) {
+				$('.elementor-accordion .elementor-tab-title').click(function() {
+					var pane = $(this);
+					setTimeout(function(){
+			 			var $panel = pane.closest('.elementor-accordion-item');
+			    		$('html,body').animate({
+			        		scrollTop: $panel.offset().top - 140
+			    		}, 300);
+					}, 300 );
+				});
+			});
+
+			// jQuery(function($) {
+			// 	$(function() {
+			// 		$('.elementor-accordion .elementor-tab-title').each(function() {
+			// 			$(this).removeClass('elementor-active').next('.elementor-tab-content').hide();
+			// 		});
+			// 	});
+			// });
+		</script>
+
+		<script src="https://player.vimeo.com/api/player.js"></script>
+		<script>
+			var vimeoVideo = document.getElementsByClassName('elementor-video-iframe');
+			if (vimeoVideo.length > 0) {
+				var videoclicker = document.querySelector('.elementor-video-iframe ~ .elementor-custom-embed-image-overlay');
+
+				videoclicker.onclick = function() {
+					var iframe = document.querySelector('iframe.elementor-video-iframe');
+					var player = new Vimeo.Player(iframe);
+				   	iframe.setAttribute("allow", "autoplay");
+
+					player.on('play', function() {
+						console.log('played the video!');
+					});
+
+					player.getVideoTitle().then(function(title) {
+						console.log('title:', title);
+					});
+				}
+			}
+		</script>
+
+			<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp-*.php","/wp-admin/*","/wp-content/uploads/sites/4/*","/wp-content/*","/wp-content/plugins/*","/wp-content/themes/bdc/*","/wp-content/themes/hello-elementor/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+		<script>
+		( function ( body ) {
+			'use strict';
+			body.className = body.className.replace( /\btribe-no-js\b/, 'tribe-js' );
+		} )( document.body );
+		</script>
+				
+				
+		<script> /* <![CDATA[ */var tribe_l10n_datatables = {"aria":{"sort_ascending":": activate to sort column ascending","sort_descending":": activate to sort column descending"},"length_menu":"Show _MENU_ entries","empty_table":"No data available in table","info":"Showing _START_ to _END_ of _TOTAL_ entries","info_empty":"Showing 0 to 0 of 0 entries","info_filtered":"(filtered from _MAX_ total entries)","zero_records":"No matching records found","search":"Search:","all_selected_text":"All items on this page were selected. ","select_all_link":"Select all pages","clear_selection":"Clear Selection.","pagination":{"all":"All","next":"Next","previous":"Previous"},"select":{"rows":{"0":"","_":": Selected %d rows","1":": Selected 1 row"}},"datepicker":{"dayNames":["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],"dayNamesShort":["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],"dayNamesMin":["S","M","T","W","T","F","S"],"monthNames":["January","February","March","April","May","June","July","August","September","October","November","December"],"monthNamesShort":["January","February","March","April","May","June","July","August","September","October","November","December"],"monthNamesMin":["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],"nextText":"Next","prevText":"Prev","currentText":"Today","closeText":"Done","today":"Today","clear":"Clear"}};/* ]]> */ </script>			<script>
+				const lazyloadRunObserver = () => {
+					const lazyloadBackgrounds = document.querySelectorAll( `.e-con.e-parent:not(.e-lazyloaded)` );
+					const lazyloadBackgroundObserver = new IntersectionObserver( ( entries ) => {
+						entries.forEach( ( entry ) => {
+							if ( entry.isIntersecting ) {
+								let lazyloadBackground = entry.target;
+								if( lazyloadBackground ) {
+									lazyloadBackground.classList.add( 'e-lazyloaded' );
+								}
+								lazyloadBackgroundObserver.unobserve( entry.target );
+							}
+						});
+					}, { rootMargin: '200px 0px 200px 0px' } );
+					lazyloadBackgrounds.forEach( ( lazyloadBackground ) => {
+						lazyloadBackgroundObserver.observe( lazyloadBackground );
+					} );
+				};
+				const events = [
+					'DOMContentLoaded',
+					'elementor/lazyload/observe',
+				];
+				events.forEach( ( event ) => {
+					document.addEventListener( event, lazyloadRunObserver );
+				} );
+			</script>
+			<link rel="stylesheet" id="elementor-post-267-css" href="https://bobdylancenter.com/wp-content/uploads/sites/4/elementor/css/post-267.css?ver=1770762520" media="all">
+<link rel="stylesheet" id="widget-divider-css" href="https://bobdylancenter.com/wp-content/plugins/elementor/assets/css/widget-divider.min.css?ver=3.35.3" media="all">
+<script src="https://bobdylancenter.com/wp-content/plugins/custom-iframe/assets/js/widget.js?ver=2.0.2" id="custif-scripts-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/vendor/bootstrap-datepicker/js/bootstrap-datepicker.min.js?ver=6.15.13.1" id="tribe-events-views-v2-bootstrap-datepicker-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/the-events-calendar/common/build/js/user-agent.js?ver=da75d0bdea6dde3898df" id="tec-user-agent-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/dynamicconditions/Public/js/dynamic-conditions-public.js?ver=1.7.5" id="dynamic-conditions-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor/assets/js/webpack.runtime.min.js?ver=3.35.3" id="elementor-webpack-runtime-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor/assets/js/frontend-modules.min.js?ver=3.35.3" id="elementor-frontend-modules-js"></script>
+<script src="https://bobdylancenter.com/wp-includes/js/jquery/ui/core.min.js?ver=1.13.3" id="jquery-ui-core-js"></script>
+<script id="elementor-frontend-js-extra">
+var EAELImageMaskingConfig = {"svg_dir_url":"https://bobdylancenter.com/wp-content/plugins/essential-addons-for-elementor-lite/assets/front-end/img/image-masking/svg-shapes/"};
+//# sourceURL=elementor-frontend-js-extra
+</script>
+<script id="elementor-frontend-js-before">
+var elementorFrontendConfig = {"environmentMode":{"edit":false,"wpPreview":false,"isScriptDebug":false},"i18n":{"shareOnFacebook":"Share on Facebook","shareOnTwitter":"Share on Twitter","pinIt":"Pin it","download":"Download","downloadImage":"Download image","fullscreen":"Fullscreen","zoom":"Zoom","share":"Share","playVideo":"Play Video","previous":"Previous","next":"Next","close":"Close","a11yCarouselPrevSlideMessage":"Previous slide","a11yCarouselNextSlideMessage":"Next slide","a11yCarouselFirstSlideMessage":"This is the first slide","a11yCarouselLastSlideMessage":"This is the last slide","a11yCarouselPaginationBulletMessage":"Go to slide"},"is_rtl":false,"breakpoints":{"xs":0,"sm":480,"md":768,"lg":1104,"xl":1440,"xxl":1600},"responsive":{"breakpoints":{"mobile":{"label":"Mobile Portrait","value":767,"default_value":767,"direction":"max","is_enabled":true},"mobile_extra":{"label":"Mobile Landscape","value":880,"default_value":880,"direction":"max","is_enabled":false},"tablet":{"label":"Tablet Portrait","value":1103,"default_value":1024,"direction":"max","is_enabled":true},"tablet_extra":{"label":"Tablet Landscape","value":1200,"default_value":1200,"direction":"max","is_enabled":false},"laptop":{"label":"Laptop","value":1366,"default_value":1366,"direction":"max","is_enabled":false},"widescreen":{"label":"Widescreen","value":2400,"default_value":2400,"direction":"min","is_enabled":false}},
+"hasCustomBreakpoints":true},"version":"3.35.3","is_static":false,"experimentalFeatures":{"additional_custom_breakpoints":true,"container":true,"theme_builder_v2":true,"nested-elements":true,"home_screen":true,"global_classes_should_enforce_capabilities":true,"e_variables":true,"cloud-library":true,"e_opt_in_v4_page":true,"e_components":true,"e_interactions":true,"e_editor_one":true,"import-export-customization":true,"mega-menu":true,"e_pro_variables":true},"urls":{"assets":"https:\/\/bobdylancenter.com\/wp-content\/plugins\/elementor\/assets\/","ajaxurl":"https:\/\/bobdylancenter.com\/wp-admin\/admin-ajax.php","uploadUrl":"https:\/\/bobdylancenter.com\/wp-content\/uploads\/sites\/4"},"nonces":{"floatingButtonsClickTracking":"3247511aeb"},"swiperClass":"swiper","settings":{"editorPreferences":[]},"kit":{"viewport_tablet":"1103","body_background_background":"classic","active_breakpoints":["viewport_mobile","viewport_tablet"],"global_image_lightbox":"yes","lightbox_enable_counter":"yes","lightbox_enable_fullscreen":"yes","lightbox_enable_zoom":"yes","lightbox_enable_share":"yes","lightbox_title_src":"title","lightbox_description_src":"description"},"post":{"id":0,"title":"Events - Bob Dylan Center | Tulsa, OK","excerpt":""}};
+//# sourceURL=elementor-frontend-js-before
+</script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor/assets/js/frontend.min.js?ver=3.35.3" id="elementor-frontend-js"></script><span id="elementor-device-mode" class="elementor-screen-only"></span>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/lib/smartmenus/jquery.smartmenus.min.js?ver=1.2.1" id="smartmenus-js"></script>
+<script id="eael-general-js-extra">
+var localize = {"ajaxurl":"https://bobdylancenter.com/wp-admin/admin-ajax.php","nonce":"ea3d19b06a","i18n":{"added":"Added ","compare":"Compare","loading":"Loading..."},"eael_translate_text":{"required_text":"is a required field","invalid_text":"Invalid","billing_text":"Billing","shipping_text":"Shipping","fg_mfp_counter_text":"of"},"page_permalink":"https://bobdylancenter.com/event/natalies-grandview-columbus-oh/","cart_redirectition":"","cart_page_url":"","el_breakpoints":{"mobile":{"label":"Mobile Portrait","value":767,"default_value":767,"direction":"max","is_enabled":true},"mobile_extra":{"label":"Mobile Landscape","value":880,"default_value":880,"direction":"max","is_enabled":false},"tablet":{"label":"Tablet Portrait","value":1103,"default_value":1024,"direction":"max","is_enabled":true},"tablet_extra":{"label":"Tablet Landscape","value":1200,"default_value":1200,"direction":"max","is_enabled":false},"laptop":{"label":"Laptop","value":1366,"default_value":1366,"direction":"max","is_enabled":false},"widescreen":{"label":"Widescreen","value":2400,"default_value":2400,"direction":"min","is_enabled":false}}};
+//# sourceURL=eael-general-js-extra
+</script>
+<script src="https://bobdylancenter.com/wp-content/plugins/essential-addons-for-elementor-lite/assets/front-end/js/view/general.min.js?ver=6.5.11" id="eael-general-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/js/webpack-pro.runtime.min.js?ver=3.35.0" id="elementor-pro-webpack-runtime-js"></script>
+<script src="https://bobdylancenter.com/wp-includes/js/dist/hooks.min.js?ver=dd5603f07f9220ed27f1" id="wp-hooks-js"></script>
+<script src="https://bobdylancenter.com/wp-includes/js/dist/i18n.min.js?ver=c26c3dc7bed366793375" id="wp-i18n-js"></script>
+<script id="wp-i18n-js-after">
+wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );
+//# sourceURL=wp-i18n-js-after
+</script>
+<script id="elementor-pro-frontend-js-before">
+var ElementorProFrontendConfig = {"ajaxurl":"https:\/\/bobdylancenter.com\/wp-admin\/admin-ajax.php","nonce":"4ac22c941a","urls":{"assets":"https:\/\/bobdylancenter.com\/wp-content\/plugins\/elementor-pro\/assets\/","rest":"https:\/\/bobdylancenter.com\/wp-json\/"},"settings":{"lazy_load_background_images":true},"popup":{"hasPopUps":true},"shareButtonsNetworks":{"facebook":{"title":"Facebook","has_counter":true},"twitter":{"title":"Twitter"},"linkedin":{"title":"LinkedIn","has_counter":true},"pinterest":{"title":"Pinterest","has_counter":true},"reddit":{"title":"Reddit","has_counter":true},"vk":{"title":"VK","has_counter":true},"odnoklassniki":{"title":"OK","has_counter":true},"tumblr":{"title":"Tumblr"},"digg":{"title":"Digg"},"skype":{"title":"Skype"},"stumbleupon":{"title":"StumbleUpon","has_counter":true},"mix":{"title":"Mix"},"telegram":{"title":"Telegram"},"pocket":{"title":"Pocket","has_counter":true},"xing":{"title":"XING","has_counter":true},"whatsapp":{"title":"WhatsApp"},"email":{"title":"Email"},"print":{"title":"Print"},"x-twitter":{"title":"X"},"threads":{"title":"Threads"}},
+"facebook_sdk":{"lang":"en_US","app_id":""},"lottie":{"defaultAnimationUrl":"https:\/\/bobdylancenter.com\/wp-content\/plugins\/elementor-pro\/modules\/lottie\/assets\/animations\/default.json"}};
+//# sourceURL=elementor-pro-frontend-js-before
+</script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/js/frontend.min.js?ver=3.35.0" id="elementor-pro-frontend-js"></script>
+<script src="https://bobdylancenter.com/wp-content/plugins/elementor-pro/assets/js/elements-handlers.min.js?ver=3.35.0" id="pro-elements-handlers-js"></script><svg style="display: none;" class="e-font-icon-svg-symbols"></svg>
+
+
+
+<iframe height="0" width="0" style="display: none; visibility: hidden;"></iframe><script src="https://bobdylancenter.com/wp-content/plugins/elementor/assets/lib/dialog/dialog.min.js?ver=4.9.3"></script></body></html>
+<!-- IFRAME_CONTENT -->
+<html><head></head><body><iframe height="0" width="0" src="https://www.googletagmanager.com/static/service_worker/6240/sw_iframe.html?origin=https%3A%2F%2Fbobdylancenter.com" style="display: none; visibility: hidden;"></iframe></body></html>
+<!-- IFRAME_CONTENT -->
+<!DOCTYPE html><html><head>
+  <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
+</head>
+<body>
+  <script>
+'use strict';var l={};class m{constructor(a){this.j=a;this.g={};this.h={};this.i=0;this.id=String(Math.floor(Number.MAX_SAFE_INTEGER*Math.random()))}}function n(a){return a.performance&&a.performance.now()||Date.now()}
+var p=function(a,c){class d{constructor(b,f,g){this.failureType=b;this.data=f;this.g=g;this.h=new m(n(g))}o(b,f){const g=b.clientId;if(b.type===0){b.isDead=!0;var e=this.h,k=n(this.g);e.g[g]==null&&(e.g[g]=0,e.h[g]=k,e.i++);e.g[g]++;b.stats={targetId:e.id,clientCount:e.i,totalLifeMs:Math.round(k-e.j),heartbeatCount:e.g[g],clientLifeMs:Math.round(k-e.h[g])}}b.failure={failureType:this.failureType,data:this.data};f(b)}}return new d(5,a,c)};/*
+
+ Copyright Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/
+let q=globalThis.trustedTypes,r;function t(){let a=null;if(!q)return a;try{const c=d=>d;a=q.createPolicy("goog#html",{createHTML:c,createScript:c,createScriptURL:c})}catch(c){}return a};var u=class{constructor(a){this.g=a}toString(){return this.g+""}};function v(a){const c=a;var d;r===void 0&&(r=t());var b=(d=r)?d.createScriptURL(c):c;return new u(b)}function w(a){if(a instanceof u)return a.g;throw Error("");};function x(a,...c){if(c.length===0)return v(a[0]);let d=a[0];for(let b=0;b<c.length;b++)d+=encodeURIComponent(c[b])+a[b+1];return v(d)}function y(a){var c=x`sw.js`,d=w(c).toString();const b=d.split(/[?#]/),f=/[?]/.test(d)?"?"+b[1]:"";return z(b[0],f,/[#]/.test(d)?"#"+(f?b[2]:b[1]):"",a)}
+function z(a,c,d,b){function f(e,k){e!=null&&(Array.isArray(e)?e.forEach(h=>f(h,k)):(c+=g+encodeURIComponent(k)+"="+encodeURIComponent(e),g="&"))}let g=c.length?"&":"?";b.constructor===Object&&(b=Object.entries(b));Array.isArray(b)?b.forEach(e=>f(e[1],e[0])):b.forEach(f);return v(a+c+d)};const A=/Chrome\/(\d+)/;var C=function(a){const c=a.origin;if(c){var d=a.g?x`/static/service_worker/${a.g}/${"sw.js"}?origin=${c}`:x`/gtm/static/${"sw.js"}?origin=${c}`,b=new Map([["origin",c]]);a.h&&b.set("path",a.h);var f=a.l?y(b):d,g=()=>{const h=A.exec(a.window.navigator.userAgent);return h&&Number(h[1])<119},e=a.window.document.location.href;a.g&&(a.l?e=`${a.h}/_/service_worker`:g()||(e="/static/service_worker"));var k={scope:e};a.g&&(k.updateViaCache="all");a.window.navigator.serviceWorker.register(w(f),k).then(()=>
+{a.window.navigator.serviceWorker.ready.then(h=>{a.i=h.active;B(a)})},h=>{a.j=p(h==null?void 0:h.toString(),a.window);B(a)});a.window.navigator.serviceWorker.addEventListener("message",h=>{a.window.parent.postMessage(h.data,a.origin)})}},B=function(a){const c=a.m.slice();a.m=[];for(const d of c)a.handleEvent(d)};
+(new class{constructor(a){this.window=a;this.origin="";this.l=!1;this.h="";this.j=this.i=null;this.m=[];this.g=""}init(){if((f=>{try{return f!==f.top}catch(g){return!0}})(this.window)){var a=new URL(this.window.document.location.href),c=a.searchParams.get("origin");if(c){this.origin=c;this.l=!!a.searchParams.get("1p");this.h=a.searchParams.get("path")||"";var d=a.pathname.match(RegExp(".*/service_worker/(\\w+)/"));d&&d.length&&(this.g=d[1]);var b=this.window.document.location.ancestorOrigins;b&&b[0]!==
+this.origin||(C(this),this.window.addEventListener("message",f=>{this.handleEvent(f)}))}}}handleEvent(a){a.origin===this.origin&&(this.i?this.i.postMessage(a.data):this.j?this.j.o(a.data,c=>{this.window.parent.postMessage(c,this.origin)}):this.m.push(a))}}(window)).init();
+  </script>
+
+</body></html>
