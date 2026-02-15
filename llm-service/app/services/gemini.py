@@ -20,6 +20,7 @@ See backend/src/services/llm.rs for the Rust client that calls these.
 
 import os
 import json
+import httpx
 from typing import List, Dict, Any
 from datetime import datetime
 from google import genai
@@ -96,11 +97,12 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     - You serve the Tulsa area ONLY. Do not ask for location. Assume all queries are for Tulsa, OK.
     - If the user mentions relative dates (e.g., "this week", "weekend"), infer the start_date and end_date based on Current Date. Do not ask for clarification.
     - Call `search_events` to find specific event listings (dates, prices, locations).
-    - Do not use Markdown formatting (e.g., **bold**, *italics*). Use plain text only.
-    - Use simple dashes (-) for lists.
+    - Use Markdown formatting (e.g., **bold**, *italics*) to make the response easier to read.
+    - Use bullet points for lists.
     - If an event description is brief, use your general knowledge to add context (e.g., about the band or activity), but stick to the provided facts for time and location.
 
     If the user asks about weather or directions, answer generally or suggest checking a map.
+    If an event is listed as sold out, do not list it in your answer.
     Be enthusiastic, engaging, and helpful. Avoid being too brief.
     """
 
@@ -119,7 +121,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     # Handle multi-turn tool execution loop
     while response.function_calls:
         tool_outputs = []
-        
+
         for fc in response.function_calls:
             func_name = fc.name
             func_args = dict(fc.args) if fc.args else {}
@@ -163,6 +165,31 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     """
     Uses Gemini 2.0 Flash to extract structured event data from raw HTML or JSON.
     """
+    original_data = {}
+
+    # 1. Parse JSON input to preserve IDs and metadata
+    if content_type.lower() == "json":
+        try:
+            parsed = json.loads(raw_content)
+            if isinstance(parsed, dict):
+                original_data = parsed
+                
+                # 2. If description is missing, try to fetch the source URL
+                if not original_data.get("description"):
+                    target_url = original_data.get("source_url") or source_url
+                    if target_url and target_url.startswith("http"):
+                        print(f"DEBUG: Fetching missing description from {target_url}...")
+                        async with httpx.AsyncClient() as client:
+                            try:
+                                response = await client.get(target_url, follow_redirects=True, timeout=10.0, headers={"User-Agent": "Locate918-Bot/1.0"})
+                                if response.status_code == 200:
+                                    raw_content = response.text
+                                    content_type = "html"  # Switch to HTML extraction mode
+                            except Exception as e:
+                                print(f"DEBUG: Failed to fetch source URL: {e}")
+        except Exception:
+            pass
+
     if content_type.lower() == "json":
         instruction = "Map the following raw JSON data into the standardized event format below. Handle nested structures and different field names intelligently."
     else:
@@ -180,7 +207,10 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - end_time (ISO 8601 string or null)
     - price_min (number or null)
     - price_max (number or null)
-    - description (string, brief summary)
+    - description (string). Rules:
+        1. If the source has a description, use it.
+        2. If NO description exists, generate a brief summary based on the title/venue.
+        3. If generated, prefix with "[AI Generated] ".
     - categories (list of strings, e.g. ["music", "jazz"])
     - outdoor (boolean or null)
     - family_friendly (boolean or null)
@@ -200,13 +230,19 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     try:
         raw_data = json.loads(response.text)
         valid_events = []
-        
+
         if isinstance(raw_data, list):
             for item in raw_data:
                 try:
+                    # Merge original data with LLM data (LLM data takes precedence for normalized fields)
+                    if original_data:
+                        # Create a merged dictionary: original fields + normalized fields
+                        item = {**original_data, **item}
+
                     # Validate against the Pydantic schema. This drops invalid items
                     valid_events.append(NormalizedEvent(**item).model_dump())
-                except Exception:
+                except Exception as e:
+                    print(f"DEBUG: Normalization validation error: {e}")
                     continue
                     
         return valid_events

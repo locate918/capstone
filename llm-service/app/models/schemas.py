@@ -10,7 +10,6 @@ class Event(BaseModel):
     # Mandatory fields
     id: UUID
     title: str
-    description: str
     venue: str
     venue_address: str
     source_url: str
@@ -23,6 +22,7 @@ class Event(BaseModel):
     location: Optional[str] = None
     end_time: Optional[datetime] = None
     categories: Optional[List[str]] = None
+    description: Optional[str] = None
     price_min: Optional[float] = None
     price_max: Optional[float] = None
     outdoor: Optional[bool] = None
@@ -35,12 +35,14 @@ class NormalizedEvent(BaseModel):
     Represents an event extracted and normalized by the LLM from raw sources.
     Used by app.services.gemini.normalize_events
     """
+    model_config = ConfigDict(extra='allow')
+
     title: str
     venue: str
     venue_address: Optional[str] = None
     start_time: datetime
     end_time: Optional[datetime] = None
-    description: str
+    description: Optional[str] = None
     categories: Optional[List[str]] = None
     price_min: Optional[float] = None
     price_max: Optional[float] = None
