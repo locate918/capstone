@@ -1,5 +1,5 @@
-# Overwrite .gitignore with fixed version
-@"
+# Paste just the clean content:
+Set-Content -Path .gitignore -Value @"
 # Rust
 target/
 Cargo.lock
@@ -35,7 +35,7 @@ npm-debug.log*
 # Backup files
 *.bak
 
-# Scraped data output (transient, not source code)
+# Scraped data output
 backend/src/scraper/scraped_data/
 
 # Data exports and database dumps
@@ -47,4 +47,4 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-"@ | Set-Content -Path .gitignore -Encoding UTF8
+"@
