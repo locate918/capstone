@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Send, X } from 'lucide-react';
 import { chatWithTully } from '../services/api';
 
@@ -143,7 +144,22 @@ const AIChatWidget = () => {
                 ? 'bg-slate-900 text-white rounded-br-none' 
                 : 'bg-white text-slate-800 rounded-bl-none border border-slate-100'
             }`}>
-              {msg.text}
+              {msg.role === 'assistant' ? (
+                <ReactMarkdown 
+                  components={{
+                    ul: ({node, ...props}) => <ul {...props} className="list-disc pl-4 my-2" />,
+                    ol: ({node, ...props}) => <ol {...props} className="list-decimal pl-4 my-2" />,
+                    li: ({node, ...props}) => <li {...props} className="my-1" />,
+                    p: ({node, ...props}) => <p {...props} className="my-2 last:mb-0 first:mt-0" />,
+                    strong: ({node, ...props}) => <strong {...props} className="font-bold text-slate-900" />,
+                    a: ({node, ...props}) => <a {...props} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" />
+                  }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
+              ) : (
+                msg.text
+              )}
             </div>
           </div>
         ))}
