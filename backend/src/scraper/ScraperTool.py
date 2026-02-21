@@ -2411,6 +2411,18 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                             elif '.' in venue_website:
                                 venue_website = 'https://' + venue_website
 
+                    # If no venue website found and event_url is a VisitTulsa listing,
+                    # follow the listing page to find the real venue website
+                    if not venue_website and event_url and 'visittulsa.com' in event_url:
+                        listing_path = doc.get('url', '')
+                        if listing_path:
+                            real_website = fetch_venue_website_from_listing(listing_path, base_url)
+                            if real_website:
+                                venue_website = real_website
+                                # Use real venue URL as source_url instead of VisitTulsa listing
+                                event_url = real_website
+                                print(f"[Simpleview] Resolved '{title[:40]}' → {real_website}")
+
                     events.append({
                         'title': title,
                         'start_time': date_str,
@@ -2942,7 +2954,7 @@ HTML_TEMPLATE = '''
 
         <div id="scrape-all-section" class="hidden" style="margin-top:12px;">
             <button class="btn btn-success" id="scrape-all-btn" onclick="scrapeAll()" style="width:100%;">
-                \U0001f680 Scrape All Sources & Save to Database
+                🚀 Scrape All Sources & Save to Database
             </button>
             <div id="scrape-all-progress" class="hidden" style="margin-top:12px;">
                 <div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:12px;">
@@ -3220,15 +3232,15 @@ async function loadSavedUrls() {
         const r = await fetch('/saved-urls');
         const urls = await r.json();
         const container = document.getElementById('saved-urls');
-        const scrapeAllSection = document.getElementById('scrape-all-section');
+        const saSection = document.getElementById('scrape-all-section');
 
         if (!urls.length) {
             container.innerHTML = '';
-            if (scrapeAllSection) scrapeAllSection.classList.add('hidden');
+            if (saSection) saSection.classList.add('hidden');
             return;
         }
 
-        if (scrapeAllSection) scrapeAllSection.classList.remove('hidden');
+        if (saSection) saSection.classList.remove('hidden');
 
         container.innerHTML = `
             <div style="font-size:12px;color:#888;margin-bottom:8px;">📌 Saved URLs (click to load):</div>
@@ -3244,6 +3256,93 @@ async function loadSavedUrls() {
     } catch (e) {
         console.error('Error loading saved URLs:', e);
     }
+}
+
+async function scrapeAll() {
+    const btn = document.getElementById('scrape-all-btn');
+    const progress = document.getElementById('scrape-all-progress');
+    const statusEl = document.getElementById('sa-status');
+    const counterEl = document.getElementById('sa-counter');
+    const bar = document.getElementById('sa-bar');
+    const log = document.getElementById('sa-log');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Scraping...';
+    progress.classList.remove('hidden');
+    log.innerHTML = '';
+    bar.style.width = '0%';
+
+    try {
+        const response = await fetch('/scrape-all', { method: 'POST' });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let totalSources = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(line.slice(6));
+
+                    if (data.type === 'start') {
+                        totalSources = data.total_sources;
+                        statusEl.textContent = `Scraping ${totalSources} sources...`;
+                        counterEl.textContent = `0 / ${totalSources}`;
+                    } else if (data.type === 'source_start') {
+                        statusEl.textContent = `Scraping: ${data.name}`;
+                        log.innerHTML += `<div style="color:#6cf;">▶ ${data.name}...</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'source_scraped') {
+                        log.innerHTML += `<div style="color:#aaa;">  Found ${data.count} events [${data.methods.join(', ')}]</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'source_done') {
+                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct + '%';
+                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
+                        log.innerHTML += `<div style="color:#4f4;">  ✓ Saved ${data.saved} events (${data.elapsed}s)</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'source_empty') {
+                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct + '%';
+                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
+                        log.innerHTML += `<div style="color:#888;">  ⊘ No events found</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'source_skip') {
+                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct + '%';
+                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
+                        log.innerHTML += `<div style="color:#f84;">  ⚠ Skipped: ${data.reason}</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'source_error') {
+                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct + '%';
+                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
+                        log.innerHTML += `<div style="color:#f44;">  ✗ Error: ${data.error}</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    } else if (data.type === 'complete') {
+                        bar.style.width = '100%';
+                        statusEl.textContent = `Done! ${data.total_saved} events saved from ${data.total_sources} sources`;
+                        log.innerHTML += `<div style="color:#D4AF37;font-weight:bold;margin-top:6px;">━━ Complete: ${data.total_events} scraped, ${data.total_saved} saved, ${data.total_errors} errors ━━</div>`;
+                        log.scrollTop = log.scrollHeight;
+                    }
+                } catch (e) {}
+            }
+        }
+    } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+        log.innerHTML += `<div style="color:#f44;">Error: ${e.message}</div>`;
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🚀 Scrape All Sources & Save to Database';
 }
 
 async function saveCurrentUrl() {
@@ -3535,111 +3634,6 @@ function downloadSQL() {
 function clearSQL() {
     venueQueue = [];
     document.getElementById('sql-text').value = '-- No venues in queue';
-}
-
-
-// ========================================
-// SCRAPE ALL - Sequential scrape with SSE progress
-// ========================================
-
-async function scrapeAll() {
-    const btn = document.getElementById('scrape-all-btn');
-    const progress = document.getElementById('scrape-all-progress');
-    const statusEl = document.getElementById('sa-status');
-    const counterEl = document.getElementById('sa-counter');
-    const barEl = document.getElementById('sa-bar');
-    const logEl = document.getElementById('sa-log');
-
-    btn.disabled = true;
-    btn.textContent = '\u23f3 Scraping all sources...';
-    progress.classList.remove('hidden');
-    logEl.innerHTML = '';
-
-    function saLog(msg, color) {
-        logEl.innerHTML += '<div style="color:'+(color||'#888')+';margin-bottom:3px;">'+msg+'</div>';
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    try {
-        const response = await fetch('/scrape-all', { method: 'POST' });
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\\\\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                try {
-                    const data = JSON.parse(line.slice(6));
-
-                    switch (data.type) {
-                        case 'start':
-                            statusEl.textContent = 'Starting...';
-                            counterEl.textContent = '0 / ' + data.total_sources;
-                            saLog('\U0001f680 Scraping ' + data.total_sources + ' sources...', '#D4AF37');
-                            break;
-
-                        case 'source_start':
-                            statusEl.textContent = 'Scraping: ' + data.name;
-                            saLog('\u23f3 [' + (data.index+1) + '] ' + data.name + '...', '#6cf');
-                            break;
-
-                        case 'source_scraped':
-                            saLog('   Found ' + data.count + ' events (' + data.methods.join(', ') + ')', '#888');
-                            break;
-
-                        case 'source_done': {
-                            const total = parseInt(counterEl.textContent.split('/')[1]);
-                            const pct = ((data.index + 1) / total) * 100;
-                            barEl.style.width = pct + '%';
-                            counterEl.textContent = (data.index + 1) + ' / ' + total;
-                            const tag = data.normalized ? 'AI' : 'basic';
-                            let msg = '   \u2705 Saved ' + data.saved + ' events (' + tag + ')';
-                            if (data.venues_enriched) msg += ' + ' + data.venues_enriched + ' venues enriched';
-                            msg += ' [' + data.elapsed + 's]';
-                            saLog(msg, '#6f6');
-                            break;
-                        }
-
-                        case 'source_empty':
-                            saLog('   \u26a0\ufe0f No events found', '#ff0');
-                            break;
-
-                        case 'source_skip':
-                            saLog('   \U0001f6ab Skipped: ' + data.reason, '#f90');
-                            break;
-
-                        case 'source_error':
-                            saLog('   \u274c Error: ' + data.error + ' [' + data.elapsed + 's]', '#f66');
-                            break;
-
-                        case 'complete':
-                            barEl.style.width = '100%';
-                            statusEl.textContent = 'Complete!';
-                            saLog('\u2705 Done! ' + data.total_saved + ' events saved from ' + data.total_sources + ' sources', '#D4AF37');
-                            if (data.total_errors > 0) {
-                                saLog('\u26a0\ufe0f ' + data.total_errors + ' source(s) had errors', '#f90');
-                            }
-                            status('Saved ' + data.total_saved + ' events from ' + data.total_sources + ' sources', 'success');
-                            break;
-                    }
-                } catch (parseErr) {}
-            }
-        }
-    } catch (e) {
-        saLog('\u274c Connection error: ' + e.message, '#f66');
-        status('Scrape All failed: ' + e.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '\U0001f680 Scrape All Sources & Save to Database';
-    }
 }
 
 // Load saved URLs on page load
