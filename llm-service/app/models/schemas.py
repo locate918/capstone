@@ -40,8 +40,11 @@ class NormalizedEvent(BaseModel):
     title: str
     venue: str
     venue_address: Optional[str] = None
+    source_url: Optional[str] = None
+    source_name: Optional[str] = None
     start_time: datetime
     end_time: Optional[datetime] = None
+    time_estimated: Optional[bool] = None
     description: Optional[str] = None
     categories: Optional[List[str]] = None
     price_min: Optional[float] = None

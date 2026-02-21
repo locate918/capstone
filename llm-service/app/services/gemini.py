@@ -176,7 +176,9 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
 async def normalize_events(raw_content: str, source_url: str, content_type: str = "html") -> List[Dict]:
     """
     Uses Gemini 2.0 Flash to extract structured event data from raw HTML or JSON.
+    All times are normalized to America/Chicago (Central Time).
     """
+    current_date = datetime.now().strftime("%Y-%m-%d")
     original_data = {}
 
     # 1. Parse JSON input to preserve IDs and metadata
@@ -185,7 +187,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
             parsed = json.loads(raw_content)
             if isinstance(parsed, dict):
                 original_data = parsed
-                
+
                 # 2. If description is missing, try to fetch the source URL
                 if not original_data.get("description"):
                     target_url = original_data.get("source_url") or source_url
@@ -210,13 +212,41 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     base_prompt = f"""
     {instruction}
     Source URL: {source_url}
+    Current Date: {current_date}
+    
+    TIMEZONE RULES (CRITICAL):
+    - All events are in Tulsa, Oklahoma which is America/Chicago timezone (Central Time).
+    - Output ALL start_time and end_time values with the Central Time UTC offset.
+    - Use -06:00 for CST (November-March) or -05:00 for CDT (March-November).
+    - Example: "2025-03-15T19:00:00-05:00" (CDT) or "2025-01-15T19:00:00-06:00" (CST).
+    - If the source gives a time in UTC or another timezone, CONVERT it to Central Time.
+    - NEVER output times without a timezone offset. NEVER use "Z" suffix.
+    
+    TIME INFERENCE RULES:
+    - If only a date is given with no time, infer a reasonable start time based on event type:
+      - Concerts/nightlife/bar events → 20:00 (8 PM)
+      - Theater/performing arts → 19:30 (7:30 PM)
+      - Festivals/outdoor daytime → 10:00 (10 AM)
+      - Brunches/morning events → 10:00 (10 AM)
+      - Generic/unknown → 19:00 (7 PM)
+    - If "doors at 7" and "show at 8" are given, use the SHOW time as start_time.
+    - Set time_estimated = true whenever you infer or guess a time.
+    - Set time_estimated = false when the source explicitly provides a time.
+
+    RELATIVE DATE RULES:
+    - "This Saturday" means the upcoming Saturday relative to Current Date ({current_date}).
+    - "Next week" means 7 days from Current Date.
+    - Always resolve relative dates to actual ISO 8601 dates.
     
     Output Format: A JSON list of objects with these exact keys:
     - title (string)
     - venue (string)
     - venue_address (string, full address if available)
-    - start_time (ISO 8601 string)
-    - end_time (ISO 8601 string or null)
+    - source_url (string, the URL for this specific event page — use the input Source URL if no per-event URL exists)
+    - source_name (string, human-readable name of the source website, e.g. "Cain's Ballroom", "Eventbrite")
+    - start_time (ISO 8601 string WITH Central Time offset, e.g. "2025-03-15T20:00:00-05:00")
+    - end_time (ISO 8601 string WITH Central Time offset, or null)
+    - time_estimated (boolean, true if the time was inferred/guessed, false if explicitly stated in source)
     - price_min (number or null)
     - price_max (number or null)
     - description (string). Rules:
@@ -256,7 +286,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
                 except Exception as e:
                     print(f"DEBUG: Normalization validation error: {e}")
                     continue
-                    
+
         return valid_events
     except json.JSONDecodeError:
         # If the model output is not valid JSON, return an empty list.

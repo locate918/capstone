@@ -1,7 +1,8 @@
 //! # Venues Routes
 //!
 //! This module handles venue-related API endpoints.
-//! Venues are populated by the scraper and manually enriched with website URLs.
+//! Venues are populated by the scraper and automatically enriched with
+//! address, website, and coordinates via Google Places API.
 //!
 //! ## Endpoints
 //! - `GET  /api/venues`              - List all venues
@@ -38,6 +39,8 @@ pub struct Venue {
     pub accessibility_info: Option<String>,
     pub website: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +49,8 @@ pub struct CreateVenue {
     pub address: Option<String>,
     pub city: Option<String>,
     pub website: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +63,8 @@ pub struct UpdateVenue {
     pub parking_info: Option<String>,
     pub accessibility_info: Option<String>,
     pub website: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,7 +97,8 @@ async fn list_venues(
     let venues = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at
+               parking_info, accessibility_info, website, created_at,
+               latitude, longitude
         FROM venues
         ORDER BY name ASC
         LIMIT $1
@@ -117,7 +125,8 @@ async fn list_missing_websites(
     let venues = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at
+               parking_info, accessibility_info, website, created_at,
+               latitude, longitude
         FROM venues
         WHERE website IS NULL OR website = ''
         ORDER BY name ASC
@@ -144,7 +153,8 @@ async fn get_venue(
     let venue = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at
+               parking_info, accessibility_info, website, created_at,
+               latitude, longitude
         FROM venues
         WHERE id = $1
         "#
@@ -167,8 +177,9 @@ async fn get_venue(
 // HANDLER: CREATE VENUE (UPSERT BY NAME)
 // =============================================================================
 
-/// Creates a venue if it doesn't exist, or returns existing.
+/// Creates a venue if it doesn't exist, or fills in missing fields on existing.
 /// This is called by the scraper to register venues it discovers.
+/// On existing venues, fills any NULL fields with incoming data (never overwrites).
 async fn create_venue(
     State(pool): State<PgPool>,
     Json(payload): Json<CreateVenue>,
@@ -177,7 +188,8 @@ async fn create_venue(
     let existing = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at
+               parking_info, accessibility_info, website, created_at,
+               latitude, longitude
         FROM venues
         WHERE LOWER(name) = LOWER($1)
         "#
@@ -190,26 +202,60 @@ async fn create_venue(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    if let Some(mut venue) = existing {
-        // Venue exists - check if we should update the website
-        if venue.website.is_none() && payload.website.is_some() {
-            // Update website if we have one now
+    if let Some(venue) = existing {
+        // Venue exists — fill in any missing fields (COALESCE keeps existing values)
+        let needs_update =
+            (venue.website.is_none() && payload.website.is_some()) ||
+                (venue.address.is_none() && payload.address.is_some()) ||
+                (venue.latitude.is_none() && payload.latitude.is_some());
+
+        if needs_update {
             sqlx::query(
                 r#"
-                UPDATE venues SET website = $1 WHERE id = $2
+                UPDATE venues SET
+                    address = COALESCE(address, $2),
+                    city = COALESCE(city, $3),
+                    website = COALESCE(website, $4),
+                    latitude = COALESCE(latitude, $5),
+                    longitude = COALESCE(longitude, $6)
+                WHERE id = $1
                 "#
             )
-                .bind(&payload.website)
                 .bind(&venue.id)
+                .bind(&payload.address)
+                .bind(&payload.city)
+                .bind(&payload.website)
+                .bind(&payload.latitude)
+                .bind(&payload.longitude)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
                     eprintln!("Database error: {}", e);
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
-            venue.website = payload.website;
+
+            // Fetch updated venue
+            let updated = sqlx::query_as::<_, Venue>(
+                r#"
+                SELECT id, name, address, city, capacity, venue_type, noise_level,
+                       parking_info, accessibility_info, website, created_at,
+                       latitude, longitude
+                FROM venues
+                WHERE id = $1
+                "#
+            )
+                .bind(&venue.id)
+                .fetch_one(&pool)
+                .await
+                .map_err(|e| {
+                    eprintln!("Database error: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            return Ok((StatusCode::OK, Json(updated)));
         }
-        // Return existing venue (200 OK, not 201 Created)
+
+        // Nothing to update
         return Ok((StatusCode::OK, Json(venue)));
     }
 
@@ -219,8 +265,8 @@ async fn create_venue(
 
     sqlx::query(
         r#"
-        INSERT INTO venues (id, name, address, city, website, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO venues (id, name, address, city, website, latitude, longitude, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#
     )
         .bind(&id)
@@ -228,6 +274,8 @@ async fn create_venue(
         .bind(&payload.address)
         .bind(&payload.city)
         .bind(&payload.website)
+        .bind(&payload.latitude)
+        .bind(&payload.longitude)
         .bind(&now)
         .execute(&pool)
         .await
@@ -248,6 +296,8 @@ async fn create_venue(
         accessibility_info: None,
         website: payload.website,
         created_at: now,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
     };
 
     Ok((StatusCode::CREATED, Json(venue)))
@@ -257,45 +307,12 @@ async fn create_venue(
 // HANDLER: UPDATE VENUE
 // =============================================================================
 
-/// Updates a venue's details (primarily for adding website URLs).
+/// Updates a venue's details. Uses COALESCE to only fill NULL fields.
 async fn update_venue(
     State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateVenue>,
 ) -> Result<Json<Venue>, StatusCode> {
-    // Build dynamic update query
-    let mut updates: Vec<String> = vec![];
-
-    if payload.address.is_some() {
-        updates.push("address = $2".to_string());
-    }
-    if payload.city.is_some() {
-        updates.push("city = $3".to_string());
-    }
-    if payload.capacity.is_some() {
-        updates.push("capacity = $4".to_string());
-    }
-    if payload.venue_type.is_some() {
-        updates.push("venue_type = $5".to_string());
-    }
-    if payload.noise_level.is_some() {
-        updates.push("noise_level = $6".to_string());
-    }
-    if payload.parking_info.is_some() {
-        updates.push("parking_info = $7".to_string());
-    }
-    if payload.accessibility_info.is_some() {
-        updates.push("accessibility_info = $8".to_string());
-    }
-    if payload.website.is_some() {
-        updates.push("website = $9".to_string());
-    }
-
-    if updates.is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    // For simplicity, always update all optional fields
     sqlx::query(
         r#"
         UPDATE venues
@@ -306,7 +323,9 @@ async fn update_venue(
             noise_level = COALESCE($6, noise_level),
             parking_info = COALESCE($7, parking_info),
             accessibility_info = COALESCE($8, accessibility_info),
-            website = COALESCE($9, website)
+            website = COALESCE($9, website),
+            latitude = COALESCE($10, latitude),
+            longitude = COALESCE($11, longitude)
         WHERE id = $1
         "#
     )
@@ -319,6 +338,8 @@ async fn update_venue(
         .bind(&payload.parking_info)
         .bind(&payload.accessibility_info)
         .bind(&payload.website)
+        .bind(&payload.latitude)
+        .bind(&payload.longitude)
         .execute(&pool)
         .await
         .map_err(|e| {
@@ -330,7 +351,8 @@ async fn update_venue(
     let venue = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at
+               parking_info, accessibility_info, website, created_at,
+               latitude, longitude
         FROM venues
         WHERE id = $1
         "#

@@ -37,7 +37,7 @@
 // Each submodule handles a specific resource/feature area.
 // The actual route handlers are defined in these files.
 
-mod events;  // Event-related endpoints (CRUD + search)
+pub mod events; // Event-related endpoints (CRUD + search)
 mod chat;    // LLM-powered natural language chat (Ben - AI Engineer)
 mod users;   // User management, preferences, and interactions
 mod venues;  // Venue registry for source URL lookups

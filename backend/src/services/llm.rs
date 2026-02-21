@@ -57,7 +57,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
 
-use crate::models::Event;
+use crate::routes::events::Event;
 
 // =============================================================================
 // CONFIGURATION
@@ -82,6 +82,7 @@ fn get_llm_service_url() -> String {
 /// {
 ///   "query": "jazz",
 ///   "category": "concerts",
+///   "venue": "Cain's Ballroom",
 ///   "location": "downtown",
 ///   "date_from": "2026-01-24",
 ///   "price_max": 30.0,
@@ -96,6 +97,9 @@ pub struct SearchParams {
 
     /// Category filter (e.g., "concerts", "sports", "family")
     pub category: Option<String>,
+
+    /// Venue name filter (e.g., "Cain's Ballroom", "BOK Center")
+    pub venue: Option<String>,
 
     /// Start of date range (YYYY-MM-DD)
     pub date_from: Option<String>,
@@ -350,30 +354,33 @@ pub async fn process_chat_message(
 // DATABASE QUERY HELPER
 // =============================================================================
 
-/// All columns to select from events table (matches Event struct)
+/// All columns to select from events table with venue JOIN (matches Event struct)
 const EVENT_COLUMNS: &str = r#"
-    id, title, description, venue, venue_address, location,
-    source_url, source_name, start_time, end_time, categories,
-    price_min, price_max, outdoor, family_friendly, image_url,
-    created_at, updated_at
+    e.id, e.title, e.description, e.venue, e.venue_address, e.location,
+    e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+    e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+    e.time_estimated,
+    e.created_at, e.updated_at,
+    v.website AS venue_website,
+    v.latitude AS venue_latitude,
+    v.longitude AS venue_longitude
 "#;
 
 /// Search events using the extracted parameters.
 ///
 /// Builds a dynamic query with parameterized bindings to prevent SQL injection.
-/// Uses the same bind-parameter pattern as `routes/events.rs::search_events`.
+/// Includes venue JOIN for website/coordinates (same pattern as routes/events.rs).
 async fn search_events_with_params(
     params: &SearchParams,
     pool: &sqlx::PgPool,
 ) -> Result<Vec<Event>, sqlx::Error> {
-    // Build dynamic WHERE clauses using bind parameter indices ($1, $2, etc.)
     let mut conditions: Vec<String> = vec![];
     let mut bind_index: i32 = 1;
 
     // Text search in title/description
     if let Some(ref _q) = params.query {
         conditions.push(format!(
-            "(title ILIKE ${} OR description ILIKE ${})",
+            "(e.title ILIKE ${} OR e.description ILIKE ${})",
             bind_index, bind_index + 1
         ));
         bind_index += 2;
@@ -381,55 +388,66 @@ async fn search_events_with_params(
 
     // Category filter (check if category is in the categories array)
     if let Some(ref _cat) = params.category {
-        conditions.push(format!("${} = ANY(categories)", bind_index));
+        conditions.push(format!("${} = ANY(e.categories)", bind_index));
+        bind_index += 1;
+    }
+
+    // Venue filter (partial match, case-insensitive)
+    if let Some(ref _venue) = params.venue {
+        conditions.push(format!("e.venue ILIKE ${}", bind_index));
         bind_index += 1;
     }
 
     // Date range filters
     if let Some(ref _date_from) = params.date_from {
-        conditions.push(format!("start_time >= ${}", bind_index));
+        conditions.push(format!("e.start_time >= ${}", bind_index));
         bind_index += 1;
     } else {
         // Default: only future events
-        conditions.push("start_time >= NOW()".to_string());
+        conditions.push("e.start_time >= NOW()".to_string());
     }
 
     if let Some(ref _date_to) = params.date_to {
-        conditions.push(format!("start_time <= ${}", bind_index));
+        conditions.push(format!("e.start_time <= ${}", bind_index));
         bind_index += 1;
     }
 
     // Location filter
     if let Some(ref _loc) = params.location {
-        conditions.push(format!("location ILIKE ${}", bind_index));
+        conditions.push(format!("e.location ILIKE ${}", bind_index));
         bind_index += 1;
     }
 
     // Price filter
     if let Some(ref _max_price) = params.price_max {
-        conditions.push(format!("(price_min IS NULL OR price_min <= ${})", bind_index));
+        conditions.push(format!("(e.price_min IS NULL OR e.price_min <= ${})", bind_index));
         bind_index += 1;
     }
 
     // Boolean filters (safe to inline — these are Rust bools, not user strings)
     if let Some(true) = params.outdoor {
-        conditions.push("outdoor = TRUE".to_string());
+        conditions.push("e.outdoor = TRUE".to_string());
     }
 
     if let Some(true) = params.family_friendly {
-        conditions.push("family_friendly = TRUE".to_string());
+        conditions.push("e.family_friendly = TRUE".to_string());
     }
 
     // Build WHERE clause
     let where_clause = if conditions.is_empty() {
-        "WHERE start_time >= NOW()".to_string()
+        "WHERE e.start_time >= NOW()".to_string()
     } else {
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // Build query string
+    // Build query with venue JOIN (matches events.rs pattern)
     let query = format!(
-        "SELECT {} FROM events {} ORDER BY start_time ASC LIMIT 20",
+        r#"SELECT {}
+        FROM events e
+        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        {}
+        ORDER BY e.start_time ASC
+        LIMIT 20"#,
         EVENT_COLUMNS, where_clause
     );
 
@@ -443,6 +461,10 @@ async fn search_events_with_params(
 
     if let Some(ref cat) = params.category {
         query_builder = query_builder.bind(cat);
+    }
+
+    if let Some(ref venue) = params.venue {
+        query_builder = query_builder.bind(format!("%{}%", venue));
     }
 
     if let Some(ref date_from) = params.date_from {

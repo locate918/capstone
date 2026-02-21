@@ -34,7 +34,7 @@ use uuid::Uuid;
 // =============================================================================
 
 /// Event model returned from API (includes venue data from JOIN)
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Event {
     pub id: Uuid,
     pub title: String,
@@ -52,6 +52,7 @@ pub struct Event {
     pub outdoor: Option<bool>,
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
+    pub time_estimated: Option<bool>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Venue data from venues table via LEFT JOIN
@@ -78,6 +79,7 @@ pub struct CreateEvent {
     pub outdoor: Option<bool>,
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
+    pub time_estimated: Option<bool>,
 }
 
 // =============================================================================
@@ -124,6 +126,7 @@ async fn list_events(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -165,6 +168,7 @@ async fn get_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -213,9 +217,10 @@ async fn create_event(
             id, title, description, venue, venue_address, location,
             source_url, source_name, start_time, end_time, categories,
             price_min, price_max, outdoor, family_friendly, image_url,
+            time_estimated,
             created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         ON CONFLICT (source_url) DO UPDATE SET
             title = EXCLUDED.title,
             description = EXCLUDED.description,
@@ -231,6 +236,7 @@ async fn create_event(
             outdoor = EXCLUDED.outdoor,
             family_friendly = EXCLUDED.family_friendly,
             image_url = EXCLUDED.image_url,
+            time_estimated = EXCLUDED.time_estimated,
             updated_at = NOW()
         "#
     )
@@ -250,6 +256,7 @@ async fn create_event(
         .bind(&payload.outdoor)
         .bind(&payload.family_friendly)
         .bind(&payload.image_url)
+        .bind(&payload.time_estimated)
         .bind(&now)
         .bind(&now)
         .execute(&pool)
@@ -266,6 +273,7 @@ async fn create_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -410,6 +418,7 @@ async fn search_events(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,

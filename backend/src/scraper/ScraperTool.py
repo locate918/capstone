@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
-from flask import Flask, render_template_string, request, jsonify, send_file
+from flask import Flask, render_template_string, request, jsonify, send_file, Response
 import httpx
 from bs4 import BeautifulSoup, NavigableString
 from dotenv import load_dotenv
@@ -71,6 +71,7 @@ OUTPUT_DIR = Path("scraped_data")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000")
+LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:8001")
 HEADERS = {"User-Agent": "Locate918 Event Aggregator (educational project)"}
 
 # Cache for robots.txt parsers (avoid re-fetching)
@@ -491,7 +492,6 @@ def detect_eventcalendarapp(html: str, url: str = '') -> dict | None:
             pass
 
     # Pattern 1: Script embed with id and widgetUuid
-    # <script ... src="https://eventcalendarapp.com/widgets/...?id=11692&widgetUuid=dcafff1d-...">
     script_pattern = re.compile(
         r'eventcalendarapp\.com[^"\']*[?&]id=(\d+)[^"\']*widgetUuid=([a-f0-9-]+)',
         re.IGNORECASE
@@ -582,24 +582,6 @@ async def fetch_eventcalendarapp_api(calendar_id: str, widget_uuid: str = None, 
 def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
     """
     Convert raw EventCalendarApp API events to our standardized format.
-
-    Args:
-        raw_events: List of raw event dicts from API
-        source_name: Name of the source/venue
-        future_only: If True, only return events with start date >= today
-
-    API fields:
-    - summary: Event title
-    - timezoneStart: ISO datetime (local) e.g. "2026-10-25T19:00:00"
-    - timezoneEnd: ISO datetime (local)
-    - location.description: Venue name
-    - description / shortDescription: Event details (HTML)
-    - thumbnail / image: CDN image URLs
-    - ticketsLink: External ticket URL or null
-    - url: EventCalendarApp event page URL
-    - ticketTypes: Array of ticket options
-    - featured: Boolean
-    - timezone: e.g. "US/Central"
     """
     events = []
     seen = set()
@@ -622,9 +604,9 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
                 if start_dt < today:
                     continue
             except:
-                pass  # Keep event if we can't parse the date
+                pass
 
-        # Format nicely: "Oct 25, 2026 @ 7:00 PM - 10:00 PM"
+        # Format nicely
         date_str = ''
         if start:
             try:
@@ -633,7 +615,6 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
 
                 if end:
                     end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
-                    # Only show end time if same day
                     if dt.date() == end_dt.date():
                         date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
             except:
@@ -648,7 +629,6 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
         # Get description (strip HTML)
         desc = raw.get('shortDescription', '') or raw.get('description', '')
         if desc:
-            # Simple HTML strip
             desc = re.sub(r'<[^>]+>', ' ', desc)
             desc = re.sub(r'\s+', ' ', desc).strip()[:200]
 
@@ -681,15 +661,7 @@ async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', f
     """
     Main EventCalendarApp extraction function.
 
-    Args:
-        html: Page HTML content
-        source_name: Name of the source/venue
-        url: Page URL (used for known venue lookup)
-        future_only: If True, only return events with start date >= today
-
     Returns: (events_list, was_detected)
-    - events_list: List of events if found
-    - was_detected: True if EventCalendarApp widget was detected (even if no events)
     """
     params = detect_eventcalendarapp(html, url)
     if not params:
@@ -697,7 +669,6 @@ async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', f
 
     print(f"[EventCalendarApp] Detected calendar ID: {params['id']}")
 
-    # Fetch from API
     raw_events = await fetch_eventcalendarapp_api(
         params['id'],
         params.get('widgetUuid')
@@ -705,7 +676,6 @@ async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', f
 
     print(f"[EventCalendarApp] Fetched {len(raw_events)} total events from API")
 
-    # Parse to our format (with optional date filtering)
     events = parse_eventcalendarapp_events(raw_events, source_name, future_only)
 
     if future_only:
@@ -718,21 +688,16 @@ async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', f
 # TIMELY API EXTRACTOR (Direct JSON - No Scraping!)
 # ============================================================================
 
-# Known Timely venues with their calendar IDs
-# Discover via DevTools: events.timely.fun/api/calendars/{ID}/events
 KNOWN_TIMELY_VENUES = {
     'thestarlitebar.com': {'id': '54755961'},
     'www.thestarlitebar.com': {'id': '54755961'},
-    # Add more venues as discovered...
 }
 
 
 def detect_timely(html: str, url: str = '') -> dict | None:
     """
     Detect Timely calendar widget and extract calendar ID.
-    Returns dict with 'id' if found, else None.
     """
-    # First check known venues by domain
     if url:
         try:
             domain = urlparse(url).netloc.lower()
@@ -742,20 +707,16 @@ def detect_timely(html: str, url: str = '') -> dict | None:
         except:
             pass
 
-    # Pattern 1: Look for timely embed script or iframe
-    # <script src="https://events.timely.fun/embed.js" data-calendar-id="54755961">
     id_pattern = re.compile(r'data-calendar-id[=:]["\']?(\d+)', re.IGNORECASE)
     match = id_pattern.search(html)
     if match:
         return {'id': match.group(1)}
 
-    # Pattern 2: Look for timely.fun URL with calendar ID
     url_pattern = re.compile(r'events\.timely\.fun/(?:api/calendars/)?(\d+)', re.IGNORECASE)
     match = url_pattern.search(html)
     if match:
         return {'id': match.group(1)}
 
-    # Pattern 3: Look for timelyapp references
     timely_pattern = re.compile(r'timelyapp\.time\.ly/[^/]*/calendars/(\d+)', re.IGNORECASE)
     match = timely_pattern.search(html)
     if match:
@@ -767,19 +728,13 @@ def detect_timely(html: str, url: str = '') -> dict | None:
 async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: int = 10) -> list:
     """
     Fetch all events from Timely API with pagination.
-
-    API: GET https://events.timely.fun/api/calendars/{id}/events?group_by_date=1&timezone=America/Chicago&view=agenda&start_date_utc={timestamp}&per_page=30&page={page}
-
-    Returns list of raw event dicts from API.
     """
     import time
     all_events = []
     page = 1
 
-    # Start from today
     start_timestamp = int(time.time())
 
-    # Timely API requires Referer header from the embedding site
     headers = dict(HEADERS)
     if referer_url:
         headers['Referer'] = referer_url
@@ -798,17 +753,14 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
                 resp.raise_for_status()
                 data = resp.json()
 
-                # Timely returns {data: {items: [{date: ..., events: [...]}]}}
                 items = data.get('data', {}).get('items', [])
                 if not items:
                     break
 
-                # Extract events from grouped structure
                 for item in items:
                     events_in_group = item.get('events', [])
                     all_events.extend(events_in_group)
 
-                # Check if there are more pages
                 total = data.get('data', {}).get('total', 0)
                 if len(all_events) >= total or not items:
                     break
@@ -825,16 +777,6 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
 def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
     """
     Convert raw Timely API events to our standardized format.
-
-    Timely API fields (typical):
-    - title: Event title
-    - start_datetime: ISO datetime
-    - end_datetime: ISO datetime
-    - description: Event details (may be HTML)
-    - url: Event page URL
-    - featured_image: Image URL
-    - venue: {name: ..., address: ...}
-    - taxonomies: {category: [...], tag: [...]}
     """
     events = []
     seen = set()
@@ -846,11 +788,9 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             continue
         seen.add(title)
 
-        # Parse date/time
         start = raw.get('start_datetime', '')
         end = raw.get('end_datetime', '')
 
-        # Filter past events if future_only is True
         if future_only and start:
             try:
                 start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
@@ -859,7 +799,6 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             except:
                 pass
 
-        # Format nicely
         date_str = ''
         if start:
             try:
@@ -873,26 +812,20 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             except:
                 date_str = start
 
-        # Get venue
         venue_data = raw.get('venue', {})
         venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
         if not venue:
             venue = source_name
 
-        # Get description (strip HTML)
         desc = raw.get('description', '') or raw.get('excerpt', '')
         if desc:
             desc = re.sub(r'<[^>]+>', ' ', desc)
             desc = re.sub(r'\s+', ' ', desc).strip()[:200]
 
-        # Get image
         image = raw.get('featured_image', {})
         image_url = image.get('url', '') if isinstance(image, dict) else (image if isinstance(image, str) else '')
 
-        # Get event URL
         event_url = raw.get('url', '') or raw.get('canonical_url', '')
-
-        # Get ticket link
         tickets = raw.get('ticket_url', '') or raw.get('custom_ticket_url', '')
 
         events.append({
@@ -922,7 +855,6 @@ async def extract_timely(html: str, source_name: str, url: str = '', future_only
 
     print(f"[Timely] Detected calendar ID: {params['id']}")
 
-    # Try API first
     raw_events = await fetch_timely_api(params['id'], referer_url=url)
 
     if raw_events:
@@ -932,7 +864,6 @@ async def extract_timely(html: str, source_name: str, url: str = '', future_only
             print(f"[Timely] {len(events)} upcoming events after date filter")
         return events, True
 
-    # API failed - try HTML extraction
     print(f"[Timely] API returned 0 events, trying HTML extraction...")
     soup = BeautifulSoup(html, 'html.parser')
     events = extract_timely_from_html(soup, url, source_name)
@@ -944,54 +875,34 @@ async def extract_timely(html: str, source_name: str, url: str = '', future_only
 def clean_timely_title(title: str) -> str:
     """
     Clean up Timely titles that have concatenated tags.
-
-    Example: "Starlite Trivia NightTriviatriviatrivia nighttrivianighttriviapub quiz..."
-    Should become: "Starlite Trivia Night"
-
-    Pattern: Title text followed by tags concatenated without spaces
     """
     if not title or len(title) < 20:
         return title
 
-    # Look for the pattern where a word is followed by itself (lowercase) or similar
-    # "NightTrivia" or "PartyThe" - capital letter in middle of what should be a word
-
-    # Find position where lowercase is immediately followed by uppercase (tag boundary)
-    # Pattern: lowercase letter followed by uppercase letter (except normal cases like "McDonald")
-    # This often indicates where the title ends and tags begin
     matches = list(re.finditer(r'[a-z][A-Z]', title))
 
     if matches:
-        # Take the first occurrence as potential title end
         first_match = matches[0]
         potential_title = title[:first_match.start() + 1]
 
-        # Verify it's reasonable (at least 3 words or 15 chars)
         if len(potential_title) >= 10 or potential_title.count(' ') >= 2:
             return potential_title.strip()
 
-    # Alternative: look for repeated words
     words = title.split()
     if len(words) >= 2:
-        # Check if any word appears multiple times (indicates tag repetition)
         seen_words = {}
         for i, word in enumerate(words):
             word_lower = word.lower()
             if word_lower in seen_words and i > 1:
-                # Found a repeat - title probably ends before first occurrence
                 return ' '.join(words[:seen_words[word_lower]]).strip()
             seen_words[word_lower] = i
 
-    # If title is very long with few spaces, it's probably polluted
     if len(title) > 50 and title.count(' ') < 5:
-        # Try to find a reasonable stopping point
-        # Look for common patterns like "- " which often end the main title
         if ' - ' in title:
             parts = title.split(' - ')
             if len(parts[0]) >= 10:
                 return parts[0].strip()
 
-        # Just take first ~50 chars up to a word boundary
         if len(title) > 50:
             truncated = title[:50]
             last_space = truncated.rfind(' ')
@@ -1005,22 +916,15 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
     """
     Extract events from Timely widget's rendered HTML structure.
     Fallback when API access is blocked.
-
-    Timely renders events with structure like:
-    - .timely-event or [data-event-id]
-    - Event title in heading
-    - Date/time in various formats
     """
     events = []
     seen = set()
 
-    # Timely event selectors
     selectors = [
         '.timely-event',
         '[data-event-id]',
         '.timely-calendar .event',
         '.tc-event',
-        # Agenda view items
         '.timely-agenda-event',
         '.agenda-event',
     ]
@@ -1029,24 +933,19 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
     for sel in selectors:
         containers.extend(soup.select(sel))
 
-    # Also look for the agenda structure
     if not containers:
-        # Look for date groups with events
         date_groups = soup.select('[class*="agenda"], [class*="event-list"]')
         for group in date_groups:
-            # Find individual event items
             items = group.select('a[href*="event"], div[class*="event"], li')
             containers.extend(items)
 
     for container in containers:
-        # Get title - look for specific title element first
         title_el = (
                 container.select_one('.timely-title, .event-title, [class*="title"]:not([class*="subtitle"])') or
                 container.select_one('h1, h2, h3, h4')
         )
 
         if not title_el:
-            # Try first link text
             link_el = container.select_one('a[href]')
             if link_el:
                 title_el = link_el
@@ -1054,21 +953,17 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
         if not title_el:
             continue
 
-        # Get just the direct text, not nested tag text
         title = ''
         for child in title_el.children:
             if isinstance(child, str):
                 title += child.strip()
             elif hasattr(child, 'name') and child.name in ['span', 'strong', 'b', 'em']:
-                # Only include certain inline elements
                 if not child.get('class') or not any('tag' in c.lower() for c in child.get('class', [])):
                     title += child.get_text(strip=True)
 
-        # Fallback to full text if empty
         if not title:
             title = title_el.get_text(strip=True)
 
-        # Clean up duplicated text (Timely sometimes doubles the title)
         if len(title) > 10:
             half = len(title) // 2
             first_half = title[:half]
@@ -1079,16 +974,13 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
         if not title or len(title) < 3 or title in seen:
             continue
 
-        # Skip navigation/UI elements
         skip_words = ['read full', 'more', 'view all', 'click here', 'get a timely', 'powered by', 'buy tickets']
         if any(skip in title.lower() for skip in skip_words):
             continue
 
-        # Skip if title looks like a tag dump (too many words without spaces in original)
         if len(title) > 50 and title.count(' ') < 3:
             continue
 
-        # Clean up tag pollution from Timely
         title = clean_timely_title(title)
 
         if not title or len(title) < 3:
@@ -1096,16 +988,12 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
 
         seen.add(title)
 
-        # Get date/time - look for specific date element
         date_el = container.select_one('.timely-date, .event-date, time, [class*="date"]:not([class*="update"])')
         date_str = ''
         if date_el:
-            # Get datetime attribute first
             date_str = date_el.get('datetime', '')
             if not date_str:
-                # Get text but clean it
                 date_text = date_el.get_text(strip=True)
-                # Extract just the date/time part
                 date_match = extract_date_from_text(date_text)
                 time_match = extract_time_from_text(date_text)
                 if date_match:
@@ -1116,14 +1004,12 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
                     date_str = time_match
 
         if not date_str:
-            # Look for date in container text more carefully
             container_text = container.get_text(' ', strip=True)
             date_str = extract_date_from_text(container_text) or ''
             time_str = extract_time_from_text(container_text)
             if time_str:
                 date_str = f"{date_str} @ {time_str}" if date_str else time_str
 
-        # Get link
         link = ''
         link_el = container if container.name == 'a' else container.select_one('a[href]')
         if link_el:
@@ -1159,25 +1045,16 @@ KNOWN_BOK_VENUES = {
 def extract_stubwire_events(soup, base_url: str, source_name: str) -> list:
     """
     Extract events from Stubwire-powered sites like Tulsa Shrine.
-
-    Structure:
-    - Day number in standalone element
-    - Month abbreviation
-    - h2 > a with title linking to /event/{id}/{slug}/
-    - Time like "8:00PM"
-    - Stubwire ticket links
     """
     events = []
     seen = set()
 
-    # Find all event links to /event/ pages
     event_links = soup.select('a[href*="/event/"]')
 
     for link in event_links:
         href = link.get('href', '')
         title = link.get_text(strip=True)
 
-        # Skip non-title links (Buy Tickets, More Info, images)
         if not title or len(title) < 2:
             continue
         if title.lower() in ['buy tickets', 'more info', 'all session tickets']:
@@ -1185,63 +1062,51 @@ def extract_stubwire_events(soup, base_url: str, source_name: str) -> list:
         if '/event/' not in href:
             continue
 
-        # Deduplicate by URL
         if href in seen:
             continue
         seen.add(href)
 
-        # Find the parent container to get date/time
         container = link.find_parent(['div', 'article', 'li'])
         date_str = ''
         time_str = ''
 
         if container:
-            # Look for the full text which should have day, month, time
             container_text = container.get_text(' ', strip=True)
 
-            # Extract month and day - look for patterns like "06 Feb" or "Feb 06"
             months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
             for month in months:
                 if month in container_text:
-                    # Try to find day number near the month
                     month_idx = container_text.find(month)
 
-                    # Look for day before month (like "06 Feb")
                     before = container_text[:month_idx].strip()
                     day_match = re.search(r'(\d{1,2})\s*$', before)
                     if day_match:
                         date_str = f"{month} {day_match.group(1)}"
                         break
 
-                    # Look for day after month (like "Feb 06")
                     after = container_text[month_idx + len(month):].strip()
                     day_match = re.search(r'^[\s,]*(\d{1,2})', after)
                     if day_match:
                         date_str = f"{month} {day_match.group(1)}"
                         break
 
-            # Extract time - look for patterns like "7:00PM", "8:00 PM"
             time_match = re.search(r'(\d{1,2}:\d{2}\s*[APap][Mm])', container_text)
             if time_match:
                 time_str = time_match.group(1)
 
-        # Combine date and time
         full_date = date_str
         if time_str:
             full_date = f"{date_str} @ {time_str}" if date_str else time_str
 
-        # Build full URL
         full_url = href if href.startswith('http') else urljoin(base_url, href)
 
-        # Get image if available
         image_url = ''
         if container:
             img = container.select_one('img[src*="stubwire"]')
             if img:
                 image_url = img.get('src', '')
 
-        # Get ticket URL
         ticket_url = ''
         if container:
             ticket_link = container.select_one('a[href*="stubwire.com"]')
@@ -1268,12 +1133,10 @@ def extract_stubwire_events(soup, base_url: str, source_name: str) -> list:
 def extract_dice_events(soup, base_url: str, source_name: str) -> list:
     """
     Extract events from Dice.fm embeds or pages.
-    Dice uses data attributes and specific class patterns.
     """
     events = []
     seen = set()
 
-    # Look for Dice event links
     dice_links = soup.select('a[href*="dice.fm"], a[href*="link.dice.fm"]')
 
     for link in dice_links:
@@ -1282,7 +1145,6 @@ def extract_dice_events(soup, base_url: str, source_name: str) -> list:
             continue
         seen.add(href)
 
-        # Get title from link text or nearby heading
         title = link.get_text(strip=True)
         if not title or len(title) < 3:
             parent = link.find_parent(['div', 'article'])
@@ -1294,7 +1156,6 @@ def extract_dice_events(soup, base_url: str, source_name: str) -> list:
         if not title or title.lower() in ['buy tickets', 'get tickets', 'book now']:
             continue
 
-        # Look for date in parent container
         date_str = ''
         parent = link.find_parent(['div', 'article', 'li'])
         if parent:
@@ -1327,8 +1188,6 @@ def extract_bandsintown_events(soup, base_url: str, source_name: str) -> list:
     events = []
     seen = set()
 
-    # Only match actual event detail links (they contain /e/ in the path)
-    # This filters out nav links like /today/, /all-dates/genre/, etc.
     bit_links = soup.select('a[href*="bandsintown.com/e/"]')
 
     for link in bit_links:
@@ -1341,25 +1200,19 @@ def extract_bandsintown_events(soup, base_url: str, source_name: str) -> list:
         if not title or len(title) < 3:
             continue
 
-        # Clean up BIT titles that concatenate artist + venue + date
-        # Pattern: "Artist NameVenue NameFeb 14 - 9:00 PM"
-        # Look for date pattern and truncate there
         date_match = re.search(
             r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}',
             title
         )
         event_date = ''
         if date_match:
-            # Extract date portion
             date_portion = title[date_match.start():]
             event_date = date_portion.strip()
-            # Title is everything before the date
             title = title[:date_match.start()].strip()
 
         if not title:
             continue
 
-        # Get date from parent if we didn't extract one
         if not event_date:
             parent = link.find_parent(['div', 'li', 'tr'])
             if parent:
@@ -1390,10 +1243,8 @@ def extract_songkick_events(soup, base_url: str, source_name: str) -> list:
     events = []
     seen = set()
 
-    # Look for Songkick links
     sk_links = soup.select('a[href*="songkick.com"]')
 
-    # Also look for Songkick widget
     sk_widgets = soup.select('[class*="songkick"], #songkick-widget')
 
     for link in sk_links:
@@ -1438,12 +1289,10 @@ def extract_ticketmaster_events(soup, base_url: str, source_name: str) -> list:
     events = []
     seen = set()
 
-    # Look for Ticketmaster links
     tm_links = soup.select('a[href*="ticketmaster.com"], a[href*="livenation.com"]')
 
     for link in tm_links:
         href = link.get('href', '')
-        # Only event pages, not artist pages or homepage
         if '/event/' not in href and '/venue/' not in href:
             continue
         if href in seen:
@@ -1452,7 +1301,6 @@ def extract_ticketmaster_events(soup, base_url: str, source_name: str) -> list:
 
         title = link.get_text(strip=True)
 
-        # Try to get better title from parent
         if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets', 'buy now']:
             parent = link.find_parent(['div', 'article', 'li'])
             if parent:
@@ -1487,9 +1335,6 @@ def extract_ticketmaster_events(soup, base_url: str, source_name: str) -> list:
 # ============================================================================
 
 def extract_axs_events(soup, base_url: str, source_name: str) -> list:
-    """
-    Extract events from AXS links/embeds.
-    """
     events = []
     seen = set()
 
@@ -1540,12 +1385,10 @@ def extract_axs_events(soup, base_url: str, source_name: str) -> list:
 def extract_etix_events(soup, base_url: str, source_name: str) -> list:
     """
     Extract events from Etix links/embeds OR from Etix venue pages directly.
-    Also parses captured API responses if available.
     """
     events = []
     seen = set()
 
-    # Check if we're ON an Etix page (venue page)
     is_etix_page = 'etix.com' in base_url
 
     # FIRST: Try to parse captured API data (most reliable)
@@ -1555,29 +1398,23 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
             api_data = json.loads(script.get_text())
             print(f"[Etix] Parsing API data with {len(api_data) if isinstance(api_data, list) else 'object'} items")
 
-            # API returns array of performances/events
             if isinstance(api_data, list):
                 for item in api_data:
-                    perf = item.get('performance', item)  # Sometimes nested
+                    perf = item.get('performance', item)
 
                     title = perf.get('name', '') or perf.get('title', '') or perf.get('performanceName', '')
                     if not title:
                         continue
 
-                    # Get date/time
                     date_str = perf.get('performanceDate', '') or perf.get('date', '') or perf.get('startDate', '')
                     time_str = perf.get('performanceTime', '') or perf.get('time', '') or perf.get('startTime', '')
                     if date_str and time_str:
                         date_str = f"{date_str} {time_str}"
 
-                    # Get URL
                     perf_id = perf.get('performanceID', '') or perf.get('id', '')
                     event_url = f"https://www.etix.com/ticket/p/{perf_id}" if perf_id else base_url
 
-                    # Get image
                     image_url = perf.get('imageUrl', '') or perf.get('image', '') or perf.get('performanceImage', '')
-
-                    # Get venue
                     venue = perf.get('venueName', '') or perf.get('venue', '') or source_name
 
                     if event_url not in seen:
@@ -1592,7 +1429,6 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                             'image_url': image_url,
                         })
 
-            # Or might be object with results array
             elif isinstance(api_data, dict):
                 results = api_data.get('results', []) or api_data.get('performances', []) or api_data.get('events', [])
                 for perf in results:
@@ -1625,19 +1461,12 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
         except Exception as e:
             print(f"[Etix] Error parsing API data: {e}")
 
-    # If we got events from API, return them
     if events:
         print(f"[Etix] Extracted {len(events)} events from API data")
         return events
 
     if is_etix_page:
-        # Extract from Etix's rendered React content
-        # Look for event cards - they use MUI components
-
-        # Try various selectors for Etix event cards
         event_cards = soup.select('[class*="MuiCard"], [class*="performance"], [class*="event-card"], [class*="EventCard"]')
-
-        # Also look for links to /ticket/p/ (performance pages)
         perf_links = soup.select('a[href*="/ticket/p/"]')
 
         for link in perf_links:
@@ -1646,14 +1475,11 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                 continue
             seen.add(href)
 
-            # Make absolute URL
             if href.startswith('/'):
                 href = 'https://www.etix.com' + href
 
-            # Get title from link or nearby heading
             title = link.get_text(strip=True)
             if not title or len(title) < 3 or title.lower() in ['buy tickets', 'get tickets', 'buy', 'tickets']:
-                # Look for title in parent card
                 parent = link.find_parent(['div', 'article', 'li', 'section'])
                 if parent:
                     heading = parent.select_one('h1, h2, h3, h4, h5, [class*="title"], [class*="Title"], [class*="name"], [class*="Name"]')
@@ -1663,7 +1489,6 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
             if not title or len(title) < 3:
                 continue
 
-            # Get date
             date_str = ''
             parent = link.find_parent(['div', 'article', 'li', 'section'])
             if parent:
@@ -1671,7 +1496,6 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                 if date_el:
                     date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
 
-            # Get image
             image_url = ''
             if parent:
                 img = parent.select_one('img')
@@ -1688,17 +1512,12 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                 'image_url': image_url,
             })
 
-        # Also try to extract from any visible text patterns if no links found
         if not events:
-            # Look for any divs with event-like structure
             all_divs = soup.select('div')
             for div in all_divs:
                 text = div.get_text(separator=' ', strip=True)
-                # Look for patterns like "Artist Name Feb 15, 2026 8:00 PM"
                 if len(text) > 10 and len(text) < 200:
-                    # Check for date-like patterns
                     if re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d', text):
-                        # Find any ticket link in this div
                         ticket_link = div.select_one('a[href*="ticket"]')
                         if ticket_link:
                             href = ticket_link.get('href', '')
@@ -1708,7 +1527,7 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                             if href not in seen:
                                 seen.add(href)
                                 events.append({
-                                    'title': text[:100],  # Use text as title
+                                    'title': text[:100],
                                     'date': '',
                                     'source_url': href,
                                     'tickets_url': href,
@@ -1716,7 +1535,6 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
                                     'venue': source_name,
                                 })
 
-    # Also check for links TO etix (for non-Etix pages embedding Etix links)
     etix_links = soup.select('a[href*="etix.com"]')
 
     for link in etix_links:
@@ -1762,9 +1580,6 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
 # ============================================================================
 
 def extract_seetickets_events(soup, base_url: str, source_name: str) -> list:
-    """
-    Extract events from See Tickets links/embeds.
-    """
     events = []
     seen = set()
 
@@ -1814,10 +1629,6 @@ def extract_seetickets_events(soup, base_url: str, source_name: str) -> list:
 async def fetch_bok_center_events(max_pages: int = 20) -> list:
     """
     Fetch all events from BOK Center's AJAX API.
-
-    API: GET https://www.bokcenter.com/events/events_ajax/{offset}?category=0&venue=0&team=0&exclude=&per_page=6
-
-    Returns parsed events.
     """
     all_events = []
     offset = 0
@@ -1831,25 +1642,21 @@ async def fetch_bok_center_events(max_pages: int = 20) -> list:
                 resp = await client.get(url)
                 resp.raise_for_status()
 
-                # API returns HTML wrapped in a JSON string - decode it
                 raw_text = resp.text
 
                 try:
                     html = json.loads(raw_text)
                 except Exception as je:
-                    html = raw_text  # Fallback if not JSON-encoded
+                    html = raw_text
 
                 if not html or len(html.strip()) < 50:
                     break
 
-                # Parse the HTML fragment
                 soup = BeautifulSoup(html, 'html.parser')
 
-                # Find all h3 elements (event titles)
                 titles = soup.select('h3 a')
 
                 if not titles:
-                    # Try alternate selectors
                     titles = soup.select('a[href*="/events/detail/"]')
 
                 if not titles:
@@ -1862,8 +1669,6 @@ async def fetch_bok_center_events(max_pages: int = 20) -> list:
                     if not title or not href or '/events/detail/' not in href:
                         continue
 
-                    # Find the parent event container
-                    # Walk up until we find a div that contains the date
                     container = title_link.parent
                     date_str = ''
 
@@ -1871,22 +1676,17 @@ async def fetch_bok_center_events(max_pages: int = 20) -> list:
                         if container is None:
                             break
 
-                        # Look for spans with date content
                         spans = container.find_all('span', recursive=True)
                         span_texts = [s.get_text(strip=True) for s in spans]
 
-                        # Check if we have month names
                         months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                         if any(month in ' '.join(span_texts) for month in months):
-                            # Join span texts to form date
                             date_str = ' '.join(span_texts)
-                            # Clean up
                             date_str = re.sub(r'\s+', ' ', date_str).strip()
                             break
 
                         container = container.parent
 
-                    # Build full URL
                     full_url = href if href.startswith('http') else f"https://www.bokcenter.com{href}"
 
                     all_events.append({
@@ -1907,10 +1707,7 @@ async def fetch_bok_center_events(max_pages: int = 20) -> list:
 async def extract_bok_center(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
     Extract events from BOK Center.
-
-    Returns: (events_list, was_detected)
     """
-    # Check if this is BOK Center
     try:
         domain = urlparse(url).netloc.lower()
         if domain not in KNOWN_BOK_VENUES:
@@ -1920,12 +1717,10 @@ async def extract_bok_center(html: str, source_name: str, url: str = '', future_
 
     print(f"[BOK Center] Detected BOK Center site")
 
-    # Fetch from AJAX API
     raw_events = await fetch_bok_center_events()
 
     print(f"[BOK Center] Fetched {len(raw_events)} events from API")
 
-    # Deduplicate by URL and clean up
     seen = set()
     events = []
     for event in raw_events:
@@ -1934,33 +1729,23 @@ async def extract_bok_center(html: str, source_name: str, url: str = '', future_
             continue
         seen.add(url_key)
 
-        # Clean up duplicated dates
         date_str = event.get('date', '')
         if date_str:
-            # Dates are duplicated like "Thu,Feb5, 2026 Thu, Feb 5 , 2026"
-            # or "Mar6 Mar 6 - 7, 2026 7 , 2026"
-
-            # First, normalize spacing
             date_str = re.sub(r'\s+', ' ', date_str).strip()
 
-            # Strategy: Find first year (4 digits) and cut there
             year_match = re.search(r'\d{4}', date_str)
             if year_match:
                 date_str = date_str[:year_match.end()]
 
-            # Now clean up the remaining duplicates
-            # If a day name appears twice, take the second (cleaner) version
             days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
             for day in days:
                 if date_str.count(day) >= 2:
-                    # Find second occurrence and take from there
                     first_idx = date_str.find(day)
                     second_idx = date_str.find(day, first_idx + 1)
                     if second_idx > first_idx:
                         date_str = date_str[second_idx:]
                     break
 
-            # If a month appears twice, take the second (cleaner) version
             months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'June', 'July']
             for month in months:
                 if date_str.count(month) >= 2:
@@ -1970,12 +1755,10 @@ async def extract_bok_center(html: str, source_name: str, url: str = '', future_
                         date_str = date_str[second_idx:]
                     break
 
-            # Final cleanup
-            date_str = re.sub(r',(\S)', r', \1', date_str)  # Space after comma
-            date_str = re.sub(r'([A-Za-z])(\d)', r'\1 \2', date_str)  # Space between letter and number
+            date_str = re.sub(r',(\S)', r', \1', date_str)
+            date_str = re.sub(r'([A-Za-z])(\d)', r'\1 \2', date_str)
             date_str = re.sub(r'\s+', ' ', date_str).strip()
 
-            # Remove "On Sale Soon" etc.
             date_str = re.sub(r'\s*On Sale.*$', '', date_str, flags=re.IGNORECASE)
 
             event['date'] = date_str.strip()
@@ -1994,21 +1777,14 @@ async def extract_bok_center(html: str, source_name: str, url: str = '', future_
 async def extract_expo_square_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
     Extract events from Expo Square using their Saffire CMS API.
-
-    API workflow:
-    1. GetEventDays - returns all dates with events
-    2. GetEventDaysByList - returns event details for given dates
-
-    Returns: (events_list, was_detected)
     """
-    # Check if this is an Expo Square URL
     if 'exposquare.com' not in url.lower():
         return [], False
 
     print(f"[Expo Square] Detected Expo Square URL, using Saffire API...")
 
     events = []
-    seen_event_ids = set()  # Deduplicate multi-day events
+    seen_event_ids = set()
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -2021,7 +1797,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                 'X-Requested-With': 'XMLHttpRequest',
             }
 
-            # Step 1: Get all event dates
             days_url = 'https://www.exposquare.com/services/eventsservice.asmx/GetEventDays'
             days_payload = {
                 'day': '',
@@ -2054,7 +1829,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
             days_data = days_response.json()
             all_dates = days_data.get('d', [])
 
-            # Filter to only future dates (next 12 months)
             from datetime import datetime, timedelta
             today = datetime.now()
             max_date = today + timedelta(days=365)
@@ -2070,7 +1844,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
 
             print(f"[Expo Square] Found {len(future_dates)} future event dates (from {len(all_dates)} total)")
 
-            # Step 2: Fetch events in batches of 30 dates
             batch_size = 30
             details_url = 'https://www.exposquare.com/services/eventsservice.asmx/GetEventDaysByList'
 
@@ -2106,7 +1879,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                 days = details_data.get('d', {}).get('Days', [])
 
                 for day in days:
-                    # Events are in Times[0].Unique or directly in Unique
                     unique_events = day.get('Unique', [])
                     if not unique_events:
                         times = day.get('Times', [])
@@ -2117,45 +1889,37 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                         try:
                             event_id = evt.get('EventID')
                             if event_id in seen_event_ids:
-                                continue  # Skip duplicate (multi-day event)
+                                continue
                             seen_event_ids.add(event_id)
 
                             title = evt.get('Name', '')
                             if not title:
                                 continue
 
-                            # Parse date range (e.g., "Feb 13 - Feb 15, 2026")
                             date_range = evt.get('EventDateRangeString', '')
-                            date_str = day.get('DateString', '')  # e.g., "02/13/2026"
+                            date_str = day.get('DateString', '')
 
-                            # Try to extract end date from range
                             end_date_str = None
                             if date_range and '-' in date_range:
-                                # Parse "Feb 13 - Feb 15, 2026" format
                                 try:
                                     parts = date_range.split('-')
                                     if len(parts) == 2:
                                         end_part = parts[1].strip()
-                                        # Parse the end date
                                         from dateutil import parser as date_parser
                                         end_date_str = str(date_parser.parse(end_part, fuzzy=True).date())
                                 except:
                                     pass
 
-                            # Get detail URL - this is the actual event page
                             detail_url = evt.get('DetailURL', '')
 
-                            # Get image
                             image_url = evt.get('ImageOrVideoThumbnailWithPath', '')
                             if 'no_img_available' in image_url:
                                 image_url = ''
 
-                            # Get description
                             description = evt.get('ShortDescription', '') or evt.get('LongDescription', '') or ''
                             if not description and date_range:
                                 description = date_range
 
-                            # Get location/venue
                             locations = evt.get('Locations', [])
                             venue = 'Expo Square'
                             if locations and isinstance(locations, list) and len(locations) > 0:
@@ -2163,7 +1927,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                                 if isinstance(loc, dict):
                                     venue = loc.get('Name', 'Expo Square') or 'Expo Square'
 
-                            # Get categories from CategoryMaps
                             categories = []
                             cat_maps = evt.get('CategoryMaps', [])
                             if cat_maps and isinstance(cat_maps, list):
@@ -2181,7 +1944,7 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                                 'venue_address': '4145 E 21st St, Tulsa, OK 74114',
                                 'location': 'Tulsa',
                                 'description': description[:500] if description else '',
-                                'source_url': detail_url,  # Actual event page
+                                'source_url': detail_url,
                                 'image_url': image_url,
                                 'source_name': source_name or 'Expo Square',
                                 'categories': categories if categories else [],
@@ -2195,7 +1958,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
                             print(f"[Expo Square] Error parsing event: {e}")
                             continue
 
-                # Small delay between batches
                 await asyncio.sleep(0.2)
 
             print(f"[Expo Square] Successfully extracted {len(events)} unique events")
@@ -2212,7 +1974,6 @@ async def extract_expo_square_events(html: str, source_name: str, url: str = '',
 # EVENTBRITE API EXTRACTOR
 # ============================================================================
 
-# Known Eventbrite place IDs
 EVENTBRITE_PLACES = {
     'tulsa': '101714291',
     'oklahoma-city': '101714211',
@@ -2222,18 +1983,13 @@ EVENTBRITE_PLACES = {
 async def extract_eventbrite_api_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
     Extract events from Eventbrite using their internal API.
-    Works for any Eventbrite search/destination page.
-
-    Returns: (events_list, was_detected)
     """
-    # Check if this is an Eventbrite URL
     if 'eventbrite.com' not in url.lower():
         return [], False
 
     print(f"[Eventbrite API] Detected Eventbrite URL, using API...")
 
-    # Determine place ID from URL or default to Tulsa
-    place_id = EVENTBRITE_PLACES['tulsa']  # Default
+    place_id = EVENTBRITE_PLACES['tulsa']
     url_lower = url.lower()
     for city, pid in EVENTBRITE_PLACES.items():
         if city in url_lower:
@@ -2244,7 +2000,6 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            # First, get cookies by visiting the main page
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
@@ -2253,7 +2008,6 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                 'Origin': 'https://www.eventbrite.com',
             }
 
-            # Call the search API
             api_url = 'https://www.eventbrite.com/home/api/search/'
             payload = {
                 'placeId': place_id,
@@ -2273,12 +2027,10 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
 
             for evt in raw_events:
                 try:
-                    # Extract basic info
                     title = evt.get('name', '')
                     if not title:
                         continue
 
-                    # Build start datetime
                     start_date = evt.get('start_date', '')
                     start_time = evt.get('start_time', '00:00:00')
                     if start_date:
@@ -2286,7 +2038,6 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                     else:
                         date_str = ''
 
-                    # Get venue info
                     venue_data = evt.get('primary_venue', {}) or {}
                     venue_name = venue_data.get('name', 'TBA')
 
@@ -2304,7 +2055,6 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                             parts.append(address_data['postal_code'])
                         venue_address = ', '.join(parts)
 
-                    # Get pricing
                     ticket_info = evt.get('ticket_availability', {}) or {}
                     is_free = ticket_info.get('is_free', False)
 
@@ -2327,52 +2077,46 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
                             except (ValueError, TypeError):
                                 pass
 
-                    # Get image
                     image_data = evt.get('image', {}) or {}
                     image_url = image_data.get('url', '')
 
-                    # Get event URL - this is the actual event detail page
                     event_url = evt.get('url', '')
                     if not event_url:
                         event_id = evt.get('id', '')
                         if event_id:
                             event_url = f"https://www.eventbrite.com/e/{event_id}"
 
-                    # Get description/summary
                     description = evt.get('summary', '') or ''
 
-                    # Check if online event
                     is_online = evt.get('is_online_event', False)
                     if is_online:
                         venue_name = 'Online Event'
 
-                    # Get end time
                     end_date = evt.get('end_date', '')
                     end_time = evt.get('end_time', '')
                     end_datetime = ''
                     if end_date:
                         end_datetime = f"{end_date}T{end_time}" if end_time else end_date
 
-                    # Get city/location from address
                     city = address_data.get('city', 'Tulsa') if address_data else 'Tulsa'
 
                     event = {
                         'title': title,
-                        'start_time': date_str,  # Use start_time instead of date
+                        'start_time': date_str,
                         'end_time': end_datetime if end_datetime else None,
                         'venue': venue_name,
                         'venue_address': venue_address,
-                        'location': city,  # City/area
+                        'location': city,
                         'description': description[:500] if description else '',
-                        'source_url': event_url,  # Actual event page URL
+                        'source_url': event_url,
                         'image_url': image_url,
                         'price_min': price_min,
                         'price_max': price_max,
                         'is_free': is_free,
                         'source_name': source_name or 'Eventbrite',
                         'categories': [],
-                        'outdoor': False,  # Could be inferred later
-                        'family_friendly': False,  # Could be inferred later
+                        'outdoor': False,
+                        'family_friendly': False,
                     }
 
                     events.append(event)
@@ -2393,7 +2137,6 @@ async def extract_eventbrite_api_events(html: str, source_name: str, url: str = 
 # VISITTULSA / SIMPLEVIEW CMS EXTRACTOR
 # ============================================================================
 
-# Known Simpleview CMS sites
 KNOWN_SIMPLEVIEW_SITES = {
     'www.visittulsa.com': 'Visit Tulsa',
     'visittulsa.com': 'Visit Tulsa',
@@ -2403,16 +2146,11 @@ KNOWN_SIMPLEVIEW_SITES = {
 async def extract_simpleview_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
     Extract events from Simpleview CMS sites (like VisitTulsa.com).
-    Uses their REST API to fetch all events with pagination.
-
-    Returns: (events_list, was_detected)
     """
-    # Check if this is a Simpleview site
     try:
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
         if domain not in KNOWN_SIMPLEVIEW_SITES:
-            # Also check HTML for Simpleview markers
             if 'simpleview' not in html.lower() and 'plugins_events' not in html.lower():
                 return [], False
     except:
@@ -2427,7 +2165,7 @@ async def extract_simpleview_events(html: str, source_name: str, url: str = '', 
         return events, True
     except Exception as e:
         print(f"[Simpleview] Error fetching events: {e}")
-        return [], True  # Detected but failed
+        return [], True
 
 
 async def fetch_simpleview_events(base_url: str, source_name: str, future_only: bool = True) -> list:
@@ -2440,14 +2178,13 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
     events = []
 
     async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
-        # Step 1: Get authentication token
         token_url = f"{base_url}/plugins/core/get_simple_token/"
         print(f"[Simpleview] Fetching token from {token_url}")
 
         try:
             token_resp = await client.get(token_url)
             token = token_resp.text.strip()
-            if not token or len(token) > 100:  # Token should be a short hash
+            if not token or len(token) > 100:
                 print(f"[Simpleview] Invalid token received")
                 return []
             print(f"[Simpleview] Got token: {token[:20]}...")
@@ -2455,8 +2192,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
             print(f"[Simpleview] Failed to get token: {e}")
             return []
 
-        # Step 2: Build query
-        # Date range - from today to 1 year ahead (or all time if not future_only)
         now = datetime.now(timezone.utc)
         if future_only:
             start_date = now.strftime("%Y-%m-%dT06:00:00.000Z")
@@ -2464,7 +2199,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
             start_date = "2020-01-01T06:00:00.000Z"
         end_date = (now + timedelta(days=365)).strftime("%Y-%m-%dT06:00:00.000Z")
 
-        # Query with all categories (empty filter = all events)
         batch_size = 100
         skip = 0
         total_fetched = 0
@@ -2508,26 +2242,21 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                 print(f"[Simpleview] API request failed: {e}")
                 break
 
-            # Debug: print response structure
             print(f"[Simpleview] Response keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
 
-            # Parse response - handle different response formats
             docs = []
             total_count = 0
 
             if isinstance(data, dict):
-                # Check for nested structure: {'docs': {'count': N, 'docs': [...]}}
                 if 'docs' in data and isinstance(data['docs'], dict):
                     inner = data['docs']
                     docs = inner.get('docs', [])
                     total_count = inner.get('count', 0)
                     print(f"[Simpleview] Found nested structure with {total_count} total events")
                 else:
-                    # Flat structure: {'docs': [...], 'count': N}
                     docs = data.get('docs', [])
                     total_count = data.get('count', 0)
 
-                # Some responses have data nested differently
                 if not docs and 'results' in data:
                     docs = data.get('results', [])
                 if not docs and 'items' in data:
@@ -2542,13 +2271,11 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
 
             print(f"[Simpleview] Got {len(docs)} events (total available: {total_count})")
 
-            # Debug first doc structure - print ALL keys and look for URL fields
             if docs and len(docs) > 0:
                 first_doc = docs[0]
                 print(f"[Simpleview] First doc type: {type(first_doc)}")
                 if isinstance(first_doc, dict):
                     print(f"[Simpleview] First doc keys: {list(first_doc.keys())}")
-                    # Debug: print any field that might contain a URL
                     for key in first_doc.keys():
                         val = first_doc.get(key)
                         if isinstance(val, str) and ('http' in val or 'url' in key.lower() or 'link' in key.lower() or 'ticket' in key.lower() or 'web' in key.lower()):
@@ -2558,10 +2285,8 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                 else:
                     print(f"[Simpleview] First doc value: {str(first_doc)[:200]}")
 
-            # Transform to our format
             for i, doc in enumerate(docs):
                 try:
-                    # Skip if doc is not a dict
                     if not isinstance(doc, dict):
                         print(f"[Simpleview] Skipping non-dict doc {i}: {type(doc)} = {str(doc)[:50]}")
                         continue
@@ -2570,10 +2295,8 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                     if not title:
                         continue
 
-                    # Get date
                     date_str = ''
                     if doc.get('startDate'):
-                        # Parse ISO date
                         try:
                             start_dt = doc['startDate']
                             if isinstance(start_dt, dict) and '$date' in start_dt:
@@ -2584,10 +2307,8 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                     else:
                         date_str = doc.get('date', '')
 
-                    # Get URL - prioritize external ticket URL over listing page
                     event_url = ''
 
-                    # First, look for external/ticket URLs (the actual event page, not VisitTulsa)
                     external_url = (
                             doc.get('ticketUrl') or
                             doc.get('ticket_url') or
@@ -2603,7 +2324,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                             ''
                     )
 
-                    # Check listing object for external URL
                     listing = doc.get('listing')
                     if not external_url and listing and isinstance(listing, dict):
                         external_url = (
@@ -2615,7 +2335,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                                 ''
                         )
 
-                    # Use external URL if found, otherwise fall back to listing page
                     if external_url:
                         event_url = external_url
                         if not event_url.startswith('http'):
@@ -2624,12 +2343,10 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                             elif '.' in event_url:
                                 event_url = 'https://' + event_url
                     else:
-                        # Fall back to VisitTulsa event page
                         event_url = doc.get('url', '')
                         if event_url and not event_url.startswith('http'):
                             event_url = base_url + event_url
 
-                    # Get venue/location - prioritize 'location' field (has actual venue name)
                     venue = ''
                     loc = doc.get('location', '')
                     if loc and isinstance(loc, str):
@@ -2639,7 +2356,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                         if listing and isinstance(listing, dict):
                             venue = listing.get('title', '')
 
-                    # Get image
                     image_url = ''
                     media_raw = doc.get('media_raw')
                     if media_raw and isinstance(media_raw, list) and len(media_raw) > 0:
@@ -2649,15 +2365,12 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                         elif isinstance(media, str):
                             image_url = media
 
-                    # Get description
                     description = doc.get('description', '')
                     if isinstance(description, str):
-                        # Strip HTML
                         description = re.sub(r'<[^>]+>', '', description)[:500]
                     else:
                         description = ''
 
-                    # Get categories
                     categories = []
                     cats = doc.get('categories')
                     if cats and isinstance(cats, list):
@@ -2669,25 +2382,20 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                             elif isinstance(cat, str):
                                 categories.append(cat)
 
-                    # Get address
                     address = doc.get('address', '')
                     if not isinstance(address, str):
                         address = ''
 
-                    # Get coordinates
                     lat = doc.get('latitude')
                     lng = doc.get('longitude')
                     location = f"{lat},{lng}" if lat and lng else None
 
-                    # Get venue website directly from listing object in API response
                     venue_website = ''
                     listing = doc.get('listing')
                     if listing and isinstance(listing, dict):
-                        # Debug: print listing keys on first event to see what's available
                         if i == 0:
                             print(f"[Simpleview] Listing object keys: {list(listing.keys())}")
 
-                        # Try common website field names
                         venue_website = (
                                 listing.get('website') or
                                 listing.get('websiteUrl') or
@@ -2697,7 +2405,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                                 ''
                         )
 
-                        # If website found, ensure it's a full URL
                         if venue_website and not venue_website.startswith('http'):
                             if venue_website.startswith('www.'):
                                 venue_website = 'https://' + venue_website
@@ -2706,19 +2413,19 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
 
                     events.append({
                         'title': title,
-                        'start_time': date_str,  # Use start_time
-                        'end_time': doc.get('endDate'),  # Capture end date if available
-                        'source_url': event_url or f"{base_url}/events/",  # Actual event page
+                        'start_time': date_str,
+                        'end_time': doc.get('endDate'),
+                        'source_url': event_url or f"{base_url}/events/",
                         'source_name': source_name,
                         'venue': venue or source_name,
                         'venue_address': address,
-                        'location': 'Tulsa',  # Default location
+                        'location': 'Tulsa',
                         'description': description,
                         'image_url': image_url,
                         'categories': categories if categories else [],
                         'outdoor': False,
                         'family_friendly': False,
-                        '_venue_website': venue_website,  # Website from API listing object
+                        '_venue_website': venue_website,
                     })
                 except Exception as doc_err:
                     print(f"[Simpleview] Error processing doc {i}: {doc_err}")
@@ -2727,7 +2434,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
             total_fetched += len(docs)
             skip += batch_size
 
-            # Stop if we've got all events (or no count provided and fewer docs than batch)
             if total_count > 0 and total_fetched >= total_count:
                 print(f"[Simpleview] Reached total count ({total_count})")
                 break
@@ -2735,7 +2441,6 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
                 print(f"[Simpleview] Got fewer docs ({len(docs)}) than batch size ({batch_size}), stopping")
                 break
 
-            # Be nice to the server
             await asyncio.sleep(0.3)
 
         print(f"[Simpleview] Total events fetched: {len(events)}")
@@ -2750,15 +2455,12 @@ async def fetch_simpleview_events(base_url: str, source_name: str, future_only: 
 def extract_by_date_proximity(soup, base_url, source_name):
     """
     Find events by looking for date patterns and grabbing nearby title-like text.
-    This is the fallback for unknown formats.
     """
     events = []
     seen_titles = set()
 
-    # Get all text nodes that contain dates
     body = soup.find('body') or soup
 
-    # Find all elements that contain date-like text
     date_elements = []
     for element in body.find_all(text=True):
         if isinstance(element, NavigableString):
@@ -2767,20 +2469,17 @@ def extract_by_date_proximity(soup, base_url, source_name):
                 date_elements.append(element.parent)
 
     for date_el in date_elements:
-        # Look for the event container - walk up to find a reasonable parent
         container = date_el
-        for _ in range(5):  # Walk up max 5 levels
+        for _ in range(5):
             parent = container.parent
             if not parent or parent.name in ['body', 'html', 'main', 'section']:
                 break
             container = parent
-            # Stop if container has multiple date-containing children (we went too far up)
             date_count = len([c for c in container.find_all(text=True) if text_has_date(str(c))])
             if date_count > 3:
                 container = date_el.parent
                 break
 
-        # Extract title - look for headings or prominent text near the date
         title = ''
         title_el = (
                 container.select_one('h1, h2, h3, h4, h5, h6') or
@@ -2792,10 +2491,8 @@ def extract_by_date_proximity(soup, base_url, source_name):
         if title_el:
             title = title_el.get_text(strip=True)
 
-        # If no title element, look for the most prominent text
         if not title:
             texts = [t.strip() for t in container.stripped_strings]
-            # Filter out date/time strings to find the title
             for t in texts:
                 if len(t) > 5 and not text_has_date(t) and not COMBINED_TIME_PATTERN.search(t):
                     title = t[:100]
@@ -2805,14 +2502,12 @@ def extract_by_date_proximity(soup, base_url, source_name):
             continue
         seen_titles.add(title)
 
-        # Extract date
         container_text = container.get_text(' ', strip=True)
         date_str = extract_date_from_text(container_text) or ''
         time_str = extract_time_from_text(container_text)
         if time_str:
             date_str = f"{date_str} @ {time_str}" if date_str else time_str
 
-        # Extract link
         link = ''
         link_el = container.select_one('a[href]')
         if link_el:
@@ -2837,7 +2532,6 @@ def extract_repeating_structures(soup, base_url, source_name):
     events = []
     seen = set()
 
-    # Common list containers
     list_selectors = [
         'ul > li',
         'ol > li',
@@ -2855,29 +2549,24 @@ def extract_repeating_structures(soup, base_url, source_name):
     for selector in list_selectors:
         items = soup.select(selector)
 
-        # Need at least 2 similar items to be a list
         if len(items) < 2:
             continue
 
-        # Check if these items have consistent structure (likely a repeating pattern)
         first_classes = set(items[0].get('class', []))
         similar_count = sum(1 for item in items if set(item.get('class', [])) == first_classes)
 
-        if similar_count < len(items) * 0.5:  # At least 50% should be similar
+        if similar_count < len(items) * 0.5:
             continue
 
         for item in items:
-            # Must contain a date to be considered an event
             item_text = item.get_text(' ', strip=True)
             if not text_has_date(item_text):
                 continue
 
-            # Get title
             title_el = item.select_one('h1, h2, h3, h4, h5, h6, a[href], [class*="title"], strong')
             title = title_el.get_text(strip=True) if title_el else ''
 
             if not title:
-                # Use first substantial text that isn't a date
                 for text in item.stripped_strings:
                     if len(text) > 5 and not text_has_date(text):
                         title = text[:100]
@@ -2887,13 +2576,11 @@ def extract_repeating_structures(soup, base_url, source_name):
                 continue
             seen.add(title)
 
-            # Get date
             date_str = extract_date_from_text(item_text) or ''
             time_str = extract_time_from_text(item_text)
             if time_str:
                 date_str = f"{date_str} @ {time_str}" if date_str else time_str
 
-            # Get link
             link = ''
             link_el = item.select_one('a[href]')
             if link_el:
@@ -2918,36 +2605,30 @@ def extract_repeating_structures(soup, base_url, source_name):
 def extract_events_universal(html: str, base_url: str, source_name: str) -> list:
     """
     Universal event extraction - tries multiple strategies.
-    Returns the best results found.
     """
     soup = BeautifulSoup(html, 'html.parser')
 
-    # Remove script/style/nav/footer noise (but keep iframes - we capture their content)
     for tag in soup.select('script, style, nav, footer, header, noscript'):
         tag.decompose()
 
     all_events = []
     methods_used = []
 
-    # PRIORITY: If on Etix domain, try Etix extractor first
     if 'etix.com' in base_url:
         etix_events = extract_etix_events(soup, base_url, source_name)
         if etix_events:
             all_events.extend(etix_events)
             methods_used.append(f"Etix ({len(etix_events)})")
-            # Return early if we found events on Etix
             if all_events:
                 for e in all_events:
                     e['_extraction_methods'] = methods_used
                 return all_events
 
-    # Strategy 1: Schema.org structured data (most reliable if present)
     schema_events = extract_schema_org(soup, base_url, source_name)
     if schema_events:
         all_events.extend(schema_events)
         methods_used.append(f"Schema.org ({len(schema_events)})")
 
-    # Strategy 2: Known plugin patterns
     tribe_events = extract_tribe_events(soup, base_url, source_name)
     if tribe_events:
         all_events.extend(tribe_events)
@@ -2958,76 +2639,64 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
         all_events.extend(eventbrite_events)
         methods_used.append(f"Eventbrite ({len(eventbrite_events)})")
 
-    # Stubwire-powered sites (Tulsa Shrine, etc.)
     stubwire_events = extract_stubwire_events(soup, base_url, source_name)
     if stubwire_events:
         all_events.extend(stubwire_events)
         methods_used.append(f"Stubwire ({len(stubwire_events)})")
 
-    # Dice.fm
     dice_events = extract_dice_events(soup, base_url, source_name)
     if dice_events:
         all_events.extend(dice_events)
         methods_used.append(f"Dice.fm ({len(dice_events)})")
 
-    # Bandsintown
     bit_events = extract_bandsintown_events(soup, base_url, source_name)
     if bit_events:
         all_events.extend(bit_events)
         methods_used.append(f"Bandsintown ({len(bit_events)})")
 
-    # Songkick
     sk_events = extract_songkick_events(soup, base_url, source_name)
     if sk_events:
         all_events.extend(sk_events)
         methods_used.append(f"Songkick ({len(sk_events)})")
 
-    # Ticketmaster
     tm_events = extract_ticketmaster_events(soup, base_url, source_name)
     if tm_events:
         all_events.extend(tm_events)
         methods_used.append(f"Ticketmaster ({len(tm_events)})")
 
-    # AXS
     axs_events = extract_axs_events(soup, base_url, source_name)
     if axs_events:
         all_events.extend(axs_events)
         methods_used.append(f"AXS ({len(axs_events)})")
 
-    # Etix
     etix_events = extract_etix_events(soup, base_url, source_name)
     if etix_events:
         all_events.extend(etix_events)
         methods_used.append(f"Etix ({len(etix_events)})")
 
-    # See Tickets
     st_events = extract_seetickets_events(soup, base_url, source_name)
     if st_events:
         all_events.extend(st_events)
         methods_used.append(f"See Tickets ({len(st_events)})")
 
-    # Strategy 3: Timely widget HTML (for when API fails)
     if not all_events:
         timely_html_events = extract_timely_from_html(soup, base_url, source_name)
         if timely_html_events:
             all_events.extend(timely_html_events)
             methods_used.append(f"Timely HTML ({len(timely_html_events)})")
 
-    # Strategy 4: Repeating structures
     if not all_events:
         repeat_events = extract_repeating_structures(soup, base_url, source_name)
         if repeat_events:
             all_events.extend(repeat_events)
             methods_used.append(f"Repeating structures ({len(repeat_events)})")
 
-    # Strategy 5: Date proximity (fallback)
     if not all_events:
         proximity_events = extract_by_date_proximity(soup, base_url, source_name)
         if proximity_events:
             all_events.extend(proximity_events)
             methods_used.append(f"Date proximity ({len(proximity_events)})")
 
-    # Deduplicate by title
     seen_titles = set()
     unique_events = []
     for event in all_events:
@@ -3036,7 +2705,6 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
             seen_titles.add(title)
             unique_events.append(event)
 
-    # Add extraction metadata
     for event in unique_events:
         event['_extraction_methods'] = methods_used
 
@@ -3061,12 +2729,10 @@ async def fetch_with_playwright(url: str) -> str:
         page = await browser.new_page()
         await page.set_extra_http_headers(HEADERS)
 
-        # Etix is a heavy React SPA - needs special handling
         is_etix = 'etix.com' in url
         etix_api_data = []
 
         if is_etix:
-            # Intercept API responses to capture event data
             async def capture_response(response):
                 if '/api/online/search' in response.url or '/api/online/venues/' in response.url:
                     try:
@@ -3078,59 +2744,47 @@ async def fetch_with_playwright(url: str) -> str:
 
             page.on('response', capture_response)
 
-            # For Etix, use networkidle and wait longer
             try:
                 await page.goto(url, wait_until="networkidle", timeout=45000)
             except:
                 await page.goto(url, timeout=45000)
 
-            # Wait for Etix event cards to appear
             try:
                 await page.wait_for_selector('[class*="performance"], [class*="event-card"], [class*="MuiCard"]', timeout=10000)
             except:
                 pass
 
-            # Extra wait for API calls to complete
             await page.wait_for_timeout(5000)
 
-            # Scroll down to trigger lazy loading
             await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
             await page.wait_for_timeout(2000)
         else:
-            # Use domcontentloaded instead of networkidle (faster, more reliable)
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             except:
-                # Fallback if even that times out
                 await page.goto(url, timeout=30000)
 
-            # Wait for dynamic content to load
             await page.wait_for_timeout(3000)
 
-            # Try to wait for common event containers
             try:
                 await page.wait_for_selector('[class*="event"], [class*="calendar"], [class*="timely"]', timeout=5000)
             except:
-                pass  # Continue anyway
+                pass
 
-        # Get main page content
         html = await page.content()
 
-        # If we captured Etix API data, append it as a special section
         if etix_api_data:
             html += "\n<!-- ETIX_API_DATA -->\n"
             for data in etix_api_data:
                 html += f"<script type='etix-api-data'>{data}</script>\n"
             print(f"[Etix] Appended {len(etix_api_data)} API responses to HTML")
 
-        # Also try to get iframe content (Timely and other widgets often use iframes)
         try:
             frames = page.frames
             for frame in frames:
                 if frame != page.main_frame:
                     try:
                         frame_content = await frame.content()
-                        # Append iframe content wrapped in a marker
                         html += f"\n<!-- IFRAME_CONTENT -->\n{frame_content}"
                     except:
                         pass
@@ -3253,7 +2907,7 @@ HTML_TEMPLATE = '''
 <div class="container">
     <h1>🎯 Locate918 Scraper</h1>
     <p class="subtitle">Universal Extraction — No LLM Required</p>
-    
+
     <div class="card">
         <div class="form-row">
             <div class="form-group" style="flex:2;">
@@ -3265,28 +2919,46 @@ HTML_TEMPLATE = '''
                 <input type="text" id="source" placeholder="Cain's Ballroom" />
             </div>
         </div>
-        
+
         <div class="checkbox-row">
             <input type="checkbox" id="playwright" checked />
             <label for="playwright">Use Playwright (for JavaScript sites)</label>
         </div>
-        
+
         <div class="checkbox-row">
             <input type="checkbox" id="future-only" checked />
             <label for="future-only">Future events only (filter out past dates)</label>
         </div>
-        
+
         <div class="btn-group">
             <button class="btn btn-primary" id="scrape-btn" onclick="scrape()">🔍 Scrape</button>
             <button class="btn btn-secondary" onclick="saveCurrentUrl()">📌 Save URL</button>
         </div>
-        
+
         <div id="status" class="status hidden"></div>
         <div id="log-box" class="log hidden"></div>
-        
+
         <div id="saved-urls" style="margin-top:15px;"></div>
+
+        <div id="scrape-all-section" class="hidden" style="margin-top:12px;">
+            <button class="btn btn-success" id="scrape-all-btn" onclick="scrapeAll()" style="width:100%;">
+                \U0001f680 Scrape All Sources & Save to Database
+            </button>
+            <div id="scrape-all-progress" class="hidden" style="margin-top:12px;">
+                <div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:12px;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                        <span style="color:#D4AF37;font-weight:600;font-size:13px;" id="sa-status">Starting...</span>
+                        <span style="color:#888;font-size:12px;" id="sa-counter">0 / 0</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:6px;overflow:hidden;">
+                        <div id="sa-bar" style="background:#D4AF37;height:100%;width:0%;transition:width 0.3s;border-radius:4px;"></div>
+                    </div>
+                    <div id="sa-log" style="margin-top:10px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:11px;"></div>
+                </div>
+            </div>
+        </div>
     </div>
-    
+
     <div id="results" class="card hidden">
         <h3>📋 Extracted Events</h3>
         <div class="stats">
@@ -3299,28 +2971,28 @@ HTML_TEMPLATE = '''
             <button class="btn btn-success" onclick="saveToDb()">💾 Save to Database</button>
         </div>
     </div>
-    
+
     <!-- Venue Manager Section -->
     <div class="card" id="venue-manager">
         <h3>🏛️ Venue Manager</h3>
         <p style="color:#666;font-size:12px;margin-bottom:15px;">
             Fill in missing venue data. Generate SQL for Supabase.
         </p>
-        
+
         <div class="btn-group" style="margin-bottom:15px;">
             <button class="btn btn-secondary" onclick="loadIncompleteVenues()">📋 Load Incomplete</button>
             <button class="btn btn-secondary" onclick="toggleManualEntry()">✏️ Manual Entry</button>
             <button class="btn btn-secondary" onclick="toggleSQLOutput()">📄 View SQL</button>
         </div>
-        
+
         <div id="venue-stats" class="hidden" style="margin-bottom:15px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;">
-            <span style="color:#D4AF37;font-weight:bold;" id="venue-count">0</span> total venues, 
+            <span style="color:#D4AF37;font-weight:bold;" id="venue-count">0</span> total venues,
             <span style="color:#dc3545;font-weight:bold;" id="incomplete-count">0</span> need data
         </div>
-        
+
         <!-- Incomplete venues list -->
         <div id="incomplete-venues" class="hidden" style="max-height:250px;overflow-y:auto;margin-bottom:15px;"></div>
-        
+
         <!-- Manual entry form -->
         <div id="manual-entry" class="hidden" style="background:rgba(0,0,0,0.2);padding:15px;border-radius:8px;margin-bottom:15px;">
             <div class="form-row">
@@ -3385,21 +3057,21 @@ HTML_TEMPLATE = '''
                 <label>Accessibility Info</label>
                 <input type="text" id="ve-access" placeholder="Wheelchair accessible. Elevators available." />
             </div>
-            
+
             <div class="btn-group" style="margin-top:15px;">
                 <button class="btn btn-primary" onclick="lookupVenueGoogle()">🔍 Lookup (Google)</button>
                 <button class="btn btn-success" onclick="addToSQLQueue()">➕ Add to SQL</button>
                 <button class="btn btn-secondary" onclick="clearManualEntry()">Clear</button>
             </div>
         </div>
-        
+
         <!-- Paste box for edge cases -->
         <div id="paste-box" class="hidden" style="margin-bottom:15px;">
             <label>📋 Paste Info (from web research)</label>
             <textarea id="paste-text" style="width:100%;height:80px;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:10px;font-size:12px;" placeholder="Paste venue info here... Address, hours, parking, etc."></textarea>
             <button class="btn btn-secondary" style="margin-top:8px;" onclick="parseFromPaste()">Parse Info</button>
         </div>
-        
+
         <!-- SQL output -->
         <div id="sql-output" class="hidden">
             <label>Generated SQL <span style="color:#666;font-size:11px;">(copy to Supabase)</span></label>
@@ -3411,8 +3083,8 @@ HTML_TEMPLATE = '''
             </div>
         </div>
     </div>
-    
-    <div class="footer">Scrape → Save → Done</div>
+
+    <div class="footer">Scrape → Normalize → Save → Done</div>
 </div>
 
 <script>
@@ -3438,19 +3110,19 @@ async function scrape() {
     const source = document.getElementById('source').value.trim() || 'unknown';
     const pw = document.getElementById('playwright').checked;
     const futureOnly = document.getElementById('future-only').checked;
-    
+
     if (!url) { status('Enter a URL', 'error'); return; }
-    
+
     document.getElementById('log-box').innerHTML = '';
     document.getElementById('scrape-btn').disabled = true;
     document.getElementById('results').classList.add('hidden');
-    
+
     log('Checking robots.txt...');
     log('Fetching: ' + url);
     log('Method: ' + (pw ? 'Playwright' : 'httpx'));
     log('Future only: ' + futureOnly);
     status('Scraping...');
-    
+
     try {
         const r = await fetch('/scrape', {
             method: 'POST',
@@ -3458,41 +3130,40 @@ async function scrape() {
             body: JSON.stringify({url, source_name: source, use_playwright: pw, future_only: futureOnly})
         });
         const d = await r.json();
-        
+
         if (d.robots_blocked) {
             log('🚫 BLOCKED by robots.txt', 'error');
             log('This site has requested not to be scraped.', 'error');
             status('🚫 ' + d.error, 'error');
             return;
         }
-        
+
         if (d.error) {
             log('ERROR: ' + d.error, 'error');
             status('Error: ' + d.error, 'error');
             return;
         }
-        
+
         log('✓ robots.txt allows scraping', 'success');
         events = d.events;
         lastFilename = d.filename;
-        
+
         log('HTML size: ' + d.html_size.toLocaleString() + ' chars', 'success');
         log('Found ' + events.length + ' events', 'success');
         if (d.methods && d.methods.length) {
             log('Extraction methods: ' + d.methods.join(', '), 'info');
         }
-        
+
         document.getElementById('stat-count').textContent = events.length;
         document.getElementById('stat-html').textContent = (d.html_size/1024).toFixed(1)+'KB';
-        
-        // Show methods used
+
         const methodsDiv = document.getElementById('methods-used');
         if (d.methods && d.methods.length) {
             methodsDiv.innerHTML = d.methods.map(m => '<span class="method-tag">'+m+'</span>').join('');
         } else {
             methodsDiv.innerHTML = '';
         }
-        
+
         const list = document.getElementById('event-list');
         if (events.length === 0) {
             list.innerHTML = '<p style="color:#888;">No events found. The site may use an unusual format.</p>';
@@ -3506,10 +3177,10 @@ async function scrape() {
                 </div>
             `).join('');
         }
-        
+
         document.getElementById('results').classList.remove('hidden');
         status('Done! Found ' + events.length + ' events.', 'success');
-        
+
     } catch (e) {
         log('ERROR: ' + e.message, 'error');
         status('Error: ' + e.message, 'error');
@@ -3520,9 +3191,9 @@ async function scrape() {
 
 async function saveToDb() {
     if (!events.length) { status('No events to save', 'error'); return; }
-    
-    status('Saving ' + events.length + ' events to database...');
-    
+
+    status('Normalizing & saving ' + events.length + ' events...');
+
     try {
         const r = await fetch('/to-database', {
             method: 'POST',
@@ -3530,12 +3201,13 @@ async function saveToDb() {
             body: JSON.stringify({events})
         });
         const d = await r.json();
-        
+
         if (d.error) {
             status('Error: ' + d.error, 'error');
         } else {
-            log('Saved ' + d.saved + ' of ' + d.total + ' to database', 'success');
-            status('✓ Saved ' + d.saved + '/' + d.total + ' events to database!', 'success');
+            const normalizedMsg = d.normalized ? ' (AI normalized)' : ' (basic transform)';
+            log('Saved ' + d.saved + ' of ' + d.total + ' to database' + normalizedMsg, 'success');
+            status('✓ Saved ' + d.saved + '/' + d.total + ' events' + normalizedMsg, 'success');
         }
     } catch (e) {
         status('Error: ' + e.message + ' (Is backend running on port 3000?)', 'error');
@@ -3548,12 +3220,16 @@ async function loadSavedUrls() {
         const r = await fetch('/saved-urls');
         const urls = await r.json();
         const container = document.getElementById('saved-urls');
-        
+        const scrapeAllSection = document.getElementById('scrape-all-section');
+
         if (!urls.length) {
             container.innerHTML = '';
+            if (scrapeAllSection) scrapeAllSection.classList.add('hidden');
             return;
         }
-        
+
+        if (scrapeAllSection) scrapeAllSection.classList.remove('hidden');
+
         container.innerHTML = `
             <div style="font-size:12px;color:#888;margin-bottom:8px;">📌 Saved URLs (click to load):</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">
@@ -3574,12 +3250,12 @@ async function saveCurrentUrl() {
     const url = document.getElementById('url').value.trim();
     const name = document.getElementById('source').value.trim() || 'Unnamed';
     const playwright = document.getElementById('playwright').checked;
-    
+
     if (!url) {
         status('Enter a URL first', 'error');
         return;
     }
-    
+
     try {
         await fetch('/saved-urls', {
             method: 'POST',
@@ -3618,7 +3294,7 @@ function loadUrl(url, name, playwright) {
 // VENUE MANAGER
 // ========================================
 
-let venueQueue = [];  // Queue of venues for SQL generation
+let venueQueue = [];
 
 function toggleManualEntry() {
     const el = document.getElementById('manual-entry');
@@ -3633,23 +3309,23 @@ function toggleSQLOutput() {
 
 async function loadIncompleteVenues() {
     status('Loading venues...', 'loading');
-    
+
     try {
         const r = await fetch('/api/venues/incomplete');
         const data = await r.json();
-        
+
         if (data.error) {
             status('Error: ' + data.error, 'error');
             return;
         }
-        
+
         document.getElementById('venue-stats').classList.remove('hidden');
         document.getElementById('venue-count').textContent = data.total;
         document.getElementById('incomplete-count').textContent = data.incomplete;
-        
+
         const container = document.getElementById('incomplete-venues');
         container.classList.remove('hidden');
-        
+
         if (data.venues.length === 0) {
             container.innerHTML = '<p style="color:#28a745;padding:10px;">✓ All venues have complete data!</p>';
         } else {
@@ -3660,7 +3336,7 @@ async function loadIncompleteVenues() {
                         <p style="color:#dc3545;font-size:11px;">Missing: ${v.missing.join(', ')}</p>
                     </div>
                     <div style="display:flex;gap:5px;">
-                        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px;" 
+                        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px;"
                                 onclick="editVenue('${v.name.replace(/'/g, "\\'")}', '${(v.address||'').replace(/'/g, "\\'")}', '${(v.website||'').replace(/'/g, "\\'")}')">
                             Edit
                         </button>
@@ -3672,9 +3348,9 @@ async function loadIncompleteVenues() {
                 </div>
             `).join('');
         }
-        
+
         status('Loaded ' + data.incomplete + ' incomplete venues', 'success');
-        
+
     } catch (e) {
         status('Error: ' + e.message + ' (Is backend running?)', 'error');
     }
@@ -3700,9 +3376,9 @@ async function lookupVenueGoogle() {
         status('Enter venue name first', 'error');
         return;
     }
-    
+
     status('Looking up ' + name + ' on Google...', 'loading');
-    
+
     try {
         const r = await fetch('/api/venues/lookup', {
             method: 'POST',
@@ -3710,13 +3386,12 @@ async function lookupVenueGoogle() {
             body: JSON.stringify({name, city: 'Tulsa, OK'})
         });
         const data = await r.json();
-        
+
         if (data.error) {
             status('Not found or API error: ' + data.error, 'error');
             return;
         }
-        
-        // Fill in the form with found data
+
         if (data.address) document.getElementById('ve-address').value = data.address;
         if (data.website) document.getElementById('ve-website').value = data.website;
         if (data.inferred_type) {
@@ -3726,13 +3401,13 @@ async function lookupVenueGoogle() {
             }
         }
         if (data.wheelchair_accessible !== null) {
-            document.getElementById('ve-access').value = data.wheelchair_accessible 
-                ? 'Wheelchair accessible entrance' 
+            document.getElementById('ve-access').value = data.wheelchair_accessible
+                ? 'Wheelchair accessible entrance'
                 : 'Contact venue for accessibility';
         }
-        
+
         status('Found! Review data and add to SQL.', 'success');
-        
+
     } catch (e) {
         status('Lookup error: ' + e.message, 'error');
     }
@@ -3741,39 +3416,34 @@ async function lookupVenueGoogle() {
 function parseFromPaste() {
     const text = document.getElementById('paste-text').value;
     if (!text.trim()) return;
-    
-    // Try to extract address (look for patterns like "123 N Main St")
+
     const addrMatch = text.match(/\d+\s+[NSEW]\.?\s+\w+\s+(St|Ave|Blvd|Dr|Rd|Way|Pl)[^,]*,?\s*(Tulsa|OK)?[^,]*,?\s*(OK\s*\d{5})?/i);
     if (addrMatch && !document.getElementById('ve-address').value) {
         document.getElementById('ve-address').value = addrMatch[0].trim();
     }
-    
-    // Try to extract capacity (look for numbers followed by "capacity", "seats", etc.)
-    const capMatch = text.match(/(\d{1,5})\s*(capacity|seats|people|guests)/i) || 
+
+    const capMatch = text.match(/(\d{1,5})\s*(capacity|seats|people|guests)/i) ||
                      text.match(/(capacity|seats)[:\s]*(\d{1,5})/i);
     if (capMatch && !document.getElementById('ve-capacity').value) {
         const cap = capMatch[1].match(/\d+/) ? capMatch[1] : capMatch[2];
         document.getElementById('ve-capacity').value = cap;
     }
-    
-    // Try to extract website
+
     const urlMatch = text.match(/https?:\/\/[^\s<>"]+/i);
     if (urlMatch && !document.getElementById('ve-website').value) {
         document.getElementById('ve-website').value = urlMatch[0];
     }
-    
-    // Look for parking info
+
     const parkMatch = text.match(/parking[^.]*\./i);
     if (parkMatch && !document.getElementById('ve-parking').value) {
         document.getElementById('ve-parking').value = parkMatch[0];
     }
-    
-    // Look for accessibility info  
+
     const accessMatch = text.match(/(wheelchair|ada|accessible|accessibility)[^.]*\./i);
     if (accessMatch && !document.getElementById('ve-access').value) {
         document.getElementById('ve-access').value = accessMatch[0];
     }
-    
+
     status('Parsed! Review and adjust as needed.', 'success');
 }
 
@@ -3788,20 +3458,19 @@ function addToSQLQueue() {
         parking_info: document.getElementById('ve-parking').value.trim(),
         accessibility_info: document.getElementById('ve-access').value.trim(),
     };
-    
+
     if (!venue.name) {
         status('Venue name is required', 'error');
         return;
     }
-    
-    // Check if already in queue, update if so
+
     const idx = venueQueue.findIndex(v => v.name.toLowerCase() === venue.name.toLowerCase());
     if (idx >= 0) {
         venueQueue[idx] = {...venueQueue[idx], ...venue};
     } else {
         venueQueue.push(venue);
     }
-    
+
     updateSQLOutput();
     clearManualEntry();
     status('Added ' + venue.name + ' to SQL queue (' + venueQueue.length + ' total)', 'success');
@@ -3813,7 +3482,7 @@ function updateSQLOutput() {
         '-- Run in Supabase SQL Editor',
         ''
     ];
-    
+
     for (const v of venueQueue) {
         const sets = [];
         if (v.address) sets.push(`address = '${v.address.replace(/'/g, "''")}'`);
@@ -3823,7 +3492,7 @@ function updateSQLOutput() {
         if (v.website) sets.push(`website = '${v.website.replace(/'/g, "''")}'`);
         if (v.parking_info) sets.push(`parking_info = '${v.parking_info.replace(/'/g, "''")}'`);
         if (v.accessibility_info) sets.push(`accessibility_info = '${v.accessibility_info.replace(/'/g, "''")}'`);
-        
+
         if (sets.length > 0) {
             sqlLines.push(`UPDATE venues SET`);
             sqlLines.push(`    ${sets.join(',\\n    ')}`);
@@ -3831,7 +3500,7 @@ function updateSQLOutput() {
             sqlLines.push('');
         }
     }
-    
+
     document.getElementById('sql-text').value = sqlLines.join('\\n');
     document.getElementById('sql-output').classList.remove('hidden');
 }
@@ -3866,6 +3535,111 @@ function downloadSQL() {
 function clearSQL() {
     venueQueue = [];
     document.getElementById('sql-text').value = '-- No venues in queue';
+}
+
+
+// ========================================
+// SCRAPE ALL - Sequential scrape with SSE progress
+// ========================================
+
+async function scrapeAll() {
+    const btn = document.getElementById('scrape-all-btn');
+    const progress = document.getElementById('scrape-all-progress');
+    const statusEl = document.getElementById('sa-status');
+    const counterEl = document.getElementById('sa-counter');
+    const barEl = document.getElementById('sa-bar');
+    const logEl = document.getElementById('sa-log');
+
+    btn.disabled = true;
+    btn.textContent = '\u23f3 Scraping all sources...';
+    progress.classList.remove('hidden');
+    logEl.innerHTML = '';
+
+    function saLog(msg, color) {
+        logEl.innerHTML += '<div style="color:'+(color||'#888')+';margin-bottom:3px;">'+msg+'</div>';
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    try {
+        const response = await fetch('/scrape-all', { method: 'POST' });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\\\\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(line.slice(6));
+
+                    switch (data.type) {
+                        case 'start':
+                            statusEl.textContent = 'Starting...';
+                            counterEl.textContent = '0 / ' + data.total_sources;
+                            saLog('\U0001f680 Scraping ' + data.total_sources + ' sources...', '#D4AF37');
+                            break;
+
+                        case 'source_start':
+                            statusEl.textContent = 'Scraping: ' + data.name;
+                            saLog('\u23f3 [' + (data.index+1) + '] ' + data.name + '...', '#6cf');
+                            break;
+
+                        case 'source_scraped':
+                            saLog('   Found ' + data.count + ' events (' + data.methods.join(', ') + ')', '#888');
+                            break;
+
+                        case 'source_done': {
+                            const total = parseInt(counterEl.textContent.split('/')[1]);
+                            const pct = ((data.index + 1) / total) * 100;
+                            barEl.style.width = pct + '%';
+                            counterEl.textContent = (data.index + 1) + ' / ' + total;
+                            const tag = data.normalized ? 'AI' : 'basic';
+                            let msg = '   \u2705 Saved ' + data.saved + ' events (' + tag + ')';
+                            if (data.venues_enriched) msg += ' + ' + data.venues_enriched + ' venues enriched';
+                            msg += ' [' + data.elapsed + 's]';
+                            saLog(msg, '#6f6');
+                            break;
+                        }
+
+                        case 'source_empty':
+                            saLog('   \u26a0\ufe0f No events found', '#ff0');
+                            break;
+
+                        case 'source_skip':
+                            saLog('   \U0001f6ab Skipped: ' + data.reason, '#f90');
+                            break;
+
+                        case 'source_error':
+                            saLog('   \u274c Error: ' + data.error + ' [' + data.elapsed + 's]', '#f66');
+                            break;
+
+                        case 'complete':
+                            barEl.style.width = '100%';
+                            statusEl.textContent = 'Complete!';
+                            saLog('\u2705 Done! ' + data.total_saved + ' events saved from ' + data.total_sources + ' sources', '#D4AF37');
+                            if (data.total_errors > 0) {
+                                saLog('\u26a0\ufe0f ' + data.total_errors + ' source(s) had errors', '#f90');
+                            }
+                            status('Saved ' + data.total_saved + ' events from ' + data.total_sources + ' sources', 'success');
+                            break;
+                    }
+                } catch (parseErr) {}
+            }
+        }
+    } catch (e) {
+        saLog('\u274c Connection error: ' + e.message, '#f66');
+        status('Scrape All failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '\U0001f680 Scrape All Sources & Save to Database';
+    }
 }
 
 // Load saved URLs on page load
@@ -3911,13 +3685,12 @@ def scrape():
     url = data.get('url')
     source_name = data.get('source_name', 'unknown')
     use_playwright = data.get('use_playwright', True)
-    future_only = data.get('future_only', True)  # Default to future events only
-    ignore_robots = data.get('ignore_robots', False)  # Allow override
+    future_only = data.get('future_only', True)
+    ignore_robots = data.get('ignore_robots', False)
 
     if not url:
         return jsonify({"error": "URL required"}), 400
 
-    # Check robots.txt first
     robots_result = check_robots_txt(url)
     print(f"[robots.txt] {url}: {robots_result['message']}")
 
@@ -3930,11 +3703,9 @@ def scrape():
             "methods": []
         }), 403
 
-    # Auto-save this URL to history
     save_url(url, source_name, use_playwright)
 
     try:
-        # Fetch HTML
         if use_playwright:
             html = asyncio.run(fetch_with_playwright(url))
         else:
@@ -3943,14 +3714,12 @@ def scrape():
         methods = []
         events = []
 
-        # PRIORITY 1: Try EventCalendarApp API (Guthrie Green, etc.)
         eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, source_name, url, future_only))
         if eca_detected and eca_events:
             events = eca_events
             methods.append(f"EventCalendarApp API ({len(events)})")
             print(f"[EventCalendarApp] SUCCESS: {len(events)} events via direct API")
 
-        # PRIORITY 2: Try Timely API (Starlite Bar, etc.)
         if not events:
             timely_events, timely_detected = asyncio.run(extract_timely(html, source_name, url, future_only))
             if timely_detected and timely_events:
@@ -3958,7 +3727,6 @@ def scrape():
                 methods.append(f"Timely API ({len(events)})")
                 print(f"[Timely] SUCCESS: {len(events)} events via direct API")
 
-        # PRIORITY 3: Try BOK Center API
         if not events:
             bok_events, bok_detected = asyncio.run(extract_bok_center(html, source_name, url, future_only))
             if bok_detected and bok_events:
@@ -3966,7 +3734,6 @@ def scrape():
                 methods.append(f"BOK Center API ({len(events)})")
                 print(f"[BOK Center] SUCCESS: {len(events)} events via API")
 
-        # PRIORITY 4: Try Expo Square (Saffire) API
         if not events:
             expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
             if expo_detected and expo_events:
@@ -3974,7 +3741,6 @@ def scrape():
                 methods.append(f"Expo Square API ({len(events)})")
                 print(f"[Expo Square] SUCCESS: {len(events)} events via API")
 
-        # PRIORITY 5: Try Eventbrite API
         if not events:
             eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, source_name, url, future_only))
             if eb_detected and eb_events:
@@ -3982,7 +3748,6 @@ def scrape():
                 methods.append(f"Eventbrite API ({len(events)})")
                 print(f"[Eventbrite] SUCCESS: {len(events)} events via API")
 
-        # PRIORITY 6: Try Simpleview CMS API (VisitTulsa, etc.)
         if not events:
             sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, future_only))
             if sv_detected and sv_events:
@@ -3990,18 +3755,14 @@ def scrape():
                 methods.append(f"Simpleview API ({len(events)})")
                 print(f"[Simpleview] SUCCESS: {len(events)} events via API")
 
-        # FALLBACK: HTML-based extraction
         if not events:
             events = extract_events_universal(html, url, source_name)
 
-            # Get extraction methods used
             if events and '_extraction_methods' in events[0]:
                 methods = events[0]['_extraction_methods']
-                # Remove internal metadata from events
                 for e in events:
                     e.pop('_extraction_methods', None)
 
-        # Save HTML for reference
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_name = re.sub(r'[^\w\-]', '_', source_name)
         filename = f"{safe_name}_{timestamp}.html"
@@ -4018,6 +3779,182 @@ def scrape():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+
+@app.route('/scrape-all', methods=['POST'])
+def scrape_all():
+    """
+    Scrape ALL saved URLs sequentially and save to database.
+    Uses Server-Sent Events (SSE) for live progress updates.
+    FR-9.2: Manually trigger scraper run
+    """
+    import time as _time
+
+    saved_urls = load_saved_urls()
+    if not saved_urls:
+        return jsonify({"error": "No saved URLs to scrape"}), 400
+
+    def generate():
+        total_sources = len(saved_urls)
+        total_events = 0
+        total_saved = 0
+        total_errors = 0
+        source_results = []
+
+        yield f"data: {json.dumps({'type': 'start', 'total_sources': total_sources})}\n\n"
+
+        for i, url_entry in enumerate(saved_urls):
+            url = url_entry.get('url', '')
+            source_name = url_entry.get('name', 'Unknown')
+            use_playwright = url_entry.get('playwright', True)
+            source_start = _time.time()
+
+            yield f"data: {json.dumps({'type': 'source_start', 'index': i, 'name': source_name, 'url': url})}\n\n"
+
+            try:
+                # Check robots.txt
+                robots_result = check_robots_txt(url)
+                if not robots_result['allowed']:
+                    yield f"data: {json.dumps({'type': 'source_skip', 'index': i, 'name': source_name, 'reason': 'Blocked by robots.txt'})}\n\n"
+                    source_results.append({'name': source_name, 'status': 'skipped', 'reason': 'robots.txt'})
+                    continue
+
+                # Fetch HTML
+                if use_playwright and PLAYWRIGHT_AVAILABLE:
+                    html = asyncio.run(fetch_with_playwright(url))
+                else:
+                    html = asyncio.run(fetch_with_httpx(url))
+
+                # Extract events - same priority chain as /scrape
+                events = []
+                methods = []
+
+                eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, source_name, url, True))
+                if eca_detected and eca_events:
+                    events = eca_events
+                    methods.append(f"EventCalendarApp API ({len(events)})")
+
+                if not events:
+                    timely_events, timely_detected = asyncio.run(extract_timely(html, source_name, url, True))
+                    if timely_detected and timely_events:
+                        events = timely_events
+                        methods.append(f"Timely API ({len(events)})")
+
+                if not events:
+                    bok_events, bok_detected = asyncio.run(extract_bok_center(html, source_name, url, True))
+                    if bok_detected and bok_events:
+                        events = bok_events
+                        methods.append(f"BOK Center API ({len(events)})")
+
+                if not events:
+                    expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, True))
+                    if expo_detected and expo_events:
+                        events = expo_events
+                        methods.append(f"Expo Square API ({len(events)})")
+
+                if not events:
+                    eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, source_name, url, True))
+                    if eb_detected and eb_events:
+                        events = eb_events
+                        methods.append(f"Eventbrite API ({len(events)})")
+
+                if not events:
+                    sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, True))
+                    if sv_detected and sv_events:
+                        events = sv_events
+                        methods.append(f"Simpleview API ({len(events)})")
+
+                if not events:
+                    events = extract_events_universal(html, url, source_name)
+                    if events and '_extraction_methods' in events[0]:
+                        methods = events[0]['_extraction_methods']
+                        for e in events:
+                            e.pop('_extraction_methods', None)
+
+                if not events:
+                    yield f"data: {json.dumps({'type': 'source_empty', 'index': i, 'name': source_name})}\n\n"
+                    source_results.append({'name': source_name, 'status': 'empty', 'events': 0})
+                    continue
+
+                total_events += len(events)
+                yield f"data: {json.dumps({'type': 'source_scraped', 'index': i, 'name': source_name, 'count': len(events), 'methods': methods})}\n\n"
+
+                # Register & enrich venues
+                venues_to_save = {}
+                for event in events:
+                    vn = event.get('venue', '').strip()
+                    if vn and vn.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
+                        vk = vn.lower()
+                        if vk not in venues_to_save:
+                            venues_to_save[vk] = {
+                                'name': vn,
+                                'address': event.get('venue_address', ''),
+                                'city': 'Tulsa',
+                                '_venue_website': event.get('_venue_website', ''),
+                            }
+
+                venues_enriched = 0
+                for vk, vd in venues_to_save.items():
+                    ws = vd.pop('_venue_website', '')
+                    vp = {'name': vd['name'], 'address': vd.get('address', '') or None, 'city': 'Tulsa', 'website': ws or None}
+                    try:
+                        resp = httpx.post(f"{BACKEND_URL}/api/venues", json=vp, timeout=5)
+                        if resp.status_code in [200, 201] and GOOGLE_PLACES_API_KEY:
+                            ex = resp.json()
+                            if not ex.get('address') or not ex.get('website') or ex.get('latitude') is None:
+                                try:
+                                    r2 = asyncio.run(lookup_venue_google_places(vd['name'], 'Tulsa, OK'))
+                                    if 'error' not in r2:
+                                        pd2 = {}
+                                        if not ex.get('address') and r2.get('address'): pd2['address'] = r2['address']
+                                        if not ex.get('website') and r2.get('website'): pd2['website'] = r2['website']
+                                        if ex.get('latitude') is None and r2.get('latitude') and r2.get('longitude'):
+                                            pd2['latitude'] = r2['latitude']
+                                            pd2['longitude'] = r2['longitude']
+                                        if pd2:
+                                            httpx.patch(f"{BACKEND_URL}/api/venues/{ex.get('id')}", json=pd2, timeout=5)
+                                            venues_enriched += 1
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                # Normalize & save
+                src_url = events[0].get('source_url', '') if events else ''
+                normalized = normalize_batch(events, src_url, source_name)
+                use_norm = len(normalized) > 0
+                to_save = normalized if use_norm else events
+
+                import concurrent.futures
+                def _post(ev):
+                    try:
+                        t = transform_event_for_backend(ev)
+                        r = httpx.post(f"{BACKEND_URL}/api/events", json=t, timeout=5)
+                        return r.status_code in [200, 201]
+                    except:
+                        return False
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+                    results = list(ex.map(_post, to_save))
+
+                saved = sum(results)
+                total_saved += saved
+                elapsed = round(_time.time() - source_start, 1)
+
+                yield f"data: {json.dumps({'type': 'source_done', 'index': i, 'name': source_name, 'scraped': len(events), 'saved': saved, 'normalized': use_norm, 'venues_enriched': venues_enriched, 'elapsed': elapsed})}\n\n"
+                source_results.append({'name': source_name, 'status': 'ok', 'events': len(events), 'saved': saved})
+
+            except Exception as e:
+                total_errors += 1
+                elapsed = round(_time.time() - source_start, 1)
+                yield f"data: {json.dumps({'type': 'source_error', 'index': i, 'name': source_name, 'error': str(e)[:200], 'elapsed': elapsed})}\n\n"
+                source_results.append({'name': source_name, 'status': 'error', 'error': str(e)[:100]})
+                continue
+
+        yield f"data: {json.dumps({'type': 'complete', 'total_sources': total_sources, 'total_events': total_events, 'total_saved': total_saved, 'total_errors': total_errors, 'results': source_results})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
 
 
 @app.route('/save', methods=['POST'])
@@ -4038,32 +3975,15 @@ def save():
 def transform_event_for_backend(event: dict) -> dict:
     """
     Transform scraped event to match Rust backend's CreateEvent schema.
-
-    Backend schema:
-    - title: String (required)
-    - source_url: String (required) - MUST be the actual event page URL
-    - start_time: DateTime<Utc> (required) - ISO format
-    - end_time: Option<DateTime<Utc>>
-    - source_name: Option<String>
-    - venue: Option<String>
-    - venue_address: Option<String>
-    - location: Option<String> - city/area like "Tulsa", "Downtown"
-    - description: Option<String>
-    - image_url: Option<String>
-    - categories: Option<Vec<String>>
-    - outdoor: Option<bool>
-    - family_friendly: Option<bool>
-    - price_min/price_max: Option<f64>
+    Used as primary transform after normalization, or as fallback if LLM is down.
     """
     from dateutil import parser as date_parser
     from datetime import timezone, datetime, timedelta
 
-    # Start with required fields
     transformed = {
         'title': event.get('title', 'Untitled Event'),
     }
 
-    # source_url - prefer the actual event detail page
     source_url = (
             event.get('source_url') or
             event.get('detail_url') or
@@ -4073,7 +3993,6 @@ def transform_event_for_backend(event: dict) -> dict:
     )
     transformed['source_url'] = source_url
 
-    # Parse start_time from various possible fields
     date_str = (
             event.get('start_time') or
             event.get('startDate') or
@@ -4083,24 +4002,18 @@ def transform_event_for_backend(event: dict) -> dict:
     )
     if date_str:
         try:
-            # Try to parse the date string
             parsed_date = date_parser.parse(str(date_str), fuzzy=True)
-            # Ensure it has timezone (assume Central Time if none)
             if parsed_date.tzinfo is None:
-                # Use UTC for consistency
                 parsed_date = parsed_date.replace(tzinfo=timezone.utc)
             transformed['start_time'] = parsed_date.isoformat()
         except:
-            # Fallback: use current time + 1 day if unparseable
             fallback = datetime.now(timezone.utc) + timedelta(days=1)
             transformed['start_time'] = fallback.isoformat()
             print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
     else:
-        # No date provided - use tomorrow as fallback
         fallback = datetime.now(timezone.utc) + timedelta(days=1)
         transformed['start_time'] = fallback.isoformat()
 
-    # Parse end_time if available
     end_str = (
             event.get('end_time') or
             event.get('endDate') or
@@ -4114,43 +4027,35 @@ def transform_event_for_backend(event: dict) -> dict:
                 parsed_end = parsed_end.replace(tzinfo=timezone.utc)
             transformed['end_time'] = parsed_end.isoformat()
         except:
-            pass  # Skip if unparseable
+            pass
 
-    # Map source_name
     source_name = event.get('source_name') or event.get('source') or ''
     if source_name:
         transformed['source_name'] = source_name
 
-    # Venue and address
     if event.get('venue'):
         transformed['venue'] = event['venue']
     if event.get('venue_address'):
         transformed['venue_address'] = event['venue_address']
 
-    # Location (city/area, separate from venue_address)
     if event.get('location'):
         loc = event['location']
-        # If it's coordinates, skip (those should go elsewhere)
         if isinstance(loc, str) and ',' in loc and loc.replace(',', '').replace('.', '').replace('-', '').isdigit():
-            pass  # Skip coordinate strings
+            pass
         else:
             transformed['location'] = loc
     elif event.get('city'):
         transformed['location'] = event['city']
 
-    # Description
     if event.get('description'):
         desc = event['description']
-        # Clean up and truncate
         if isinstance(desc, str):
-            desc = desc.strip()[:2000]  # Limit to 2000 chars
+            desc = desc.strip()[:2000]
             transformed['description'] = desc
 
-    # Image URL
     if event.get('image_url'):
         transformed['image_url'] = event['image_url']
 
-    # Handle price - support both combined 'price' and separate min/max
     price_min = None
     price_max = None
 
@@ -4165,11 +4070,9 @@ def transform_event_for_backend(event: dict) -> dict:
         except (ValueError, TypeError):
             pass
 
-    # Parse combined 'price' field
     if price_min is None and event.get('price'):
         price_str = str(event['price']).replace('$', '').replace(',', '').strip()
         if '-' in price_str:
-            # Range like "15-25"
             parts = price_str.split('-')
             try:
                 price_min = float(parts[0].strip())
@@ -4185,7 +4088,6 @@ def transform_event_for_backend(event: dict) -> dict:
             except:
                 pass
 
-    # Handle is_free flag
     if event.get('is_free') == True:
         price_min = 0.0
         price_max = 0.0
@@ -4195,16 +4097,13 @@ def transform_event_for_backend(event: dict) -> dict:
     if price_max is not None:
         transformed['price_max'] = price_max
 
-    # Categories - convert string to list if needed
     if event.get('categories'):
         cats = event['categories']
         if isinstance(cats, str):
             transformed['categories'] = [cats]
         elif isinstance(cats, list):
-            # Filter out empty strings
             transformed['categories'] = [c for c in cats if c]
 
-    # Boolean flags
     if event.get('outdoor') is not None:
         transformed['outdoor'] = bool(event['outdoor'])
     else:
@@ -4218,9 +4117,104 @@ def transform_event_for_backend(event: dict) -> dict:
     return transformed
 
 
+# ============================================================================
+# LLM NORMALIZATION (Gemini via LLM Service on :8001)
+# ============================================================================
+
+def normalize_batch(events: list, source_url: str = "", source_name: str = "") -> list:
+    """
+    Send a batch of scraped events through the LLM normalization endpoint.
+
+    Sends events as a JSON array to POST /api/normalize on the LLM service.
+    Gemini normalizes all fields: timestamps (with timezone + inference),
+    descriptions, categories, etc.
+
+    Returns normalized events, or empty list if normalization fails.
+    Chunks into groups of 10 to stay within token limits.
+    """
+    all_normalized = []
+    chunk_size = 10
+
+    for i in range(0, len(events), chunk_size):
+        chunk = events[i:i + chunk_size]
+
+        try:
+            payload = {
+                "raw_content": json.dumps(chunk),
+                "source_url": source_url,
+                "content_type": "json"
+            }
+
+            resp = httpx.post(
+                f"{LLM_SERVICE_URL}/api/normalize",
+                json=payload,
+                timeout=30
+            )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                normalized = data.get("events", [])
+
+                if normalized:
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
+                    all_normalized.extend(normalized)
+                else:
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, falling back")
+                    return []
+            else:
+                print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
+                return []
+
+        except httpx.ConnectError:
+            print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
+            return []
+        except Exception as e:
+            print(f"[Normalize] Error: {e}")
+            return []
+
+    return all_normalized
+
+
+def _geocode_venue(venue_name: str, city: str = "Tulsa, OK") -> tuple:
+    """
+    Quick synchronous geocode via Google Places Text Search.
+    Returns (lat, lng) tuple or None.
+    """
+    if not GOOGLE_PLACES_API_KEY:
+        return None
+
+    try:
+        resp = httpx.get(
+            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+            params={
+                "query": f"{venue_name} {city}",
+                "key": GOOGLE_PLACES_API_KEY,
+            },
+            timeout=10
+        )
+        data = resp.json()
+        if data.get("status") == "OK" and data.get("results"):
+            location = data["results"][0].get("geometry", {}).get("location", {})
+            lat = location.get("lat")
+            lng = location.get("lng")
+            if lat and lng:
+                return (lat, lng)
+    except Exception:
+        pass
+    return None
+
+
 @app.route('/to-database', methods=['POST'])
 def to_database():
-    """Send events to database via Rust backend (concurrent)."""
+    """
+    Send events to database via Rust backend.
+
+    Pipeline:
+      1. Normalize all events through Gemini (LLM service on :8001)
+      2. Transform normalized events to backend schema
+      3. POST each event to Rust backend on :3000
+      4. Falls back to basic transform if LLM service is unavailable
+    """
     import concurrent.futures
 
     data = request.json
@@ -4229,9 +4223,9 @@ def to_database():
     if not events:
         return jsonify({"saved": 0, "total": 0})
 
-    print(f"[DB] Sending {len(events)} events to backend...")
+    print(f"[DB] Processing {len(events)} events...")
 
-    # Collect unique venues from events (with website from API)
+    # --- Step 0: Collect, register, and auto-enrich venues ---
     venues_to_save = {}
     for event in events:
         venue_name = event.get('venue', '').strip()
@@ -4244,33 +4238,82 @@ def to_database():
                     'city': 'Tulsa',
                     '_venue_website': event.get('_venue_website', ''),
                 }
-            # If this event has a website but the stored one doesn't, update it
             elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
                 venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
 
-    # Register venues with websites from API
+    # Register and auto-enrich venues via Google Places
     venues_with_websites = 0
+    venues_enriched = 0
     if venues_to_save:
         print(f"[DB] Registering {len(venues_to_save)} venues...")
         for venue_key, venue_data in venues_to_save.items():
-            # Get website from API data
             website = venue_data.pop('_venue_website', '')
+            venue_payload = {
+                'name': venue_data['name'],
+                'address': venue_data.get('address', '') or None,
+                'city': venue_data.get('city', 'Tulsa'),
+                'website': website or None,
+            }
+
             if website:
-                venue_data['website'] = website
                 venues_with_websites += 1
-                print(f"[DB] Venue '{venue_data['name']}' has website: {website}")
 
-            # Send to backend
+            # POST to backend (creates or returns existing)
             try:
-                httpx.post(f"{BACKEND_URL}/api/venues", json=venue_data, timeout=3)
-            except:
-                pass  # Best effort
+                resp = httpx.post(f"{BACKEND_URL}/api/venues", json=venue_payload, timeout=5)
+                if resp.status_code in [200, 201]:
+                    existing = resp.json()
+                    # Check if venue is missing data we can fill via Google Places
+                    missing_address = not existing.get('address')
+                    missing_website = not existing.get('website')
+                    missing_coords = existing.get('latitude') is None
 
-        print(f"[DB] Found websites for {venues_with_websites}/{len(venues_to_save)} venues")
+                    if (missing_address or missing_website or missing_coords) and GOOGLE_PLACES_API_KEY:
+                        try:
+                            result = asyncio.run(lookup_venue_google_places(venue_data['name'], 'Tulsa, OK'))
+                            if 'error' not in result:
+                                patch_data = {}
+                                if missing_address and result.get('address'):
+                                    patch_data['address'] = result['address']
+                                if missing_website and result.get('website'):
+                                    patch_data['website'] = result['website']
+                                if missing_coords and result.get('latitude') and result.get('longitude'):
+                                    patch_data['latitude'] = result['latitude']
+                                    patch_data['longitude'] = result['longitude']
 
+                                if patch_data:
+                                    venue_id = existing.get('id')
+                                    httpx.patch(
+                                        f"{BACKEND_URL}/api/venues/{venue_id}",
+                                        json=patch_data,
+                                        timeout=5
+                                    )
+                                    venues_enriched += 1
+                                    print(f"[DB] Enriched '{venue_data['name']}': {', '.join(patch_data.keys())}")
+                        except Exception as e:
+                            print(f"[DB] Enrichment failed for '{venue_data['name']}': {e}")
+            except Exception:
+                pass
+
+        print(f"[DB] Venues: {len(venues_to_save)} registered, {venues_with_websites} with websites, {venues_enriched} enriched via Google")
+
+    # --- Step 1: Normalize through Gemini ---
+    source_url = events[0].get('source_url', '') if events else ''
+    source_name = events[0].get('source', '') or events[0].get('source_name', '') if events else ''
+
+    normalized_events = normalize_batch(events, source_url, source_name)
+
+    use_normalized = len(normalized_events) > 0
+    if use_normalized:
+        print(f"[DB] ✓ Normalized {len(events)} → {len(normalized_events)} events via Gemini")
+        events_to_save = normalized_events
+    else:
+        print(f"[DB] ⚠ Normalization unavailable, using basic transform fallback")
+        events_to_save = events
+
+    # --- Step 2: Transform and send to Rust backend ---
     def post_event(event):
         try:
-            # Transform to backend schema
             transformed = transform_event_for_backend(event)
             resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
             if resp.status_code not in [200, 201]:
@@ -4280,18 +4323,19 @@ def to_database():
             print(f"[DB] Error: {e}")
             return False
 
-    # Send 10 requests concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        results = list(executor.map(post_event, events))
+        results = list(executor.map(post_event, events_to_save))
 
     saved = sum(results)
-    print(f"[DB] Complete: {saved}/{len(events)} saved")
+    print(f"[DB] Complete: {saved}/{len(events_to_save)} saved (normalized: {use_normalized})")
 
     return jsonify({
         "saved": saved,
-        "total": len(events),
+        "total": len(events_to_save),
+        "normalized": use_normalized,
         "venues_registered": len(venues_to_save),
-        "venues_with_websites": venues_with_websites
+        "venues_with_websites": venues_with_websites,
+        "venues_enriched": venues_enriched
     })
 
 
@@ -4305,11 +4349,9 @@ def upload_all_to_database():
     files_processed = 0
     errors = []
 
-    # Get all JSON files (excluding special files)
     json_files = sorted(OUTPUT_DIR.glob("*.json"), reverse=True)
     skip_files = {'venues.json', 'saved_urls.json'}
 
-    # Collect all events from all files
     all_events = []
     for f in json_files:
         if f.name in skip_files:
@@ -4327,14 +4369,12 @@ def upload_all_to_database():
 
     def post_event(event):
         try:
-            # Transform to backend schema
             transformed = transform_event_for_backend(event)
             resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
             return resp.status_code in [200, 201]
         except:
             return False
 
-    # Send 10 requests concurrently
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(post_event, all_events))
 
@@ -4362,7 +4402,6 @@ def clear_files():
         except:
             pass
 
-    # Also delete HTML files
     for f in OUTPUT_DIR.glob("*.html"):
         try:
             f.unlink()
@@ -4396,7 +4435,6 @@ def venues_missing_urls():
         resp = httpx.get(f"{BACKEND_URL}/api/venues/missing", timeout=10)
         if resp.status_code == 200:
             venues = resp.json()
-            # Return just the names for easy copy/paste
             names = [v.get('name', '') for v in venues if v.get('name')]
             return jsonify({
                 "count": len(names),
@@ -4419,11 +4457,9 @@ GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 def get_incomplete_venues():
     """Fetch venues that are missing key data fields."""
     try:
-        # Fetch all venues from backend
         resp = httpx.get(f"{BACKEND_URL}/api/venues", timeout=10)
         venues = resp.json() if resp.status_code == 200 else []
 
-        # Filter to venues missing data
         incomplete = []
         for v in venues:
             missing = []
@@ -4448,7 +4484,6 @@ def get_incomplete_venues():
                     'missing_count': len(missing),
                 })
 
-        # Sort by most missing first
         incomplete.sort(key=lambda x: -x['missing_count'])
 
         return jsonify({
@@ -4498,11 +4533,12 @@ async def lookup_venue_google_places(venue_name: str, city: str = "Tulsa, OK") -
         "types": [],
         "rating": None,
         "wheelchair_accessible": None,
+        "latitude": None,
+        "longitude": None,
     }
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            # Step 1: Text Search to find the place
             search_query = f"{venue_name} {city}"
             search_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
             search_resp = await client.get(search_url, params={
@@ -4520,7 +4556,13 @@ async def lookup_venue_google_places(venue_name: str, city: str = "Tulsa, OK") -
             result["types"] = place.get("types", [])
             result["rating"] = place.get("rating")
 
-            # Step 2: Get detailed info (website, phone, accessibility)
+            # Extract lat/lng from text search geometry
+            geometry = place.get("geometry", {})
+            location = geometry.get("location", {})
+            if location.get("lat") and location.get("lng"):
+                result["latitude"] = location["lat"]
+                result["longitude"] = location["lng"]
+
             if result["place_id"]:
                 details_url = "https://maps.googleapis.com/maps/api/place/details/json"
                 details_resp = await client.get(details_url, params={
@@ -4571,7 +4613,6 @@ def infer_venue_type_from_google(types: list, name: str) -> str:
         if place_type in type_mapping:
             return type_mapping[place_type]
 
-    # Fallback: infer from name
     name_lower = name.lower()
     if "museum" in name_lower:
         return "Museum"
@@ -4600,10 +4641,13 @@ def infer_venue_type_from_google(types: list, name: str) -> str:
 if __name__ == '__main__':
     print("=" * 50)
     print("  Locate918 Universal Scraper")
-    print("  Smart extraction - No LLM required")
+    print("  Smart extraction — LLM Normalized")
     print("  ✓ Respects robots.txt")
+    print("  ✓ Gemini normalization via :8001")
     print("=" * 50)
     print(f"  Output: {OUTPUT_DIR.absolute()}")
+    print(f"  Backend: {BACKEND_URL}")
+    print(f"  LLM Service: {LLM_SERVICE_URL}")
     print("=" * 50)
     print("  http://localhost:5000")
     print("=" * 50)
