@@ -23,7 +23,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use sqlx::PgPool;
@@ -293,7 +293,7 @@ async fn update_preferences(
     let mut updates = vec!["updated_at = NOW()".to_string()];
 
     if let Some(ref loc) = payload.location_preference {
-        updates.push(format!("location_preference = '{}'", loc.replace('\'', "''")));
+        updates.push(format!("location_preference = '{}'", loc.replace("'", "''")));
     }
     if let Some(radius) = payload.radius_miles {
         updates.push(format!("radius_miles = {}", radius));

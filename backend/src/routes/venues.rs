@@ -94,24 +94,40 @@ async fn list_venues(
 ) -> Result<Json<Vec<Venue>>, StatusCode> {
     let limit = params.limit.unwrap_or(500).min(1000);
 
-    let venues = sqlx::query_as::<_, Venue>(
-        r#"
-        SELECT id, name, address, city, capacity, venue_type, noise_level,
-               parking_info, accessibility_info, website, created_at,
-               latitude, longitude
-        FROM venues
-        ORDER BY name ASC
-        LIMIT $1
-        "#
-    )
-        .bind(limit)
-        .fetch_all(&pool)
-        .await
+    let venues = if params.missing_website.unwrap_or(false) {
+        sqlx::query_as::<_, Venue>(
+            r#"
+            SELECT id, name, address, city, capacity, venue_type, noise_level,
+                   parking_info, accessibility_info, website, created_at,
+                   latitude, longitude
+            FROM venues
+            WHERE website IS NULL OR website = ''
+            ORDER BY name ASC
+            LIMIT $1
+            "#
+        )
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+    } else {
+        sqlx::query_as::<_, Venue>(
+            r#"
+            SELECT id, name, address, city, capacity, venue_type, noise_level,
+                   parking_info, accessibility_info, website, created_at,
+                   latitude, longitude
+            FROM venues
+            ORDER BY name ASC
+            LIMIT $1
+            "#
+        )
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+    }
         .map_err(|e| {
             eprintln!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
     Ok(Json(venues))
 }
 

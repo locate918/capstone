@@ -97,10 +97,27 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     - Today's Date: {current_time}
     - User Profile: {json.dumps(user_profile)}
     
+    CRITICAL - YOUR DATA SOURCE:
+    You have access to a REAL PostgreSQL database containing events scraped from 60+ Tulsa venues
+    and event sources. When you call search_events, it queries this live database via the Rust 
+    backend API on port 3000. You are NOT making things up — you are returning real scraped data.
+    Never tell users you "can't access databases" or "don't have access to Supabase" — you DO 
+    query the actual production database through your search_events tool.
+    
     GUIDELINES:
     1. **Search First**: Always use `search_events` to find real data before answering.
     2. **Tulsa-Centric**: Assume all queries are for Tulsa. Do not ask for location.
     3. **Smart Dates**: Interpret "this weekend", "tonight", "next week" relative to Current Date.
+       - "tonight" = today's date, events from now onward
+       - "tomorrow" = the next calendar day
+       - "this weekend" = upcoming Saturday and Sunday
+    4. **Venue Links**: When an event has a `venue_website` field, use that URL for the venue link.
+       When it has a `source_url`, use that for the event link. NEVER link to "visit tulsa" as a venue.
+    5. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
+       The database stores times in UTC — convert by subtracting 6 hours (CST) or 5 hours (CDT).
+       If a time seems wrong (e.g. midnight for a concert), note it may be estimated.
+    6. **Retry on Error**: If a search returns no results, try broadening your query 
+       (e.g., drop the category filter, widen the date range, or search by keyword only).
     
     RESPONSE FORMATTING (Markdown):
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
@@ -109,12 +126,14 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
       - List events using this Markdown format:
         *   **Event Title** (if URL exists, otherwise just bold Title)
             *   📍 **Venue**: [Venue Name]
-            *   ⏰ **Time**: [Day of week], [Time]
+            *   ⏰ **Time**: [Day of week], [Time in Central Time]
             *   💰 **Price**: [Price range or "Free"]
             *   📝 [One sentence punchy description]
       - Use emojis relevant to the event type (🎸, 🎨, 🍔, 🎭).
     
-    - **No Events Found**: If the search returns nothing, apologize and suggest specific *evergreen* local activities relevant to their query (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
+    - **No Events Found**: If the search returns nothing, try a broader search before giving up.
+      If still nothing, suggest specific *evergreen* local activities relevant to their query 
+      (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
     - **Closing**: End with a helpful follow-up question (e.g., "Need a dinner recommendation nearby?" or "Want to see what's happening tomorrow instead?").
     """
 
@@ -251,8 +270,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - price_max (number or null)
     - description (string). Rules:
         1. If the source has a description, use it.
-        2. If NO description exists, generate a brief summary based on the title/venue.
-        3. If generated, prefix with "[AI Generated Due to Missing Description] ".
+        2. If NO description exists, generate a brief, natural summary based on the title/venue.
     - categories (list of strings, e.g. ["music", "jazz"])
     - outdoor (boolean or null)
     - family_friendly (boolean or null)

@@ -211,7 +211,7 @@ async fn create_event(
     let now = chrono::Utc::now();
 
     // First, do the UPSERT
-    let result = sqlx::query(
+    let _result = sqlx::query(
         r#"
         INSERT INTO events (
             id, title, description, venue, venue_address, location,
@@ -355,7 +355,7 @@ async fn search_events(
     let mut bind_index = 1;
 
     // Text search
-    if let Some(ref q) = params.q {
+    if let Some(ref _q) = params.q {
         conditions.push(format!(
             "(e.title ILIKE ${} OR e.description ILIKE ${})",
             bind_index, bind_index + 1
@@ -414,19 +414,22 @@ async fn search_events(
 
     let query = format!(
         r#"
-        SELECT
-            e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
-            e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
-            e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
-        FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
-        WHERE {}
-        ORDER BY e.start_time ASC
+        SELECT * FROM (
+            SELECT DISTINCT ON (LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date)
+                e.id, e.title, e.description, e.venue, e.venue_address, e.location,
+                e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+                e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+                e.time_estimated,
+                e.created_at, e.updated_at,
+                v.website AS venue_website,
+                v.latitude AS venue_latitude,
+                v.longitude AS venue_longitude
+            FROM events e
+            LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+            WHERE {}
+            ORDER BY LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date, e.time_estimated ASC, e.updated_at DESC
+        ) deduped
+        ORDER BY start_time ASC
         LIMIT ${} OFFSET ${}
         "#,
         where_clause, bind_index, bind_index + 1

@@ -19,7 +19,7 @@ mod db;          // Database utilities (future: connection helpers, queries)
 mod models;      // Data structures (Event, User, UserPreference, etc.)
 mod routes;      // API endpoint handlers (events, users, chat)
 mod scraper;     // Web scraping for event data (Skylar's domain)
-mod services;    // Business logic and LLM integration (Ben's domain)
+
 
 // =============================================================================
 // IMPORTS

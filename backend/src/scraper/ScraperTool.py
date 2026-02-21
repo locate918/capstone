@@ -3259,90 +3259,91 @@ async function loadSavedUrls() {
 }
 
 async function scrapeAll() {
-    const btn = document.getElementById('scrape-all-btn');
-    const progress = document.getElementById('scrape-all-progress');
-    const statusEl = document.getElementById('sa-status');
-    const counterEl = document.getElementById('sa-counter');
-    const bar = document.getElementById('sa-bar');
-    const log = document.getElementById('sa-log');
+    var btn = document.getElementById("scrape-all-btn");
+    var progress = document.getElementById("scrape-all-progress");
+    var statusEl = document.getElementById("sa-status");
+    var counterEl = document.getElementById("sa-counter");
+    var bar = document.getElementById("sa-bar");
+    var slog = document.getElementById("sa-log");
 
     btn.disabled = true;
-    btn.textContent = '⏳ Scraping...';
-    progress.classList.remove('hidden');
-    log.innerHTML = '';
-    bar.style.width = '0%';
+    btn.textContent = "Scraping...";
+    progress.classList.remove("hidden");
+    slog.innerHTML = "";
+    bar.style.width = "0%";
 
     try {
-        const response = await fetch('/scrape-all', { method: 'POST' });
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let totalSources = 0;
+        var response = await fetch("/scrape-all", { method: "POST" });
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var totalSources = 0;
 
         while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+            var chunk = await reader.read();
+            if (chunk.done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split("\\n");
             buffer = lines.pop();
 
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
+            for (var li = 0; li < lines.length; li++) {
+                var line = lines[li];
+                if (line.indexOf("data: ") !== 0) continue;
                 try {
-                    const data = JSON.parse(line.slice(6));
+                    var data = JSON.parse(line.slice(6));
 
-                    if (data.type === 'start') {
+                    if (data.type === "start") {
                         totalSources = data.total_sources;
-                        statusEl.textContent = `Scraping ${totalSources} sources...`;
-                        counterEl.textContent = `0 / ${totalSources}`;
-                    } else if (data.type === 'source_start') {
-                        statusEl.textContent = `Scraping: ${data.name}`;
-                        log.innerHTML += `<div style="color:#6cf;">▶ ${data.name}...</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'source_scraped') {
-                        log.innerHTML += `<div style="color:#aaa;">  Found ${data.count} events [${data.methods.join(', ')}]</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'source_done') {
-                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
-                        bar.style.width = pct + '%';
-                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
-                        log.innerHTML += `<div style="color:#4f4;">  ✓ Saved ${data.saved} events (${data.elapsed}s)</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'source_empty') {
-                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
-                        bar.style.width = pct + '%';
-                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
-                        log.innerHTML += `<div style="color:#888;">  ⊘ No events found</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'source_skip') {
-                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
-                        bar.style.width = pct + '%';
-                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
-                        log.innerHTML += `<div style="color:#f84;">  ⚠ Skipped: ${data.reason}</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'source_error') {
-                        const pct = Math.round(((data.index + 1) / totalSources) * 100);
-                        bar.style.width = pct + '%';
-                        counterEl.textContent = `${data.index + 1} / ${totalSources}`;
-                        log.innerHTML += `<div style="color:#f44;">  ✗ Error: ${data.error}</div>`;
-                        log.scrollTop = log.scrollHeight;
-                    } else if (data.type === 'complete') {
-                        bar.style.width = '100%';
-                        statusEl.textContent = `Done! ${data.total_saved} events saved from ${data.total_sources} sources`;
-                        log.innerHTML += `<div style="color:#D4AF37;font-weight:bold;margin-top:6px;">━━ Complete: ${data.total_events} scraped, ${data.total_saved} saved, ${data.total_errors} errors ━━</div>`;
-                        log.scrollTop = log.scrollHeight;
+                        statusEl.textContent = "Scraping " + totalSources + " sources...";
+                        counterEl.textContent = "0 / " + totalSources;
+                    } else if (data.type === "source_start") {
+                        statusEl.textContent = "Scraping: " + data.name;
+                        slog.innerHTML += "<div style=\\"color:#6cf;\\">▶ " + data.name + "...</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "source_scraped") {
+                        slog.innerHTML += "<div style=\\"color:#aaa;\\">  Found " + data.count + " events [" + data.methods.join(", ") + "]</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "source_done") {
+                        var pct = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct + "%";
+                        counterEl.textContent = (data.index + 1) + " / " + totalSources;
+                        slog.innerHTML += "<div style=\\"color:#4f4;\\">  ✓ Saved " + data.saved + " events (" + data.elapsed + "s)</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "source_empty") {
+                        var pct2 = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct2 + "%";
+                        counterEl.textContent = (data.index + 1) + " / " + totalSources;
+                        slog.innerHTML += "<div style=\\"color:#888;\\">  No events found</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "source_skip") {
+                        var pct3 = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct3 + "%";
+                        counterEl.textContent = (data.index + 1) + " / " + totalSources;
+                        slog.innerHTML += "<div style=\\"color:#f84;\\">  Skipped: " + data.reason + "</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "source_error") {
+                        var pct4 = Math.round(((data.index + 1) / totalSources) * 100);
+                        bar.style.width = pct4 + "%";
+                        counterEl.textContent = (data.index + 1) + " / " + totalSources;
+                        slog.innerHTML += "<div style=\\"color:#f44;\\">  Error: " + data.error + "</div>";
+                        slog.scrollTop = slog.scrollHeight;
+                    } else if (data.type === "complete") {
+                        bar.style.width = "100%";
+                        statusEl.textContent = "Done! " + data.total_saved + " events saved from " + data.total_sources + " sources";
+                        slog.innerHTML += "<div style=\\"color:#D4AF37;font-weight:bold;margin-top:6px;\\">Complete: " + data.total_events + " scraped, " + data.total_saved + " saved, " + data.total_errors + " errors</div>";
+                        slog.scrollTop = slog.scrollHeight;
                     }
                 } catch (e) {}
             }
         }
     } catch (e) {
-        statusEl.textContent = 'Error: ' + e.message;
-        log.innerHTML += `<div style="color:#f44;">Error: ${e.message}</div>`;
+        statusEl.textContent = "Error: " + e.message;
+        slog.innerHTML += "<div style=\\"color:#f44;\\">Error: " + e.message + "</div>";
     }
 
     btn.disabled = false;
-    btn.textContent = '🚀 Scrape All Sources & Save to Database';
+    btn.textContent = "Scrape All Sources & Save to Database";
 }
 
 async function saveCurrentUrl() {
