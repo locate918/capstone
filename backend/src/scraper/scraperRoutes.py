@@ -1,0 +1,1507 @@
+"""
+Locate918 Scraper - Flask Routes & Data Pipeline
+=================================================
+All Flask API endpoints, event transformation, LLM normalization,
+and venue manager functionality.
+"""
+
+import os
+import re
+import json
+import asyncio
+from datetime import datetime
+from flask import render_template_string, request, jsonify, send_file, Response
+import httpx
+
+from scraperUtils import (
+    OUTPUT_DIR,
+    BACKEND_URL,
+    LLM_SERVICE_URL,
+    HEADERS,
+    GOOGLE_PLACES_API_KEY,
+    check_robots_txt,
+    load_saved_urls,
+    save_url,
+    delete_saved_url,
+)
+
+from scraperExtractors import (
+    extract_eventcalendarapp,
+    extract_timely,
+    extract_bok_center,
+    extract_expo_square_events,
+    extract_eventbrite_api_events,
+    extract_simpleview_events,
+    extract_sitewrench_events,
+    extract_recdesk_events,
+    extract_ticketleap_events,
+    extract_events_universal,
+    fetch_with_httpx,
+    fetch_with_playwright,
+)
+
+
+# ============================================================================
+# HTML TEMPLATE
+# ============================================================================
+
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locate918 Scraper</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+            color: #fff;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { text-align: center; color: #D4AF37; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 25px; font-size: 13px; }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+        .form-row .form-group { flex: 1; }
+        label { display: block; margin-bottom: 5px; color: #D4AF37; font-size: 12px; font-weight: 600; }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-size: 14px;
+        }
+        input:focus { outline: none; border-color: #D4AF37; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+        .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; }
+        .checkbox-row label { margin: 0; color: #aaa; font-size: 13px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-primary { background: #D4AF37; color: #1a1a2e; }
+        .btn-primary:hover { background: #e5c04b; }
+        .btn-primary:disabled { background: #555; color: #888; cursor: not-allowed; }
+        .btn-secondary { background: #444; color: #fff; }
+        .btn-secondary:hover { background: #555; }
+        .btn-success { background: #28a745; color: #fff; }
+        .btn-success:hover { background: #2fbc4e; }
+        .btn-danger { background: #dc3545; color: #fff; }
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        .status {
+            padding: 10px 12px; border-radius: 6px; margin-top: 12px; font-size: 13px;
+        }
+        .status.loading { background: rgba(212,175,55,0.2); border: 1px solid #D4AF37; }
+        .status.success { background: rgba(40,167,69,0.2); border: 1px solid #28a745; }
+        .status.error { background: rgba(220,53,69,0.2); border: 1px solid #dc3545; }
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
+            border-top-color: #D4AF37; animation: spin 0.7s linear infinite;
+            margin-right: 8px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        h3 { color: #D4AF37; font-size: 15px; margin-bottom: 10px; }
+
+        /* Source chips */
+        .sources-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+        .source-chip {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px; padding: 5px 12px 5px 14px; font-size: 12px;
+            cursor: pointer; transition: all 0.15s; user-select: none;
+        }
+        .source-chip:hover { background: rgba(212,175,55,0.12); border-color: rgba(212,175,55,0.4); }
+        .source-chip.active { background: rgba(212,175,55,0.2); border-color: #D4AF37; }
+        .source-chip .name { color: #ccc; }
+        .source-chip.active .name { color: #D4AF37; }
+        .source-chip .x {
+            color: #555; font-size: 13px; line-height: 1; padding: 1px 3px;
+            border-radius: 50%; transition: color 0.15s;
+        }
+        .source-chip .x:hover { color: #dc3545; }
+        .source-count { color: #555; font-size: 12px; margin-left: 4px; }
+
+        /* Results */
+        .stats { display: flex; gap: 20px; margin: 12px 0; }
+        .stat { text-align: center; }
+        .stat-val { font-size: 22px; font-weight: bold; color: #D4AF37; }
+        .stat-lbl { font-size: 10px; color: #666; text-transform: uppercase; }
+        .method-tag {
+            display: inline-block; background: #333; color: #aaa;
+            padding: 2px 8px; border-radius: 10px; font-size: 10px;
+            margin-right: 4px; margin-bottom: 6px;
+        }
+        .event-list { max-height: 400px; overflow-y: auto; }
+        .event-item {
+            background: rgba(0,0,0,0.25); border-radius: 6px;
+            padding: 10px; margin-bottom: 6px; font-size: 13px;
+        }
+        .event-item strong { color: #fff; }
+        .event-item p { color: #888; margin: 3px 0; font-size: 12px; }
+        .event-item a { color: #6cf; font-size: 11px; }
+
+        /* Log */
+        .log {
+            background: #0a0a0a; border-radius: 5px; padding: 10px;
+            margin-top: 10px; max-height: 150px; overflow-y: auto;
+            font-family: monospace; font-size: 11px; color: #0f0;
+        }
+        .log .e { color: #f66; }
+        .log .s { color: #6f6; }
+        .log .i { color: #6cf; }
+
+        /* Progress */
+        .progress-bar {
+            height: 8px; border-radius: 4px; background: rgba(255,255,255,0.1);
+            margin-top: 10px; overflow: hidden;
+        }
+        .progress-bar .fill {
+            height: 100%; background: #D4AF37;
+            transition: width 0.3s ease; width: 0%;
+        }
+        .scrape-all-log {
+            background: #0a0a0a; border-radius: 5px; padding: 10px;
+            margin-top: 10px; max-height: 250px; overflow-y: auto;
+            font-family: monospace; font-size: 11px; color: #0f0;
+        }
+        .footer { text-align: center; color: #333; margin-top: 25px; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Locate918</h1>
+        <p class="subtitle">Universal Event Scraper &bull; Smart Extraction &bull; LLM Normalized</p>
+
+        <!-- Scrape Form -->
+        <div class="card">
+            <h3>Scrape Events</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>URL</label>
+                    <input type="text" id="url" placeholder="https://venue-website.com/events">
+                </div>
+                <div class="form-group" style="max-width: 200px;">
+                    <label>Source Name</label>
+                    <input type="text" id="source" placeholder="Venue Name">
+                </div>
+            </div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="playwright" checked>
+                <label for="playwright">Playwright (JS)</label>
+                <input type="checkbox" id="future-only" checked style="margin-left: 16px;">
+                <label for="future-only">Future only</label>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="scrape-btn" onclick="scrape()">Scrape</button>
+                <button class="btn btn-secondary" onclick="saveUrl()">Save URL</button>
+            </div>
+            <div id="status" class="status hidden"></div>
+            <div id="log-box" class="log hidden"></div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="card hidden">
+            <h3>Results</h3>
+            <div class="stats">
+                <div class="stat"><div class="stat-val" id="stat-count">0</div><div class="stat-lbl">Events</div></div>
+                <div class="stat"><div class="stat-val" id="stat-html">0</div><div class="stat-lbl">HTML Size</div></div>
+            </div>
+            <div id="methods-used"></div>
+            <div class="btn-group" style="margin-bottom: 10px;">
+                <button class="btn btn-success" onclick="sendToDatabase()">Send to Database</button>
+                <button class="btn btn-secondary" onclick="saveJSON()">Save JSON</button>
+            </div>
+            <div id="event-list" class="event-list"></div>
+        </div>
+
+        <!-- Saved Sources -->
+        <div class="card">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <h3 style="margin:0;">Saved Sources <span class="source-count" id="source-count"></span></h3>
+                <button class="btn btn-primary" onclick="scrapeAll()" style="padding:7px 16px; font-size:12px;">Scrape All</button>
+            </div>
+            <div id="saved-list" class="sources-grid">
+                <span style="color:#555;font-size:12px;">Loading...</span>
+            </div>
+            <div id="scrape-all-status" class="status hidden"></div>
+            <div class="progress-bar hidden" id="progress-bar"><div class="fill" id="progress-fill"></div></div>
+            <div id="scrape-all-counter" style="text-align:center;color:#888;font-size:12px;margin-top:5px;" class="hidden"></div>
+            <div id="scrape-all-log" class="scrape-all-log hidden"></div>
+        </div>
+
+        <div class="footer">Locate918 &bull; Senior Capstone 2026</div>
+    </div>
+
+    <script>
+var events = [];
+var activeChip = null;
+
+function log(msg, cls) {
+    var b = document.getElementById("log-box");
+    b.classList.remove("hidden");
+    b.innerHTML += "<div" + (cls ? " class=\\"" + cls + "\\"" : "") + ">" + msg + "</div>";
+    b.scrollTop = b.scrollHeight;
+}
+
+function status(msg, type) {
+    type = type || "loading";
+    var el = document.getElementById("status");
+    el.className = "status " + type;
+    el.innerHTML = type === "loading" ? "<span class=\\"spinner\\"></span>" + msg : msg;
+    el.classList.remove("hidden");
+}
+
+async function loadSaved() {
+    try {
+        var r = await fetch("/saved-urls");
+        var urls = await r.json();
+        var list = document.getElementById("saved-list");
+        document.getElementById("source-count").textContent = "(" + urls.length + ")";
+        if (!urls.length) {
+            list.innerHTML = "<span style=\\"color:#555;font-size:12px;\\">No saved sources. Scrape a URL to add one.</span>";
+            return;
+        }
+        list.innerHTML = urls.map(function(u, i) {
+            return "<div class=\\"source-chip\\" data-idx=\\"" + i + "\\" " +
+                "onclick=\\"selectSource(this,'" + esc(u.url) + "','" + esc(u.name) + "'," + (u.playwright !== false) + ")\\">" +
+                "<span class=\\"name\\">" + u.name + "</span>" +
+                "<span class=\\"x\\" onclick=\\"event.stopPropagation();deleteUrl('" + esc(u.url) + "')\\">×</span>" +
+                "</div>";
+        }).join("");
+    } catch(e) { console.error(e); }
+}
+
+function esc(s) { return s.replace(/\\\\/g,"\\\\\\\\").replace(/'/g,"\\\\'"); }
+
+function selectSource(el, url, name, pw) {
+    document.querySelectorAll(".source-chip").forEach(function(c){ c.classList.remove("active"); });
+    el.classList.add("active");
+    activeChip = el;
+    document.getElementById("url").value = url;
+    document.getElementById("source").value = name;
+    document.getElementById("playwright").checked = pw;
+}
+
+async function deleteUrl(url) {
+    await fetch("/saved-urls", {
+        method: "DELETE",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({url: url})
+    });
+    loadSaved();
+}
+
+async function saveUrl() {
+    var url = document.getElementById("url").value.trim();
+    var name = document.getElementById("source").value.trim();
+    var pw = document.getElementById("playwright").checked;
+    if (!url || !name) { status("Enter a URL and source name", "error"); return; }
+    try {
+        await fetch("/saved-urls", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({url: url, name: name, playwright: pw})
+        });
+        status("Saved " + name, "success");
+        loadSaved();
+    } catch(e) { status("Save error: " + e.message, "error"); }
+}
+
+async function scrape() {
+    var url = document.getElementById("url").value.trim();
+    var source = document.getElementById("source").value.trim() || "unknown";
+    var pw = document.getElementById("playwright").checked;
+    var futureOnly = document.getElementById("future-only").checked;
+    if (!url) { status("Enter a URL", "error"); return; }
+
+    document.getElementById("log-box").innerHTML = "";
+    document.getElementById("scrape-btn").disabled = true;
+    document.getElementById("results").classList.add("hidden");
+    status("Scraping " + source + "...");
+    log("Fetching: " + url);
+    log("Method: " + (pw ? "Playwright" : "httpx") + " | Future only: " + futureOnly, "i");
+
+    try {
+        var r = await fetch("/scrape", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({url: url, source_name: source, use_playwright: pw, future_only: futureOnly})
+        });
+        var d = await r.json();
+
+        if (d.robots_blocked) { log("BLOCKED by robots.txt", "e"); status(d.error, "error"); return; }
+        if (d.error) { log("ERROR: " + d.error, "e"); status("Error: " + d.error, "error"); return; }
+
+        events = d.events;
+        log("HTML: " + (d.html_size/1024).toFixed(1) + "KB | Found " + events.length + " events", "s");
+        if (d.methods && d.methods.length) log("Methods: " + d.methods.join(", "), "i");
+
+        document.getElementById("stat-count").textContent = events.length;
+        document.getElementById("stat-html").textContent = (d.html_size/1024).toFixed(1) + "KB";
+
+        var md = document.getElementById("methods-used");
+        md.innerHTML = (d.methods||[]).map(function(m){ return "<span class=\\"method-tag\\">" + m + "</span>"; }).join("");
+
+        var list = document.getElementById("event-list");
+        if (!events.length) {
+            list.innerHTML = "<p style=\\"color:#666;\\">No events found.</p>";
+        } else {
+            list.innerHTML = events.map(function(e) {
+                return "<div class=\\"event-item\\"><strong>" + (e.title||"Untitled") + "</strong>" +
+                    (e.date ? "<p>" + e.date + "</p>" : e.start_time ? "<p>" + e.start_time + "</p>" : "") +
+                    (e.venue ? "<p>" + e.venue + "</p>" : "") +
+                    (e.source_url ? "<a href=\\"" + e.source_url + "\\" target=\\"_blank\\">View →</a>" : "") +
+                    "</div>";
+            }).join("");
+        }
+
+        document.getElementById("results").classList.remove("hidden");
+        status("Found " + events.length + " events", "success");
+        loadSaved();  // refresh chip list since scraping auto-saves the URL
+
+    } catch(e) {
+        log("Error: " + e.message, "e");
+        status("Error: " + e.message, "error");
+    } finally {
+        document.getElementById("scrape-btn").disabled = false;
+    }
+}
+
+async function saveJSON() {
+    if (!events.length) return;
+    var source = document.getElementById("source").value.trim() || "unknown";
+    try {
+        var r = await fetch("/save", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({events: events, source: source})
+        });
+        var d = await r.json();
+        status("Saved " + d.count + " events to " + d.filename, "success");
+    } catch(e) { status("Save error: " + e.message, "error"); }
+}
+
+async function sendToDatabase() {
+    if (!events.length) return;
+    status("Normalizing & sending to database...");
+    try {
+        var r = await fetch("/to-database", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({events: events})
+        });
+        var d = await r.json();
+        var msg = d.saved + "/" + d.total + " saved";
+        if (d.normalized) msg += " (normalized)";
+        if (d.venues_registered) msg += " | " + d.venues_registered + " venues";
+        if (d.venues_enriched) msg += " (" + d.venues_enriched + " enriched)";
+        status(msg, "success");
+    } catch(e) { status("DB error: " + e.message, "error"); }
+}
+
+async function scrapeAll() {
+    var statusEl = document.getElementById("scrape-all-status");
+    var bar = document.getElementById("progress-fill");
+    var barC = document.getElementById("progress-bar");
+    var counter = document.getElementById("scrape-all-counter");
+    var slog = document.getElementById("scrape-all-log");
+
+    statusEl.className = "status loading";
+    statusEl.innerHTML = "<span class=\\"spinner\\"></span>Starting...";
+    statusEl.classList.remove("hidden");
+    barC.classList.remove("hidden");
+    counter.classList.remove("hidden");
+    slog.classList.remove("hidden");
+    slog.innerHTML = "";
+    bar.style.width = "0%";
+
+    try {
+        var response = await fetch("/scrape-all", { method: "POST" });
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var total = 0;
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split("\\n");
+            buffer = lines.pop();
+
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf("data: ") !== 0) continue;
+                try {
+                    var d = JSON.parse(lines[i].slice(6));
+                    if (d.type === "start") {
+                        total = d.total_sources;
+                        counter.textContent = "0 / " + total;
+                    } else if (d.type === "source_start") {
+                        statusEl.textContent = "Scraping: " + d.name;
+                        slog.innerHTML += "<div style=\\"color:#6cf\\">▶ " + d.name + "</div>";
+                    } else if (d.type === "source_scraped") {
+                        slog.innerHTML += "<div style=\\"color:#aaa\\">  " + d.count + " events [" + d.methods.join(", ") + "]</div>";
+                    } else if (d.type === "source_done") {
+                        bar.style.width = Math.round(((d.index+1)/total)*100) + "%";
+                        counter.textContent = (d.index+1) + " / " + total;
+                        slog.innerHTML += "<div style=\\"color:#6f6\\">  ✓ " + d.saved + " saved</div>";
+                    } else if (d.type === "source_error") {
+                        slog.innerHTML += "<div style=\\"color:#f66\\">  ✗ " + d.error + "</div>";
+                    } else if (d.type === "complete") {
+                        bar.style.width = "100%";
+                        statusEl.className = "status success";
+                        statusEl.textContent = "Done! " + d.total_events + " events, " + d.total_saved + " saved (" + d.sources_scraped + "/" + d.total_sources + " sources)";
+                    }
+                    slog.scrollTop = slog.scrollHeight;
+                } catch(pe) {}
+            }
+        }
+    } catch(e) {
+        statusEl.className = "status error";
+        statusEl.textContent = "Error: " + e.message;
+    }
+}
+
+loadSaved();
+    </script>
+</body>
+</html>
+'''
+
+
+# ============================================================================
+# EVENT TRANSFORMATION
+# ============================================================================
+
+def transform_event_for_backend(event: dict) -> dict:
+    """
+    Transform scraped event to match Rust backend's CreateEvent schema.
+    Used as primary transform after normalization, or as fallback if LLM is down.
+    """
+    from dateutil import parser as date_parser
+    from datetime import timezone, datetime, timedelta
+
+    transformed = {
+        'title': event.get('title', 'Untitled Event'),
+    }
+
+    source_url = (
+            event.get('source_url') or
+            event.get('detail_url') or
+            event.get('url') or
+            event.get('tickets_url') or
+            ''
+    )
+    transformed['source_url'] = source_url
+
+    date_str = (
+            event.get('start_time') or
+            event.get('startDate') or
+            event.get('date') or
+            event.get('start_date') or
+            ''
+    )
+    if date_str:
+        try:
+            parsed_date = date_parser.parse(str(date_str), fuzzy=True)
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+            transformed['start_time'] = parsed_date.isoformat()
+        except:
+            fallback = datetime.now(timezone.utc) + timedelta(days=1)
+            transformed['start_time'] = fallback.isoformat()
+            print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
+    else:
+        fallback = datetime.now(timezone.utc) + timedelta(days=1)
+        transformed['start_time'] = fallback.isoformat()
+
+    end_str = (
+            event.get('end_time') or
+            event.get('endDate') or
+            event.get('end_date') or
+            ''
+    )
+    if end_str:
+        try:
+            parsed_end = date_parser.parse(str(end_str), fuzzy=True)
+            if parsed_end.tzinfo is None:
+                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+            transformed['end_time'] = parsed_end.isoformat()
+        except:
+            pass
+
+    source_name = event.get('source_name') or event.get('source') or ''
+    if source_name:
+        transformed['source_name'] = source_name
+
+    if event.get('venue'):
+        transformed['venue'] = event['venue']
+    if event.get('venue_address'):
+        transformed['venue_address'] = event['venue_address']
+
+    if event.get('location'):
+        loc = event['location']
+        if isinstance(loc, str) and ',' in loc and loc.replace(',', '').replace('.', '').replace('-', '').isdigit():
+            pass
+        else:
+            transformed['location'] = loc
+    elif event.get('city'):
+        transformed['location'] = event['city']
+
+    if event.get('description'):
+        desc = event['description']
+        if isinstance(desc, str):
+            desc = desc.strip()[:2000]
+            transformed['description'] = desc
+
+    if event.get('image_url'):
+        transformed['image_url'] = event['image_url']
+
+    price_min = None
+    price_max = None
+
+    if event.get('price_min') is not None:
+        try:
+            price_min = float(event['price_min'])
+        except (ValueError, TypeError):
+            pass
+    if event.get('price_max') is not None:
+        try:
+            price_max = float(event['price_max'])
+        except (ValueError, TypeError):
+            pass
+
+    if price_min is None and event.get('price'):
+        price_str = str(event['price']).replace('$', '').replace(',', '').strip()
+        if '-' in price_str:
+            parts = price_str.split('-')
+            try:
+                price_min = float(parts[0].strip())
+                price_max = float(parts[1].strip())
+            except:
+                pass
+        elif price_str.lower() in ['free', '0', '0.00']:
+            price_min = 0.0
+            price_max = 0.0
+        else:
+            try:
+                price_min = float(price_str)
+            except:
+                pass
+
+    if event.get('is_free') == True:
+        price_min = 0.0
+        price_max = 0.0
+
+    if price_min is not None:
+        transformed['price_min'] = price_min
+    if price_max is not None:
+        transformed['price_max'] = price_max
+
+    if event.get('categories'):
+        cats = event['categories']
+        if isinstance(cats, str):
+            transformed['categories'] = [cats]
+        elif isinstance(cats, list):
+            transformed['categories'] = [c for c in cats if c]
+
+    if event.get('outdoor') is not None:
+        transformed['outdoor'] = bool(event['outdoor'])
+    else:
+        transformed['outdoor'] = False
+
+    if event.get('family_friendly') is not None:
+        transformed['family_friendly'] = bool(event['family_friendly'])
+    else:
+        transformed['family_friendly'] = False
+
+    return transformed
+
+
+# ============================================================================
+# LLM NORMALIZATION (Gemini via LLM Service on :8001)
+# ============================================================================
+
+def normalize_batch(events: list, source_url: str = "", source_name: str = "") -> list:
+    """
+    Send a batch of scraped events through the LLM normalization endpoint.
+
+    Sends events as a JSON array to POST /api/normalize on the LLM service.
+    Gemini normalizes all fields: timestamps (with timezone + inference),
+    descriptions, categories, etc.
+
+    Returns normalized events, or empty list if normalization fails.
+    Chunks into groups of 10 to stay within token limits.
+    """
+    all_normalized = []
+    chunk_size = 10
+
+    for i in range(0, len(events), chunk_size):
+        chunk = events[i:i + chunk_size]
+
+        try:
+            payload = {
+                "raw_content": json.dumps(chunk),
+                "source_url": source_url,
+                "content_type": "json"
+            }
+
+            resp = httpx.post(
+                f"{LLM_SERVICE_URL}/api/normalize",
+                json=payload,
+                timeout=30
+            )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                normalized = data.get("events", [])
+
+                if normalized:
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
+                    all_normalized.extend(normalized)
+                else:
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, falling back")
+                    return []
+            else:
+                print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
+                return []
+
+        except httpx.ConnectError:
+            print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
+            return []
+        except Exception as e:
+            print(f"[Normalize] Error: {e}")
+            return []
+
+    return all_normalized
+
+
+def _geocode_venue(venue_name: str, city: str = "Tulsa, OK") -> tuple:
+    """
+    Quick synchronous geocode via Google Places Text Search.
+    Returns (lat, lng) tuple or None.
+    """
+    if not GOOGLE_PLACES_API_KEY:
+        return None
+
+    try:
+        resp = httpx.get(
+            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+            params={
+                "query": f"{venue_name} {city}",
+                "key": GOOGLE_PLACES_API_KEY,
+            },
+            timeout=10
+        )
+        data = resp.json()
+        if data.get("status") == "OK" and data.get("results"):
+            location = data["results"][0].get("geometry", {}).get("location", {})
+            lat = location.get("lat")
+            lng = location.get("lng")
+            if lat and lng:
+                return (lat, lng)
+    except Exception:
+        pass
+    return None
+
+
+# ============================================================================
+# VENUE MANAGER HELPERS
+# ============================================================================
+
+async def lookup_venue_google_places(venue_name: str, city: str = "Tulsa, OK") -> dict:
+    """
+    Look up venue details from Google Places API.
+    """
+    result = {
+        "address": "",
+        "website": "",
+        "phone": "",
+        "place_id": "",
+        "types": [],
+        "rating": None,
+        "wheelchair_accessible": None,
+        "latitude": None,
+        "longitude": None,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            search_query = f"{venue_name} {city}"
+            search_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+            search_resp = await client.get(search_url, params={
+                "query": search_query,
+                "key": GOOGLE_PLACES_API_KEY,
+            })
+            search_data = search_resp.json()
+
+            if search_data.get("status") != "OK" or not search_data.get("results"):
+                return {"error": f"Place not found: {venue_name}"}
+
+            place = search_data["results"][0]
+            result["place_id"] = place.get("place_id", "")
+            result["address"] = place.get("formatted_address", "")
+            result["types"] = place.get("types", [])
+            result["rating"] = place.get("rating")
+
+            # Extract lat/lng from text search geometry
+            geometry = place.get("geometry", {})
+            location = geometry.get("location", {})
+            if location.get("lat") and location.get("lng"):
+                result["latitude"] = location["lat"]
+                result["longitude"] = location["lng"]
+
+            if result["place_id"]:
+                details_url = "https://maps.googleapis.com/maps/api/place/details/json"
+                details_resp = await client.get(details_url, params={
+                    "place_id": result["place_id"],
+                    "fields": "website,formatted_phone_number,wheelchair_accessible_entrance",
+                    "key": GOOGLE_PLACES_API_KEY,
+                })
+                details_data = details_resp.json()
+
+                if details_data.get("status") == "OK" and details_data.get("result"):
+                    details = details_data["result"]
+                    result["website"] = details.get("website", "")
+                    result["phone"] = details.get("formatted_phone_number", "")
+                    result["wheelchair_accessible"] = details.get("wheelchair_accessible_entrance")
+
+            return result
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def infer_venue_type_from_google(types: list, name: str) -> str:
+    """Infer venue type from Google Places types."""
+    type_mapping = {
+        "bar": "Bar/Club",
+        "night_club": "Bar/Club",
+        "restaurant": "Restaurant",
+        "cafe": "Coffee Shop",
+        "museum": "Museum",
+        "art_gallery": "Gallery",
+        "movie_theater": "Theater",
+        "performing_arts_theater": "Theater",
+        "stadium": "Arena",
+        "church": "Church",
+        "park": "Park",
+        "library": "Library",
+        "university": "University",
+        "school": "University",
+        "casino": "Casino",
+        "lodging": "Hotel",
+        "bowling_alley": "Entertainment",
+        "amusement_park": "Entertainment",
+        "zoo": "Zoo/Aquarium",
+        "aquarium": "Zoo/Aquarium",
+    }
+
+    for place_type in types:
+        if place_type in type_mapping:
+            return type_mapping[place_type]
+
+    name_lower = name.lower()
+    if "museum" in name_lower:
+        return "Museum"
+    elif "theater" in name_lower or "theatre" in name_lower:
+        return "Theater"
+    elif "bar" in name_lower or "pub" in name_lower:
+        return "Bar/Club"
+    elif "church" in name_lower:
+        return "Church"
+    elif "park" in name_lower:
+        return "Park"
+    elif "ballroom" in name_lower or "center" in name_lower:
+        return "Concert Hall"
+    elif "brewery" in name_lower or "brewing" in name_lower:
+        return "Brewery"
+    elif "coffee" in name_lower or "cafe" in name_lower:
+        return "Coffee Shop"
+
+    return "Venue"
+
+
+# ============================================================================
+# ROUTE REGISTRATION
+# ============================================================================
+
+def register_routes(app):
+    """Register all Flask routes on the given app instance."""
+
+    @app.route('/')
+    def index():
+        return render_template_string(HTML_TEMPLATE)
+
+    @app.route('/saved-urls', methods=['GET'])
+    def get_saved_urls():
+        return jsonify(load_saved_urls())
+
+    @app.route('/saved-urls', methods=['POST'])
+    def add_saved_url():
+        data = request.json
+        urls = save_url(data.get('url', ''), data.get('name', ''), data.get('playwright', True))
+        return jsonify(urls)
+
+    @app.route('/saved-urls', methods=['DELETE'])
+    def remove_saved_url():
+        data = request.json
+        urls = delete_saved_url(data.get('url', ''))
+        return jsonify(urls)
+
+    @app.route('/scrape', methods=['POST'])
+    def scrape():
+        data = request.json
+        url = data.get('url')
+        source_name = data.get('source_name', 'unknown')
+        use_playwright = data.get('use_playwright', True)
+        future_only = data.get('future_only', True)
+        ignore_robots = data.get('ignore_robots', False)
+
+        if not url:
+            return jsonify({"error": "URL required"}), 400
+
+        robots_result = check_robots_txt(url)
+        print(f"[robots.txt] {url}: {robots_result['message']}")
+
+        if not robots_result['allowed'] and not ignore_robots:
+            return jsonify({
+                "error": f"Blocked by robots.txt: {robots_result['message']}",
+                "robots_blocked": True,
+                "events": [],
+                "html_size": 0,
+                "methods": []
+            }), 403
+
+        save_url(url, source_name, use_playwright)
+
+        try:
+            if use_playwright:
+                html = asyncio.run(fetch_with_playwright(url))
+            else:
+                html = asyncio.run(fetch_with_httpx(url))
+
+            methods = []
+            events = []
+
+            eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, source_name, url, future_only))
+            if eca_detected and eca_events:
+                events = eca_events
+                methods.append(f"EventCalendarApp API ({len(events)})")
+                print(f"[EventCalendarApp] SUCCESS: {len(events)} events via direct API")
+
+            if not events:
+                timely_events, timely_detected = asyncio.run(extract_timely(html, source_name, url, future_only))
+                if timely_detected and timely_events:
+                    events = timely_events
+                    methods.append(f"Timely API ({len(events)})")
+                    print(f"[Timely] SUCCESS: {len(events)} events via direct API")
+
+            if not events:
+                bok_events, bok_detected = asyncio.run(extract_bok_center(html, source_name, url, future_only))
+                if bok_detected and bok_events:
+                    events = bok_events
+                    methods.append(f"BOK Center API ({len(events)})")
+                    print(f"[BOK Center] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
+                if expo_detected and expo_events:
+                    events = expo_events
+                    methods.append(f"Expo Square API ({len(events)})")
+                    print(f"[Expo Square] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, source_name, url, future_only))
+                if eb_detected and eb_events:
+                    events = eb_events
+                    methods.append(f"Eventbrite API ({len(events)})")
+                    print(f"[Eventbrite] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, future_only))
+                if sv_detected and sv_events:
+                    events = sv_events
+                    methods.append(f"Simpleview API ({len(events)})")
+                    print(f"[Simpleview] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, source_name, url, future_only))
+                if sw_detected and sw_events:
+                    events = sw_events
+                    methods.append(f"SiteWrench API ({len(events)})")
+                    print(f"[SiteWrench] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, source_name, url, future_only))
+                if rd_detected and rd_events:
+                    events = rd_events
+                    methods.append(f"RecDesk API ({len(events)})")
+                    print(f"[RecDesk] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, source_name, url, future_only))
+                if tl_detected and tl_events:
+                    events = tl_events
+                    methods.append(f"TicketLeap ({len(events)})")
+                    print(f"[TicketLeap] SUCCESS: {len(events)} events")
+
+            if not events:
+                events = extract_events_universal(html, url, source_name)
+
+                if events and '_extraction_methods' in events[0]:
+                    methods = events[0]['_extraction_methods']
+                    for e in events:
+                        e.pop('_extraction_methods', None)
+
+            # ── FIX: Apply future date filter to universal extraction results ──
+            if future_only and events:
+                from dateutil import parser as date_parser
+                from datetime import timedelta
+                now = datetime.now()
+                cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                filtered = []
+                for ev in events:
+                    date_str = ev.get('date', '') or ev.get('date_start', '') or ev.get('start_time', '')
+                    if not date_str:
+                        filtered.append(ev)  # Keep events without dates (can't determine)
+                        continue
+                    try:
+                        dt = date_parser.parse(str(date_str), fuzzy=True)
+                        # FIX: Strip timezone info to avoid TypeError comparing tz-aware vs naive
+                        dt = dt.replace(tzinfo=None)
+                        # FIX: Year-bumping - only bump if >270 days in past (likely year wrap)
+                        # e.g., "Jan 5" parsed in November should become next year's Jan 5
+                        # But "Feb 6" parsed in March should NOT become next year
+                        if dt < cutoff:
+                            days_past = (cutoff - dt).days
+                            if days_past > 270:
+                                # Likely a year wrap - bump to next year
+                                dt = dt.replace(year=dt.year + 1)
+                                ev['date'] = dt.strftime('%b %d, %Y')
+                                if dt >= cutoff:
+                                    filtered.append(ev)
+                            # else: genuinely past, drop it
+                        else:
+                            filtered.append(ev)
+                    except:
+                        filtered.append(ev)  # Can't parse - keep it
+
+                dropped = len(events) - len(filtered)
+                if dropped:
+                    print(f"[FutureFilter] Found: {len(events)}, Kept: {len(filtered)}, Dropped: {dropped} past events")
+                events = filtered
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = re.sub(r'[^\w\-]', '_', source_name)
+            filename = f"{safe_name}_{timestamp}.html"
+            (OUTPUT_DIR / filename).write_text(html, encoding='utf-8')
+
+            return jsonify({
+                "events": events,
+                "html_size": len(html),
+                "filename": filename,
+                "methods": methods
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/scrape-all', methods=['POST'])
+    def scrape_all():
+        """Stream scrape all saved URLs with SSE progress events."""
+        saved = load_saved_urls()
+        if not saved:
+            return jsonify({"error": "No saved URLs"}), 400
+
+        def generate():
+            total = len(saved)
+            yield f"data: {json.dumps({'type': 'start', 'total_sources': total})}\n\n"
+
+            total_events = 0
+            total_saved = 0
+            sources_scraped = 0
+
+            for i, entry in enumerate(saved):
+                url = entry.get('url', '')
+                name = entry.get('name', 'unknown')
+                use_pw = entry.get('use_playwright', True)
+
+                yield f"data: {json.dumps({'type': 'source_start', 'name': name, 'index': i})}\n\n"
+
+                try:
+                    # Check robots.txt
+                    robots_result = check_robots_txt(url)
+                    if not robots_result['allowed']:
+                        yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': f'Blocked by robots.txt'})}\n\n"
+                        continue
+
+                    # Fetch
+                    if use_pw:
+                        html = asyncio.run(fetch_with_playwright(url))
+                    else:
+                        html = asyncio.run(fetch_with_httpx(url))
+
+                    # Extract - same chain as /scrape
+                    methods = []
+                    events = []
+
+                    eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, name, url, True))
+                    if eca_detected and eca_events:
+                        events = eca_events
+                        methods.append(f"EventCalendarApp API ({len(events)})")
+
+                    if not events:
+                        timely_events, timely_detected = asyncio.run(extract_timely(html, name, url, True))
+                        if timely_detected and timely_events:
+                            events = timely_events
+                            methods.append(f"Timely API ({len(events)})")
+
+                    if not events:
+                        bok_events, bok_detected = asyncio.run(extract_bok_center(html, name, url, True))
+                        if bok_detected and bok_events:
+                            events = bok_events
+                            methods.append(f"BOK Center API ({len(events)})")
+
+                    if not events:
+                        expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
+                        if expo_detected and expo_events:
+                            events = expo_events
+                            methods.append(f"Expo Square API ({len(events)})")
+
+                    if not events:
+                        eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, name, url, True))
+                        if eb_detected and eb_events:
+                            events = eb_events
+                            methods.append(f"Eventbrite API ({len(events)})")
+
+                    if not events:
+                        sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, name, url, True))
+                        if sv_detected and sv_events:
+                            events = sv_events
+                            methods.append(f"Simpleview API ({len(events)})")
+
+                    if not events:
+                        sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, name, url, True))
+                        if sw_detected and sw_events:
+                            events = sw_events
+                            methods.append(f"SiteWrench API ({len(events)})")
+
+                    if not events:
+                        rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, name, url, True))
+                        if rd_detected and rd_events:
+                            events = rd_events
+                            methods.append(f"RecDesk API ({len(events)})")
+
+                    if not events:
+                        tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, name, url, True))
+                        if tl_detected and tl_events:
+                            events = tl_events
+                            methods.append(f"TicketLeap ({len(events)})")
+
+                    if not events:
+                        events = extract_events_universal(html, url, name)
+                        if events and '_extraction_methods' in events[0]:
+                            methods = events[0]['_extraction_methods']
+                            for e in events:
+                                e.pop('_extraction_methods', None)
+
+                    # Future filter
+                    if events:
+                        from dateutil import parser as date_parser
+                        now = datetime.now()
+                        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                        filtered = []
+                        for ev in events:
+                            date_str = ev.get('date', '') or ev.get('date_start', '') or ev.get('start_time', '')
+                            if not date_str:
+                                filtered.append(ev)
+                                continue
+                            try:
+                                dt = date_parser.parse(str(date_str), fuzzy=True)
+                                dt = dt.replace(tzinfo=None)
+                                if dt < cutoff:
+                                    days_past = (cutoff - dt).days
+                                    if days_past > 270:
+                                        dt = dt.replace(year=dt.year + 1)
+                                        ev['date'] = dt.strftime('%b %d, %Y')
+                                        if dt >= cutoff:
+                                            filtered.append(ev)
+                                else:
+                                    filtered.append(ev)
+                            except:
+                                filtered.append(ev)
+                        events = filtered
+
+                    yield f"data: {json.dumps({'type': 'source_scraped', 'name': name, 'index': i, 'count': len(events), 'methods': methods})}\n\n"
+
+                    # Save JSON
+                    saved_count = 0
+                    if events:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        safe_name = re.sub(r'[^\w\-]', '_', name)
+                        filename = f"{safe_name}_{timestamp}.json"
+                        (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
+                        saved_count = len(events)
+
+                    total_events += len(events)
+                    total_saved += saved_count
+                    sources_scraped += 1
+
+                    yield f"data: {json.dumps({'type': 'source_done', 'name': name, 'index': i, 'saved': saved_count, 'count': len(events)})}\n\n"
+
+                    print(f"[ScrapeAll] {i+1}/{total} {name}: {len(events)} events {methods}")
+
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': str(e)})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'complete', 'total_events': total_events, 'total_saved': total_saved, 'sources_scraped': sources_scraped, 'total_sources': total})}\n\n"
+
+        return Response(generate(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        })
+
+    @app.route('/save', methods=['POST'])
+    def save():
+        data = request.json
+        events = data.get('events', [])
+        source = data.get('source', 'unknown')
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = re.sub(r'[^\w\-]', '_', source)
+        filename = f"{safe_name}_{timestamp}.json"
+
+        (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
+
+        return jsonify({"filename": filename, "count": len(events)})
+
+    @app.route('/to-database', methods=['POST'])
+    def to_database():
+        """
+        Send events to database via Rust backend.
+
+        Pipeline:
+          1. Normalize all events through Gemini (LLM service on :8001)
+          2. Transform normalized events to backend schema
+          3. POST each event to Rust backend on :3000
+          4. Falls back to basic transform if LLM service is unavailable
+        """
+        import concurrent.futures
+
+        data = request.json
+        events = data.get('events', [])
+
+        if not events:
+            return jsonify({"saved": 0, "total": 0})
+
+        print(f"[DB] Processing {len(events)} events...")
+
+        # --- Step 0: Collect, register, and auto-enrich venues ---
+        venues_to_save = {}
+        for event in events:
+            venue_name = event.get('venue', '').strip()
+            if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
+                venue_key = venue_name.lower()
+                if venue_key not in venues_to_save:
+                    venues_to_save[venue_key] = {
+                        'name': venue_name,
+                        'address': event.get('venue_address', ''),
+                        'city': 'Tulsa',
+                        '_venue_website': event.get('_venue_website', ''),
+                    }
+                elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
+                    venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
+
+        # Register and auto-enrich venues via Google Places
+        venues_with_websites = 0
+        venues_enriched = 0
+        if venues_to_save:
+            print(f"[DB] Registering {len(venues_to_save)} venues...")
+            for venue_key, venue_data in venues_to_save.items():
+                website = venue_data.pop('_venue_website', '')
+                venue_payload = {
+                    'name': venue_data['name'],
+                    'address': venue_data.get('address', '') or None,
+                    'city': venue_data.get('city', 'Tulsa'),
+                    'website': website or None,
+                }
+
+                if website:
+                    venues_with_websites += 1
+
+                # POST to backend (creates or returns existing)
+                try:
+                    resp = httpx.post(f"{BACKEND_URL}/api/venues", json=venue_payload, timeout=5)
+                    if resp.status_code in [200, 201]:
+                        existing = resp.json()
+                        # Check if venue is missing data we can fill via Google Places
+                        missing_address = not existing.get('address')
+                        missing_website = not existing.get('website')
+                        missing_coords = existing.get('latitude') is None
+
+                        if (missing_address or missing_website or missing_coords) and GOOGLE_PLACES_API_KEY:
+                            try:
+                                result = asyncio.run(lookup_venue_google_places(venue_data['name'], 'Tulsa, OK'))
+                                if 'error' not in result:
+                                    patch_data = {}
+                                    if missing_address and result.get('address'):
+                                        patch_data['address'] = result['address']
+                                    if missing_website and result.get('website'):
+                                        patch_data['website'] = result['website']
+                                    if missing_coords and result.get('latitude') and result.get('longitude'):
+                                        patch_data['latitude'] = result['latitude']
+                                        patch_data['longitude'] = result['longitude']
+
+                                    if patch_data:
+                                        venue_id = existing.get('id')
+                                        httpx.patch(
+                                            f"{BACKEND_URL}/api/venues/{venue_id}",
+                                            json=patch_data,
+                                            timeout=5
+                                        )
+                                        venues_enriched += 1
+                                        print(f"[DB] Enriched '{venue_data['name']}': {', '.join(patch_data.keys())}")
+                            except Exception as e:
+                                print(f"[DB] Enrichment failed for '{venue_data['name']}': {e}")
+                except Exception:
+                    pass
+
+            print(f"[DB] Venues: {len(venues_to_save)} registered, {venues_with_websites} with websites, {venues_enriched} enriched via Google")
+
+        # --- Step 1: Normalize through Gemini ---
+        source_url = events[0].get('source_url', '') if events else ''
+        source_name = events[0].get('source', '') or events[0].get('source_name', '') if events else ''
+
+        normalized_events = normalize_batch(events, source_url, source_name)
+
+        use_normalized = len(normalized_events) > 0
+        if use_normalized:
+            print(f"[DB] ✓ Normalized {len(events)} → {len(normalized_events)} events via Gemini")
+            events_to_save = normalized_events
+        else:
+            print(f"[DB] ⚠ Normalization unavailable, using basic transform fallback")
+            events_to_save = events
+
+        # --- Step 2: Transform and send to Rust backend ---
+        def post_event(event):
+            try:
+                transformed = transform_event_for_backend(event)
+                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+                if resp.status_code not in [200, 201]:
+                    print(f"[DB] Rejected: {resp.status_code} - {resp.text[:100]}")
+                return resp.status_code in [200, 201]
+            except Exception as e:
+                print(f"[DB] Error: {e}")
+                return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(post_event, events_to_save))
+
+        saved = sum(results)
+        print(f"[DB] Complete: {saved}/{len(events_to_save)} saved (normalized: {use_normalized})")
+
+        return jsonify({
+            "saved": saved,
+            "total": len(events_to_save),
+            "normalized": use_normalized,
+            "venues_registered": len(venues_to_save),
+            "venues_with_websites": venues_with_websites,
+            "venues_enriched": venues_enriched
+        })
+
+    @app.route('/upload-all-to-database', methods=['POST'])
+    def upload_all_to_database():
+        """Read all saved JSON files and send events to database concurrently."""
+        import concurrent.futures
+
+        total_events = 0
+        total_saved = 0
+        files_processed = 0
+        errors = []
+
+        json_files = sorted(OUTPUT_DIR.glob("*.json"), reverse=True)
+        skip_files = {'venues.json', 'saved_urls.json'}
+
+        all_events = []
+        for f in json_files:
+            if f.name in skip_files:
+                continue
+            try:
+                file_events = json.loads(f.read_text())
+                if isinstance(file_events, list) and len(file_events) > 0:
+                    files_processed += 1
+                    all_events.extend(file_events)
+            except Exception as e:
+                errors.append(f"{f.name}: {str(e)}")
+
+        total_events = len(all_events)
+        print(f"[Upload] {total_events} events from {files_processed} files")
+
+        def post_event(event):
+            try:
+                transformed = transform_event_for_backend(event)
+                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+                return resp.status_code in [200, 201]
+            except:
+                return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(post_event, all_events))
+
+        total_saved = sum(results)
+        print(f"[Upload] Complete: {total_saved}/{total_events} saved")
+
+        return jsonify({
+            "files_processed": files_processed,
+            "total_events": total_events,
+            "saved": total_saved,
+            "errors": errors
+        })
+
+    @app.route('/clear-files', methods=['POST'])
+    def clear_files():
+        """Delete all saved JSON files."""
+        deleted = 0
+        for f in OUTPUT_DIR.glob("*.json"):
+            if f.name == 'venues.json':
+                continue
+            try:
+                f.unlink()
+                deleted += 1
+            except:
+                pass
+
+        for f in OUTPUT_DIR.glob("*.html"):
+            try:
+                f.unlink()
+                deleted += 1
+            except:
+                pass
+
+        return jsonify({"deleted": deleted})
+
+    @app.route('/files')
+    def list_files():
+        files = []
+        for f in sorted(OUTPUT_DIR.glob("*.json"), reverse=True):
+            if f.name != 'saved_urls.json':
+                files.append({"name": f.name, "size": f.stat().st_size})
+        return jsonify(files)
+
+    @app.route('/download/<filename>')
+    def download(filename):
+        path = OUTPUT_DIR / filename
+        if path.exists():
+            return send_file(path, as_attachment=True)
+        return jsonify({"error": "Not found"}), 404
+
+    @app.route('/venues-missing-urls')
+    def venues_missing_urls():
+        """Fetch venues from backend that are missing website URLs."""
+        try:
+            resp = httpx.get(f"{BACKEND_URL}/api/venues/missing", timeout=10)
+            if resp.status_code == 200:
+                venues = resp.json()
+                names = [v.get('name', '') for v in venues if v.get('name')]
+                return jsonify({
+                    "count": len(names),
+                    "venues": names
+                })
+            else:
+                return jsonify({"error": f"Backend returned {resp.status_code}"}), 500
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ============================================================================
+    # VENUE MANAGER API
+    # ============================================================================
+
+    @app.route('/api/venues/incomplete', methods=['GET'])
+    def get_incomplete_venues():
+        """Fetch venues that are missing key data fields."""
+        try:
+            resp = httpx.get(f"{BACKEND_URL}/api/venues", timeout=10)
+            venues = resp.json() if resp.status_code == 200 else []
+
+            incomplete = []
+            for v in venues:
+                missing = []
+                if not v.get('address'):
+                    missing.append('address')
+                if not v.get('capacity'):
+                    missing.append('capacity')
+                if not v.get('venue_type'):
+                    missing.append('type')
+                if not v.get('parking_info'):
+                    missing.append('parking')
+                if not v.get('website'):
+                    missing.append('website')
+
+                if missing:
+                    incomplete.append({
+                        'id': v.get('id'),
+                        'name': v.get('name'),
+                        'address': v.get('address', ''),
+                        'website': v.get('website', ''),
+                        'missing': missing,
+                        'missing_count': len(missing),
+                    })
+
+            incomplete.sort(key=lambda x: -x['missing_count'])
+
+            return jsonify({
+                'total': len(venues),
+                'incomplete': len(incomplete),
+                'venues': incomplete
+            })
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/venues/lookup', methods=['POST'])
+    def lookup_venue():
+        """Look up venue details from Google Places API."""
+        data = request.json
+        venue_name = data.get('name', '')
+        city = data.get('city', 'Tulsa, OK')
+
+        if not venue_name:
+            return jsonify({'error': 'Venue name required'}), 400
+
+        if not GOOGLE_PLACES_API_KEY:
+            return jsonify({'error': 'Google Places API key not configured. Add GOOGLE_PLACES_API_KEY to .env'}), 500
+
+        try:
+            result = asyncio.run(lookup_venue_google_places(venue_name, city))
+
+            if result.get('types'):
+                result['inferred_type'] = infer_venue_type_from_google(result['types'], venue_name)
+
+            return jsonify(result)
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
