@@ -100,15 +100,28 @@ def extract_by_date_proximity(soup, base_url, source_name):
                 break
 
         title = ''
-        title_el = (
-                container.select_one('h1, h2, h3, h4, h5, h6') or
-                container.select_one('a[href]') or
-                container.select_one('[class*="title"]') or
-                container.select_one('strong, b')
-        )
+        title_el = None
 
-        if title_el:
-            title = title_el.get_text(strip=True)
+        # Try selectors in priority order, but skip date-like results
+        for selector in ['h1, h2, h3, h4, h5, h6', 'a[href]', '[class*="title"]', 'strong, b']:
+            candidate = container.select_one(selector)
+            if candidate:
+                candidate_text = candidate.get_text(strip=True)
+                # Skip if it looks like a date, day name, or CTA
+                if candidate_text and len(candidate_text) > 3:
+                    lower = candidate_text.lower().strip()
+                    if text_has_date(candidate_text):
+                        continue
+                    if lower in ('monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+                                 'saturday', 'sunday', 'get tickets', 'buy tickets',
+                                 'buy now', 'book now', 'register', 'learn more', 'read more'):
+                        continue
+                    # Skip day-of-week abbreviations
+                    if re.match(r'^(mon|tue|wed|thu|fri|sat|sun)\w*$', lower):
+                        continue
+                    title = candidate_text
+                    title_el = candidate
+                    break
 
         if not title:
             texts = [t.strip() for t in container.stripped_strings]

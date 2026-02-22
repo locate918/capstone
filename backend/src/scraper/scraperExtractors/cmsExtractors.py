@@ -681,17 +681,63 @@ async def extract_recdesk_events(html: str, source_name: str, url: str = '', fut
             if isinstance(data, list):
                 items = data
             elif isinstance(data, dict):
-                items = data.get('CalendarItems', data.get('items', data.get('events', [])))
+                # Debug: show what keys the API actually returns
+                print(f"[RecDesk] API response keys: {list(data.keys())[:10]}")
+
+                # ASP.NET often wraps response in "d" which may be a JSON string
+                if 'd' in data and isinstance(data['d'], str):
+                    try:
+                        inner = json.loads(data['d'])
+                        if isinstance(inner, list):
+                            items = inner
+                        elif isinstance(inner, dict):
+                            data = inner  # unwrap and continue searching
+                            print(f"[RecDesk] Unwrapped 'd' string, inner keys: {list(data.keys())[:10]}")
+                    except:
+                        pass
+
+                # Try all known RecDesk/ASP.NET wrapper keys
+                if not items:
+                    for key in ['CalendarItems', 'd', 'Data', 'Result', 'value',
+                                'items', 'events', 'Items', 'Events', 'results']:
+                        candidate = data.get(key)
+                        if isinstance(candidate, list) and len(candidate) > 0:
+                            items = candidate
+                            print(f"[RecDesk] Found {len(items)} items under key '{key}'")
+                            break
+
+                # If still empty, check if any value is a large list
+                if not items:
+                    for key, val in data.items():
+                        if isinstance(val, list) and len(val) > 5:
+                            items = val
+                            print(f"[RecDesk] Found {len(items)} items under fallback key '{key}'")
+                            break
 
             print(f"[RecDesk] Parsing {len(items)} calendar items")
 
+            # Debug: show first item's keys
+            if items and isinstance(items[0], dict):
+                print(f"[RecDesk] First item keys: {list(items[0].keys())[:15]}")
+
             for item in items:
-                event_id = item.get('EventId') or item.get('eventId') or item.get('ID')
+                # Case-insensitive key lookup helper
+                def get_ci(d, *keys):
+                    """Get first matching key, case-insensitive."""
+                    lower_map = {k.lower(): k for k in d.keys()}
+                    for k in keys:
+                        real_key = lower_map.get(k.lower())
+                        if real_key and d.get(real_key):
+                            return d[real_key]
+                    return None
+
+                event_id = get_ci(item, 'EventId', 'eventId', 'ID', 'id', 'EventID', 'ItemId')
                 if event_id in seen_event_ids:
                     continue
                 seen_event_ids.add(event_id)
 
-                title = (item.get('EventName') or item.get('Title') or item.get('name') or '').strip()
+                title = (get_ci(item, 'EventName', 'Title', 'name', 'Name',
+                                'Summary', 'summary', 'Subject', 'subject') or '').strip()
                 if not title:
                     continue
 
@@ -699,21 +745,23 @@ async def extract_recdesk_events(html: str, source_name: str, url: str = '', fut
                 if title.startswith('!') or title.startswith('#'):
                     continue
 
-                start = item.get('StartDate') or item.get('start') or ''
-                end = item.get('EndDate') or item.get('end') or ''
+                start = get_ci(item, 'StartDate', 'start', 'Start', 'startDate',
+                               'EventDate', 'eventDate', 'Date') or ''
+                end = get_ci(item, 'EndDate', 'end', 'End', 'endDate') or ''
 
                 date_str = ''
                 if start:
                     try:
-                        dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                        dt = datetime.fromisoformat(str(start).replace('Z', '').split('+')[0])
                         date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
                     except:
-                        date_str = start
+                        date_str = str(start)
 
-                location = (item.get('LocationName') or item.get('Location') or
-                            item.get('location') or source_name)
+                location = (get_ci(item, 'LocationName', 'Location', 'location',
+                                   'FacilityName', 'Facility', 'Room') or source_name)
 
-                description = item.get('Description') or item.get('description') or ''
+                description = get_ci(item, 'Description', 'description', 'Notes',
+                                     'EventDescription', 'Body') or ''
                 if description:
                     description = re.sub(r'<[^>]+>', ' ', description)
                     description = re.sub(r'\s+', ' ', description).strip()[:200]
@@ -842,3 +890,248 @@ async def extract_ticketleap_events(html: str, source_name: str, url: str = '', 
 
     print(f"[TicketLeap] Extracted {len(events)} events")
     return events, True
+
+
+# ============================================================================
+# CIRCLE CINEMA (Wix SSR) — circlecinema.org
+# ============================================================================
+
+# Labels that indicate metadata fields, NOT movie titles
+_CC_LABEL_TEXTS = {'release date', 'rating', 'genre', 'run time', 'tickets', 'info'}
+
+
+def _cc_is_label(text: str) -> bool:
+    """Check if an h6's text is a metadata label rather than a movie title."""
+    return text.strip().lower().rstrip(':') in _CC_LABEL_TEXTS
+
+
+def _cc_parse_runtime_minutes(runtime_str: str) -> int | None:
+    """Convert runtime strings like '2h14min', '1h 30min', '1hr 24m' to minutes."""
+    if not runtime_str:
+        return None
+    runtime_str = runtime_str.strip().lower()
+    m = re.match(r'(\d+)\s*h(?:r|rs|ours?)?\s*(\d+)?\s*m(?:in)?', runtime_str)
+    if m:
+        hours = int(m.group(1))
+        mins = int(m.group(2)) if m.group(2) else 0
+        return hours * 60 + mins
+    m = re.match(r'(\d+)\s*m(?:in)?', runtime_str)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _cc_parse_date(date_str: str) -> str | None:
+    """Parse Circle Cinema date formats into ISO 8601 (default 7pm showtime)."""
+    date_str = date_str.strip()
+    if not date_str:
+        return None
+
+    # M/D/YY format (e.g., '2/20/26')
+    m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', date_str)
+    if m:
+        month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if year < 100:
+            year += 2000
+        try:
+            dt = datetime(year, month, day, 19, 0)
+            return dt.strftime('%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            pass
+
+    # "Mon DD, YYYY" formats
+    for fmt in ('%b %d, %Y', '%B %d, %Y', '%b %d %Y', '%m/%d/%Y'):
+        try:
+            dt = datetime.strptime(date_str, fmt).replace(hour=19, minute=0)
+            return dt.strftime('%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            continue
+
+    # Fallback to utility
+    result = extract_date_from_text(date_str)
+    return result
+
+
+def _cc_get_next_text(element) -> str:
+    """Get the next meaningful text content after an element."""
+    elem = element.next_sibling
+    while elem:
+        if hasattr(elem, 'get_text'):
+            t = elem.get_text(strip=True)
+            if t and t != '\u200b':
+                return t
+        elif hasattr(elem, 'strip'):
+            t = elem.strip()
+            if t and t != '\u200b':
+                return t
+        elem = elem.next_sibling
+
+    next_el = element.find_next_sibling()
+    if next_el:
+        return next_el.get_text(strip=True)
+    return ''
+
+
+def extract_circle_cinema(soup, base_url: str, source_name: str) -> list:
+    """
+    Extract events from circlecinema.org homepage (Wix SSR).
+
+    Parses h6-based movie card structure:
+      h6 (title) → p (description) → h6 RELEASE DATE → h6 RATING → GENRE → h6 RUN TIME
+      + ticket links (easy-ware-ticketing.com) and info links (/movies-events/)
+
+    Detection: 'circlecinema' in URL or (wixstatic + easy-ware-ticketing in HTML).
+    Called from universal.py (sync, DOM-based).
+    """
+    is_circle = 'circlecinema' in base_url.lower()
+    if not is_circle:
+        # Secondary: check HTML markers
+        html_text = str(soup)
+        if 'circlecinema.easy-ware-ticketing.com' in html_text and 'wixstatic.com' in html_text:
+            is_circle = True
+
+    if not is_circle:
+        return []
+
+    print(f"[CircleCinema] Detected Circle Cinema site, parsing movie cards...")
+
+    events = []
+    now = datetime.now()
+
+    # Skip section headers
+    SKIP_TITLES = {'NOW SHOWING', 'FEATURE FILMS NOW SHOWING', 'SPECIAL SCREENINGS',
+                   'COMING SOON', 'COMING ATTRACTIONS'}
+
+    all_h6 = soup.find_all('h6')
+    i = 0
+    while i < len(all_h6):
+        h6 = all_h6[i]
+        text = h6.get_text(strip=True)
+
+        # Skip empty, labels, section headers
+        if not text or _cc_is_label(text) or len(text) < 3 or text in SKIP_TITLES:
+            i += 1
+            continue
+
+        # This h6 is a movie title
+        title = text.strip().strip('\u201c\u201d"')
+
+        # Get description from sibling elements before next h6
+        desc_parts = []
+        elem = h6.next_sibling
+        while elem:
+            if hasattr(elem, 'name') and elem.name == 'h6':
+                break
+            if hasattr(elem, 'get_text'):
+                t = elem.get_text(strip=True)
+                if t and not _cc_is_label(t) and t != '\u200b':
+                    desc_parts.append(t)
+            elem = elem.next_sibling if hasattr(elem, 'next_sibling') else None
+        description = ' '.join(desc_parts)
+
+        # Scan subsequent h6s for labeled metadata
+        release_date = ''
+        rating = ''
+        runtime = ''
+        j = i + 1
+        while j < len(all_h6) and j < i + 12:
+            label_h6 = all_h6[j]
+            label_text = label_h6.get_text(strip=True).lower().rstrip(':')
+
+            if label_text == 'release date':
+                val = _cc_get_next_text(label_h6)
+                if val:
+                    release_date = val
+            elif label_text == 'rating':
+                val = _cc_get_next_text(label_h6)
+                if val and val != '\u200b':
+                    rating = val
+            elif label_text == 'run time':
+                val = _cc_get_next_text(label_h6)
+                if val and val != '\u200b':
+                    runtime = val
+            elif not _cc_is_label(label_text) and len(label_text) > 3:
+                break  # hit next movie title
+            j += 1
+
+        # Find genre from parent text context
+        genre = ''
+        parent = h6.parent
+        if parent:
+            parent_text = parent.get_text()
+            genre_match = re.search(r'GENRE\s*\n?\s*(.+?)(?:\n|RUN TIME|$)', parent_text)
+            if genre_match:
+                g = genre_match.group(1).strip()
+                if g and g != '\u200b':
+                    genre = g
+
+        # Find ticket/info URLs from nearby container
+        ticket_url = ''
+        info_url = ''
+        image_url = ''
+        container = h6.parent
+        for _ in range(5):
+            if container and container.parent:
+                links = container.find_all('a', href=True)
+                if len(links) >= 1:
+                    break
+                container = container.parent
+
+        if container:
+            for link in container.find_all('a', href=True):
+                href = link['href']
+                if 'easy-ware-ticketing.com' in href:
+                    ticket_url = href
+                elif '/movies-events/' in href:
+                    info_url = href
+                    if not info_url.startswith('http'):
+                        info_url = urljoin('https://www.circlecinema.org', info_url)
+
+            for img in container.find_all('img', src=True):
+                if 'wixstatic.com' in img['src']:
+                    image_url = img['src']
+                    break
+
+        # Parse date
+        start_time = _cc_parse_date(release_date) if release_date else None
+
+        # Future filter
+        if start_time:
+            try:
+                dt = datetime.fromisoformat(start_time)
+                if dt < now.replace(hour=0, minute=0, second=0, microsecond=0):
+                    i = j if j > i else i + 1
+                    continue
+            except:
+                pass
+
+        source_url = info_url or ticket_url or base_url
+
+        # Build description with metadata
+        meta_parts = []
+        if rating and rating != '\u200b':
+            meta_parts.append(f"Rated {rating}")
+        if genre:
+            meta_parts.append(genre)
+        if runtime:
+            meta_parts.append(runtime)
+        full_desc = f"{description} ({' | '.join(meta_parts)})" if description and meta_parts else description or ' | '.join(meta_parts) or 'Showing at Circle Cinema.'
+
+        event = {
+            'title': title,
+            'description': full_desc,
+            'start_time': start_time or '',
+            'source_url': source_url,
+            'venue': 'Circle Cinema',
+            'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
+            'image_url': image_url,
+        }
+        if ticket_url and ticket_url != source_url:
+            event['ticket_url'] = ticket_url
+
+        events.append(event)
+        print(f"  [CircleCinema] Found: {title} ({release_date})")
+        i = j if j > i else i + 1
+
+    print(f"[CircleCinema] Total: {len(events)} events extracted")
+    return events
