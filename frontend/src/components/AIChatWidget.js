@@ -154,7 +154,11 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
                     li: ({node, ...props}) => <li {...props} className="my-1" />,
                     p: ({node, ...props}) => <p {...props} className="my-2 last:mb-0 first:mt-0" />,
                     strong: ({node, ...props}) => <strong {...props} className="font-bold text-slate-900" />,
-                    a: ({node, ...props}) => <a {...props} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" />
+                    a: ({node, children, ...props}) => (
+                      <a {...props} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    )
                   }}
                 >
                   {msg.text}
