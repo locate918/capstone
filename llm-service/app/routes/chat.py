@@ -1,14 +1,21 @@
 import os
 import httpx
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import gemini
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
-CENTRAL = ZoneInfo("America/Chicago")
+
+try:
+    CENTRAL = ZoneInfo("America/Chicago")
+except ZoneInfoNotFoundError:
+    raise RuntimeError(
+        "Time zone data not found. Please install the 'tzdata' package: "
+        "pip install tzdata"
+    )
 
 async def get_user_profile(user_id: str):
     async with httpx.AsyncClient() as client:
@@ -65,7 +72,7 @@ async def execute_search_events(args: dict):
                         try:
                             dt = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
                             local_dt = dt.astimezone(CENTRAL)
-                            display_time = local_dt.strftime("%A, %B %d, %Y at %I:%M %p CST")
+                            display_time = local_dt.strftime("%A, %B %d, %Y at %I:%M %p %Z")
                         except Exception:
                             pass
 
