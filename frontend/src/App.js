@@ -23,6 +23,7 @@
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Sparkles, Loader2, Map as MapIcon, List, Compass } from 'lucide-react';
 import { fetchEvents, smartSearch } from './services/api';
+import { useAuth } from './context/AuthContext';
 
 // Components
 import EventCard from './components/EventCard';
@@ -30,6 +31,7 @@ import EventModal from './components/EventModal';
 import Header from './components/Header'; 
 import TulsaMap from './components/TulsaMap';
 import AIChatWidget from './components/AIChatWidget';
+import AuthModal from './components/AuthModal';
 
 import './index.css';
 
@@ -62,6 +64,8 @@ const SLIDE_INTERVAL = 5000;
 // =============================================================================
 
 export default function App() {
+  const { user, signOut } = useAuth();
+
   // --- STATE ---
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +74,14 @@ export default function App() {
   const [hoveredEventId, setHoveredEventId] = useState(null); 
   const [viewMode, setViewMode] = useState('list'); 
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    const { error } = await signOut();
+    if (error) {
+      console.error("Sign out failed:", error.message);
+    }
+  };
 
   // --- EFFECTS ---
 
@@ -130,7 +142,13 @@ export default function App() {
       
       {/* ===== FIXED HEADER ===== */}
       <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
-        <Header query={query} setQuery={setQuery} />
+        <Header
+          query={query}
+          setQuery={setQuery}
+          user={user}
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onSignOut={handleSignOut}
+        />
       </div>
 
       {/* ===== HERO SECTION (shown when no search query) ===== */}
@@ -181,7 +199,7 @@ export default function App() {
       }`}>
         
         {/* AI Chat Widget (only on home page) */}
-        {!query && <AIChatWidget />}
+        {!query && <AIChatWidget userId={user?.id} />}
         
         {/* Results Header */}
         <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-12 pb-6 border-b border-slate-200/60 animate-fade-up delay-300 gap-4">
@@ -284,6 +302,7 @@ export default function App() {
 
       {/* ===== EVENT MODAL ===== */}
       <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </div>
   );
 }

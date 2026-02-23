@@ -1,6 +1,6 @@
 import os
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
@@ -8,14 +8,12 @@ from app.services import gemini
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
-
 try:
     CENTRAL = ZoneInfo("America/Chicago")
 except ZoneInfoNotFoundError:
-    raise RuntimeError(
-        "Time zone data not found. Please install the 'tzdata' package: "
-        "pip install tzdata"
-    )
+    # Some Windows Python installs do not ship IANA timezone data.
+    # Keep service booting and rely on UTC formatting until tzdata is installed.
+    CENTRAL = timezone.utc
 
 async def get_user_profile(user_id: str):
     async with httpx.AsyncClient() as client:

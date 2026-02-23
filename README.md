@@ -378,7 +378,7 @@ GET /api/events/search?q=jazz&category=concerts&price_max=30
 DATABASE_URL=postgresql://postgres:PASSWORD_HERE@db.kpihjwzqtwqlschmtekx.supabase.co:5432/postgres
 LLM_SERVICE_URL=http://localhost:8001
 ```
-> **Get the password from Will or another team member**
+> **Get the password from Will or from another team member**
 
 ### `llm-service/.env`
 ```
@@ -391,8 +391,12 @@ BACKEND_URL=http://localhost:3000
 ```
 PORT=5173
 REACT_APP_BACKEND_URL=http://localhost:3000
+REACT_APP_LLM_SERVICE_URL=http://localhost:8001
+REACT_APP_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 REACT_APP_USE_MOCKS=false
 ```
+> **Get the Supabase URL and Anon Key from Jordi or from another team member**
 
 ---
 
