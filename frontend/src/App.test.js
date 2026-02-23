@@ -5,6 +5,13 @@ jest.mock('./services/api', () => ({
   smartSearch: jest.fn().mockResolvedValue({ events: [], parsed: {} }),
 }));
 
+jest.mock('./context/AuthContext', () => ({
+  useAuth: () => ({
+    user: null,
+    signOut: jest.fn().mockResolvedValue({ error: null }),
+  }),
+}));
+
 jest.mock('./components/Header', () => function MockHeader() {
   return <div>Header</div>;
 });
