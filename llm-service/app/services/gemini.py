@@ -265,6 +265,20 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - "Next week" means 7 days from Current Date.
     - Always resolve relative dates to actual ISO 8601 dates.
     
+    CATEGORIZATION RULES:
+    - Assign AS MANY categories as possible based on the title, description, and venue.
+    - Use specific tags (e.g., "Rock", "Jazz", "Stand-up Comedy", "Yoga") AND broad categories (e.g., "Music", "Arts", "Health", "Nightlife").
+    - If an event is a concert, include "Music", the genre (e.g. "Country"), and "Concert".
+    - If an event is at a bar/brewery, include "Nightlife", "Drinks", "Social".
+    - If family friendly, include "Family", "Kids".
+    - Common categories to use: Music, Arts, Nightlife, Food, Drink, Family, Sports, Education, Business, Community, Festival, Market, Health, Comedy, Theatre.
+    
+    OUTDOOR / FAMILY FRIENDLY RULES:
+    - Set outdoor=true if the venue is a Park, Garden, Green, Amphitheater, Zoo, or if the description mentions "open air", "patio", "lawn".
+    - Set outdoor=false if the venue is a Hall, Center, Arena, Club, Theater, Museum (unless specified otherwise).
+    - Set family_friendly=true if the event mentions "kids", "children", "all ages", "family", or is at a Library, Zoo, or Park.
+    - Set family_friendly=false if the event is 18+, 21+, at a Bar/Nightclub (unless "all ages" is stated), or involves burlesque/adult themes.
+
     Output Format: A JSON list of objects with these exact keys:
     - title (string)
     - venue (string)
@@ -277,8 +291,8 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - price_min (number or null)
     - price_max (number or null)
     - description (string). Rules:
-        1. If the source has a description, use it.
-        2. If NO description exists, generate a brief, natural summary based on the title/venue.
+        1. ALWAYS generate a concise, engaging summary (max 2-3 sentences) based on the available text and event attributes.
+        2. Do NOT copy long descriptions verbatim. Clean up HTML, remove promotional fluff, and focus on what the event is.
     - categories (list of strings, e.g. ["music", "jazz"])
     - outdoor (boolean or null)
     - family_friendly (boolean or null)
