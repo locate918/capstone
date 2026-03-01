@@ -213,6 +213,20 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
 // =============================================================================
 
 /**
+ * Strip HTML tags and decode HTML entities from description text.
+ * Safety net for data that was scraped before the scraper fix.
+ */
+const cleanHtml = (text) => {
+    if (!text) return "";
+    // Pass 1: decode HTML entities (&lt;p&gt; → <p>)
+    const decoded = new DOMParser().parseFromString(text, "text/html").body.textContent || "";
+    // Pass 2: strip actual HTML tags (<p> → clean text)
+    const clean = new DOMParser().parseFromString(decoded, "text/html").body.textContent || "";
+    // Pass 3: trim trailing truncation artifacts (& , - , etc.)
+    return clean.replace(/[\s&\-,;:]+$/, '').trim() + (clean.length >= 195 ? '…' : '');
+};
+
+/**
  * Transform backend event format to frontend format.
  * Maps database fields to what the UI components expect.
  *
@@ -224,7 +238,7 @@ const transformBackendEvents = (events) => {
     return events.map((event) => ({
         id: event.id,
         title: event.title,
-        summary: event.description || "",
+        summary: cleanHtml(event.description),
         date_iso: event.start_time,
         location: event.venue || event.location || "TBA",
         venue_address: event.venue_address,
