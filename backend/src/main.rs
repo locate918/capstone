@@ -16,11 +16,11 @@ mod routes;      // API endpoint handlers (events, users, chat)
 // IMPORTS
 // =============================================================================
 
-use axum::http::header;
+use axum::http::{header, HeaderValue, Method};
 use axum::Router;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 // =============================================================================
 // MAIN FUNCTION
@@ -52,9 +52,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     // STEP 5: Configure CORS
+    // Allow both local dev and production frontend origins.
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
+        .allow_origin([
+            "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+            "http://localhost:3001".parse::<HeaderValue>().unwrap(),
+            "https://capstone-nine-lemon.vercel.app".parse::<HeaderValue>().unwrap(),
+        ])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::CONTENT_TYPE,
             header::AUTHORIZATION,
@@ -67,12 +72,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(pool);
 
     // STEP 7: Define Server Address
-    /* let port: u16 = std::env::var("PORT")
-       .unwrap_or_else(|_| "3000".to_string())
+    // Read PORT from environment (Railway sets this automatically).
+    // Bind to 0.0.0.0 so the container is reachable externally.
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "3000".to_string())
         .parse()
-       .expect("PORT must be a number");
-     let addr = SocketAddr::from(([0, 0, 0, 0], port)); */
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        .expect("PORT must be a number");
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("Server running on http://{}", addr);
 
     // STEP 8: Start the Server
