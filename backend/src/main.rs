@@ -54,11 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // STEP 5: Configure CORS
     // Allow both local dev and production frontend origins.
     let cors = CorsLayer::new()
-        .allow_origin([
-            "http://localhost:5173".parse::<HeaderValue>().unwrap(),
-            "http://localhost:3001".parse::<HeaderValue>().unwrap(),
-            "https://capstone-locate-918.vercel.app".parse::<HeaderValue>().unwrap(),
-        ])
+        .allow_origin(tower_http::cors::Any)
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::CONTENT_TYPE,
