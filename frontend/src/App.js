@@ -7,7 +7,10 @@
  * 2. Hero Section (slideshow, shown when no search query)
  * 3. Main Content
  *    - AI Chat Widget (Tully)
+ *    - Tab Selection (This Week / All Events)
+ *    - Date Filter (From / To)
  *    - Events List + Map (two-column layout)
+ *    - Pagination
  * 4. Event Modal (overlay for event details)
  * 
  * STATE:
@@ -18,17 +21,21 @@
  * - hoveredEventId: For map marker highlighting
  * - viewMode: 'list' | 'map' (mobile toggle)
  * - currentSlide: Index for hero slideshow
+ * - activeTab: 'thisWeek' | 'allEvents'
+ * - currentPage: Current pagination page (1-indexed)
+ * - dateFrom: Start date filter (YYYY-MM-DD string or '')
+ * - dateTo: End date filter (YYYY-MM-DD string or '')
  */
 
-import React, { useState, useEffect, useLayoutEffect } from 'react';
-import { Sparkles, Loader2, Map as MapIcon, List, Compass } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X } from 'lucide-react';
 import { fetchEvents, smartSearch } from './services/api';
 import { useAuth } from './context/AuthContext';
 
 // Components
 import EventCard from './components/EventCard';
 import EventModal from './components/EventModal';
-import Header from './components/Header'; 
+import Header from './components/Header';
 import TulsaMap from './components/TulsaMap';
 import AIChatWidget from './components/AIChatWidget';
 import AuthModal from './components/AuthModal';
@@ -41,268 +48,600 @@ import './index.css';
 
 /** Hero slideshow images (local assets with Unsplash fallbacks) */
 const HERO_SLIDES = [
-  '/assets/TulsaSlideshow/slide1.jpg',
-  '/assets/TulsaSlideshow/slide2.jpg',
-  '/assets/TulsaSlideshow/slide3.jpg',
-  '/assets/TulsaSlideshow/slide4.jpg',
-  '/assets/TulsaSlideshow/slide5.jpg',
-  '/assets/TulsaSlideshow/slide6.jpg',
+    '/assets/TulsaSlideshow/slide1.jpg',
+    '/assets/TulsaSlideshow/slide2.jpg',
+    '/assets/TulsaSlideshow/slide3.jpg',
+    '/assets/TulsaSlideshow/slide4.jpg',
+    '/assets/TulsaSlideshow/slide5.jpg',
+    '/assets/TulsaSlideshow/slide6.jpg',
 ];
 
 const FALLBACK_SLIDES = [
-  "https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1950&q=80", 
-  "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?auto=format&fit=crop&w=1950&q=80", 
-  "https://images.unsplash.com/photo-1572576578056-b6b553e14449?auto=format&fit=crop&w=1950&q=80", 
-  "https://images.unsplash.com/photo-1557065963-356c94e022bf?auto=format&fit=crop&w=1950&q=80" 
+    "https://images.unsplash.com/photo-1497215728101-856f4ea42174?auto=format&fit=crop&w=1950&q=80",
+    "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?auto=format&fit=crop&w=1950&q=80",
+    "https://images.unsplash.com/photo-1572576578056-b6b553e14449?auto=format&fit=crop&w=1950&q=80",
+    "https://images.unsplash.com/photo-1557065963-356c94e022bf?auto=format&fit=crop&w=1950&q=80"
 ];
 
 /** Slideshow interval in milliseconds */
 const SLIDE_INTERVAL = 5000;
+
+/** Events per page for pagination */
+const EVENTS_PER_PAGE = 6;
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+/**
+ * Get the start and end of the current week (Sunday to Saturday)
+ */
+const getThisWeekRange = () => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    return { start: startOfWeek, end: endOfWeek };
+};
+
+/**
+ * Filter events to only those happening this week
+ */
+const filterThisWeekEvents = (events) => {
+    const { start, end } = getThisWeekRange();
+    return events.filter(event => {
+        if (!event.date_iso) return false;
+        const eventDate = new Date(event.date_iso);
+        return eventDate >= start && eventDate <= end;
+    });
+};
+
+/**
+ * Filter events by date range
+ */
+const filterByDateRange = (events, fromDate, toDate) => {
+    return events.filter(event => {
+        if (!event.date_iso) return false;
+        const eventDate = new Date(event.date_iso);
+
+        if (fromDate) {
+            const from = new Date(fromDate);
+            from.setHours(0, 0, 0, 0);
+            if (eventDate < from) return false;
+        }
+
+        if (toDate) {
+            const to = new Date(toDate);
+            to.setHours(23, 59, 59, 999);
+            if (eventDate > to) return false;
+        }
+
+        return true;
+    });
+};
 
 // =============================================================================
 // MAIN APP COMPONENT
 // =============================================================================
 
 export default function App() {
-  const { user, signOut } = useAuth();
+    const { user, signOut } = useAuth();
 
-  // --- STATE ---
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [hoveredEventId, setHoveredEventId] = useState(null); 
-  const [viewMode, setViewMode] = useState('list'); 
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+    // --- STATE ---
+    const [events, setEvents] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [query, setQuery] = useState('');
+    const [selectedEvent, setSelectedEvent] = useState(null);
+    const [hoveredEventId, setHoveredEventId] = useState(null);
+    const [viewMode, setViewMode] = useState('list');
+    const [currentSlide, setCurrentSlide] = useState(0);
+    const [isAuthOpen, setIsAuthOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('thisWeek');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [showDateFilter, setShowDateFilter] = useState(false);
 
-  const handleSignOut = async () => {
-    const { error } = await signOut();
-    if (error) {
-      console.error("Sign out failed:", error.message);
-    }
-  };
-
-  // --- EFFECTS ---
-
-  // Slideshow auto-advance timer
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % HERO_SLIDES.length);
-    }, SLIDE_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Scroll to top when search query changes
-  useLayoutEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  }, [query]);
-
-  // Fetch events (all or search results)
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        let data;
-        if (query) {
-          const result = await smartSearch(query);
-          data = result.events;
-        } else {
-          data = await fetchEvents();
+    const handleSignOut = async () => {
+        const { error } = await signOut();
+        if (error) {
+            console.error("Sign out failed:", error.message);
         }
-        setEvents(data);
-      } catch (err) {
-        console.error("Failed to fetch events:", err);
-        setEvents([]);
-      } finally {
-        setLoading(false);
-      }
     };
-    
-    setLoading(true);
-    loadData();
-  }, [query]);
 
-  // --- DERIVED STATE ---
+    // --- EFFECTS ---
 
-  // Client-side filtering (backup for API search)
-  const filteredEvents = events.filter(e => {
-    if (!query) return true;
-    const searchStr = query.toLowerCase();
+    // Slideshow auto-advance timer
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+        }, SLIDE_INTERVAL);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Scroll to top when search query changes
+    useLayoutEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }, [query]);
+
+    // Reset to page 1 when tab changes, query changes, or date filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, query, dateFrom, dateTo]);
+
+    // Clear date filter when switching to "This Week" tab
+    useEffect(() => {
+        if (activeTab === 'thisWeek') {
+            setDateFrom('');
+            setDateTo('');
+            setShowDateFilter(false);
+        }
+    }, [activeTab]);
+
+    // Fetch events (all or search results)
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                let data;
+                if (query) {
+                    const result = await smartSearch(query);
+                    data = result.events;
+                } else {
+                    data = await fetchEvents();
+                }
+                setEvents(data);
+            } catch (err) {
+                console.error("Failed to fetch events:", err);
+                setEvents([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        setLoading(true);
+        loadData();
+    }, [query]);
+
+    // --- DERIVED STATE ---
+
+    // Client-side filtering (backup for API search)
+    const filteredEvents = useMemo(() => {
+        let filtered = events;
+
+        // Apply search filter if query exists
+        if (query) {
+            const searchStr = query.toLowerCase();
+            filtered = filtered.filter(e =>
+                e.title?.toLowerCase().includes(searchStr) ||
+                e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
+                e.summary?.toLowerCase().includes(searchStr) ||
+                e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
+            );
+        }
+
+        return filtered;
+    }, [events, query]);
+
+    // Apply tab filter (This Week vs All Events) and date range filter
+    const tabFilteredEvents = useMemo(() => {
+        if (query) {
+            // During search, apply date filter if set
+            return (dateFrom || dateTo)
+                ? filterByDateRange(filteredEvents, dateFrom, dateTo)
+                : filteredEvents;
+        }
+
+        if (activeTab === 'thisWeek') {
+            return filterThisWeekEvents(filteredEvents);
+        }
+
+        // "All Events" tab - apply date filter if set
+        return (dateFrom || dateTo)
+            ? filterByDateRange(filteredEvents, dateFrom, dateTo)
+            : filteredEvents;
+    }, [filteredEvents, activeTab, query, dateFrom, dateTo]);
+
+    // Pagination calculations
+    const totalPages = Math.ceil(tabFilteredEvents.length / EVENTS_PER_PAGE);
+    const paginatedEvents = useMemo(() => {
+        const startIndex = (currentPage - 1) * EVENTS_PER_PAGE;
+        return tabFilteredEvents.slice(startIndex, startIndex + EVENTS_PER_PAGE);
+    }, [tabFilteredEvents, currentPage]);
+
+    // Count for "This Week" tab badge
+    const thisWeekCount = useMemo(() => filterThisWeekEvents(events).length, [events]);
+
+    // Check if date filter is active
+    const hasDateFilter = dateFrom || dateTo;
+
+    // --- HANDLERS ---
+    const goToPage = (page) => {
+        setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+        window.scrollTo({ top: 400, behavior: 'smooth' });
+    };
+
+    const clearDateFilter = () => {
+        setDateFrom('');
+        setDateTo('');
+    };
+
+    // --- RENDER ---
     return (
-      e.title?.toLowerCase().includes(searchStr) ||
-      e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
-      e.summary?.toLowerCase().includes(searchStr) ||
-      e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
-    );
-  });
+        <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
 
-  // --- RENDER ---
-  return (
-    <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
-      
-      {/* ===== FIXED HEADER ===== */}
-      <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
-        <Header
-          query={query}
-          setQuery={setQuery}
-          user={user}
-          onOpenAuth={() => setIsAuthOpen(true)}
-          onSignOut={handleSignOut}
-        />
-      </div>
-
-      {/* ===== HERO SECTION (shown when no search query) ===== */}
-      {!query && (
-        <section className="relative h-[65vh] min-h-[400px] flex items-center justify-center py-12 overflow-hidden mt-[90px] md:mt-[202px] lg:mt-[234px] xl:mt-[250px]"> 
-          {/* Slideshow Background */}
-          <div className="absolute inset-0 z-0">
-            {HERO_SLIDES.map((slide, index) => (
-              <div
-                key={index}
-                className={`absolute inset-0 w-full h-full transition-opacity duration-[2000ms] ease-in-out ${
-                  index === currentSlide ? 'opacity-100' : 'opacity-0'
-                }`}
-              >
-                <img 
-                  src={slide} 
-                  alt="Tulsa" 
-                  className="w-full h-full object-cover object-top"
-                  onError={(e) => {
-                    e.target.onerror = null; 
-                    e.target.src = FALLBACK_SLIDES[index % FALLBACK_SLIDES.length];
-                  }}
+            {/* ===== FIXED HEADER ===== */}
+            <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
+                <Header
+                    query={query}
+                    setQuery={setQuery}
+                    user={user}
+                    onOpenAuth={() => setIsAuthOpen(true)}
+                    onSignOut={handleSignOut}
                 />
-              </div>
-            ))}
-            {/* Overlays */}
-            <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]"></div>
-            <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-[#f8f1e0]"></div>
-          </div>
-
-          {/* Hero Text */}
-          <div className="max-w-7xl mx-auto px-6 lg:px-12 relative z-10">
-            <div className="max-w-4xl mx-auto text-center opacity-0 animate-fade-up">
-              <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 mb-8 leading-[1.1] text-outline-gold">
-                Experience Tulsa <br />
-              </h1>
-              <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto leading-relaxed font-light opacity-0 animate-fade-up delay-100 bg-white/75 backdrop-blur-sm rounded-xl p-2 inline-block">
-                A curated collection of Tulsa's culture, places, and moments brought together in one place.
-              </p>
             </div>
-          </div>
-        </section>
-      )}
 
-      {/* ===== MAIN CONTENT ===== */}
-      <main className={`max-w-7xl mx-auto px-6 pb-24 relative z-10 transition-all duration-300 ${
-        query ? 'pt-[130px] md:pt-[242px] lg:pt-[274px] xl:pt-[290px]' : 'pt-12'
-      }`}>
-        
-        {/* AI Chat Widget (only on home page) */}
-        {!query && <AIChatWidget userId={user?.id} />}
-        
-        {/* Results Header */}
-        <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-12 pb-6 border-b border-slate-200/60 animate-fade-up delay-300 gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-3xl font-serif tracking-tight text-slate-900">
-              {query ? `Curated Results: "${query}"` : 'Trending Collections'}
-            </h2>
-            <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
-              {filteredEvents.length} Experiences Found
-            </span>
-          </div>
-
-          {/* Mobile View Toggle */}
-          <div className="flex lg:hidden bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <List size={16} />
-              List
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${
-                viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              <MapIcon size={16} />
-              Map
-            </button>
-          </div>
-        </div>
-
-        {/* ===== DATA VIEW ===== */}
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <Loader2 className="animate-spin text-[#C5A028]" size={40} />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
-            
-            {/* LEFT: Events List */}
-            <div className={`${viewMode === 'list' ? 'block' : 'hidden lg:block'}`}>
-              {filteredEvents.length > 0 ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-8">
-                  {filteredEvents.map((event, index) => (
-                    <div 
-                      key={event.id}
-                      className="relative z-10 transition-transform duration-300 hover:-translate-y-1"
-                      onMouseEnter={() => setHoveredEventId(event.id)}
-                      onMouseLeave={() => setHoveredEventId(null)}
-                    >
-                      <EventCard 
-                        event={event} 
-                        index={index}
-                        onClick={setSelectedEvent} 
-                      />
+            {/* ===== HERO SECTION (shown when no search query) ===== */}
+            {!query && (
+                <section className="relative h-[65vh] min-h-[400px] flex items-center justify-center py-12 overflow-hidden mt-[90px] md:mt-[202px] lg:mt-[234px] xl:mt-[250px]">
+                    {/* Slideshow Background */}
+                    <div className="absolute inset-0 z-0">
+                        {HERO_SLIDES.map((slide, index) => (
+                            <div
+                                key={index}
+                                className={`absolute inset-0 w-full h-full transition-opacity duration-[2000ms] ease-in-out ${index === currentSlide ? 'opacity-100' : 'opacity-0'
+                                    }`}
+                            >
+                                <img
+                                    src={slide}
+                                    alt="Tulsa"
+                                    className="w-full h-full object-cover object-top"
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = FALLBACK_SLIDES[index % FALLBACK_SLIDES.length];
+                                    }}
+                                />
+                            </div>
+                        ))}
+                        {/* Overlays */}
+                        <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]"></div>
+                        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-[#f8f1e0]"></div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                /* Empty State */
-                <div className="flex flex-col items-center justify-center py-24 bg-white/40 rounded-[2rem] border border-dashed border-slate-300 text-center">
-                  <div className="bg-white p-6 rounded-full mb-6 shadow-xl shadow-slate-200/50">
-                    <Sparkles className="text-[#D4AF37]" size={32} />
-                  </div>
-                  <h3 className="text-slate-900 font-serif text-2xl mb-2">No experiences found</h3>
-                  <p className="text-slate-500 mb-6">Try adjusting your search criteria.</p>
-                  <button 
-                    onClick={() => setQuery('')} 
-                    className="text-xs font-bold tracking-widest border-b-2 border-[#D4AF37] pb-1 text-slate-900 hover:text-[#C5A028] transition-all uppercase"
-                  >
-                    Clear Filters
-                  </button>
-                </div>
-              )}
-            </div>
 
-            {/* RIGHT: Map */}
-            <div className={`${viewMode === 'map' ? 'block' : 'hidden lg:block'}`}>
-              <div className="lg:sticky lg:top-[260px] animate-fade-up delay-200">
-                <TulsaMap 
-                  events={filteredEvents} 
-                  onMarkerClick={setSelectedEvent} 
-                  hoveredEventId={hoveredEventId}
-                  className="h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white" 
-                />
-                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400 font-medium uppercase tracking-widest">
-                  <Compass size={14} />
-                  <span>Interactive Discovery Map</span>
+                    {/* Hero Text */}
+                    <div className="max-w-7xl mx-auto px-6 lg:px-12 relative z-10">
+                        <div className="max-w-4xl mx-auto text-center opacity-0 animate-fade-up">
+                            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 mb-8 leading-[1.1] text-outline-gold">
+                                Experience Tulsa <br />
+                            </h1>
+                            <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto leading-relaxed font-light opacity-0 animate-fade-up delay-100 bg-white/75 backdrop-blur-sm rounded-xl p-2 inline-block">
+                                A curated collection of Tulsa's culture, places, and moments brought together in one place.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {/* ===== MAIN CONTENT ===== */}
+            <main className={`max-w-7xl mx-auto px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[130px] md:pt-[242px] lg:pt-[274px] xl:pt-[290px]' : 'pt-12'
+                }`}>
+
+                {/* AI Chat Widget (only on home page) */}
+                {!query && <AIChatWidget userId={user?.id} />}
+
+                {/* Results Header */}
+                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 pb-6 border-b border-slate-200/60 animate-fade-up delay-300 gap-4">
+                    <div className="flex flex-col gap-1">
+                        {query ? (
+                            <>
+                                <h2 className="text-3xl font-serif tracking-tight text-slate-900">
+                                    Curated Results: "{query}"
+                                </h2>
+                                <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
+                                    {filteredEvents.length} Experiences Found
+                                </span>
+                            </>
+                        ) : (
+                            /* Tab Buttons */
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setActiveTab('thisWeek')}
+                                    className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'thisWeek'
+                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                        }`}
+                                >
+                                    <Calendar size={18} />
+                                    This Week in Tulsa
+                                    <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${activeTab === 'thisWeek'
+                                        ? 'bg-white/20 text-white'
+                                        : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                        {thisWeekCount}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('allEvents')}
+                                    className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'allEvents'
+                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                        }`}
+                                >
+                                    <LayoutGrid size={18} />
+                                    All Events
+                                    <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${activeTab === 'allEvents'
+                                        ? 'bg-white/20 text-white'
+                                        : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                        {events.length}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Mobile View Toggle */}
+                    <div className="flex lg:hidden bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
+                                }`}
+                        >
+                            <List size={16} />
+                            List
+                        </button>
+                        <button
+                            onClick={() => setViewMode('map')}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
+                                }`}
+                        >
+                            <MapIcon size={16} />
+                            Map
+                        </button>
+                    </div>
                 </div>
-              </div>
-            </div>
 
-          </div>
-        )}
-      </main>
+                {/* ===== DATE FILTER ===== */}
+                {(activeTab === 'allEvents' || query) && (
+                    <div className="mb-6 animate-fade-up">
+                        {/* Filter Toggle Button */}
+                        <button
+                            onClick={() => setShowDateFilter(!showDateFilter)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all mb-3 ${hasDateFilter
+                                    ? 'bg-[#D4AF37] text-white'
+                                    : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50'
+                                }`}
+                        >
+                            <Filter size={16} />
+                            {hasDateFilter ? 'Date Filter Active' : 'Filter by Date'}
+                            {hasDateFilter && (
+                                <span
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        clearDateFilter();
+                                    }}
+                                    className="ml-1 p-0.5 hover:bg-white/20 rounded-full cursor-pointer"
+                                >
+                                    <X size={14} />
+                                </span>
+                            )}
+                        </button>
 
-      {/* ===== EVENT MODAL ===== */}
-      <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-    </div>
-  );
+                        {/* Date Filter Inputs */}
+                        {showDateFilter && (
+                            <div className="flex flex-wrap items-center gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="dateFrom" className="text-sm font-medium text-slate-600">
+                                        From:
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="dateFrom"
+                                        value={dateFrom}
+                                        onChange={(e) => setDateFrom(e.target.value)}
+                                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="dateTo" className="text-sm font-medium text-slate-600">
+                                        To:
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="dateTo"
+                                        value={dateTo}
+                                        onChange={(e) => setDateTo(e.target.value)}
+                                        min={dateFrom || undefined}
+                                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
+                                    />
+                                </div>
+                                {hasDateFilter && (
+                                    <button
+                                        onClick={clearDateFilter}
+                                        className="text-sm text-slate-500 hover:text-[#D4AF37] transition-colors underline"
+                                    >
+                                        Clear dates
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Page Info */}
+                {!loading && tabFilteredEvents.length > 0 && (
+                    <div className="mb-6 text-sm text-slate-500">
+                        Showing {((currentPage - 1) * EVENTS_PER_PAGE) + 1}-{Math.min(currentPage * EVENTS_PER_PAGE, tabFilteredEvents.length)} of {tabFilteredEvents.length} events
+                        {hasDateFilter && (
+                            <span className="ml-2 text-[#D4AF37]">
+                                (filtered by date)
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* ===== DATA VIEW ===== */}
+                {loading ? (
+                    <div className="flex justify-center items-center py-20">
+                        <Loader2 className="animate-spin text-[#C5A028]" size={40} />
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+
+                        {/* LEFT: Events List */}
+                        <div className={`${viewMode === 'list' ? 'block' : 'hidden lg:block'}`}>
+                            {paginatedEvents.length > 0 ? (
+                                <>
+                                    <div className="grid md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-8">
+                                        {paginatedEvents.map((event, index) => (
+                                            <div
+                                                key={event.id}
+                                                className="relative z-10 transition-transform duration-300 hover:-translate-y-1"
+                                                onMouseEnter={() => setHoveredEventId(event.id)}
+                                                onMouseLeave={() => setHoveredEventId(null)}
+                                            >
+                                                <EventCard
+                                                    event={event}
+                                                    index={index}
+                                                    onClick={setSelectedEvent}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    {totalPages > 1 && (
+                                        <div className="flex items-center justify-center gap-2 mt-12">
+                                            {/* Previous Button */}
+                                            <button
+                                                onClick={() => goToPage(currentPage - 1)}
+                                                disabled={currentPage === 1}
+                                                className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${currentPage === 1
+                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                    : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
+                                                    }`}
+                                            >
+                                                <ChevronLeft size={18} />
+                                                Prev
+                                            </button>
+
+                                            {/* Page Numbers */}
+                                            <div className="flex items-center gap-1">
+                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                                                    // Show first page, last page, current page, and pages around current
+                                                    const showPage = page === 1 ||
+                                                        page === totalPages ||
+                                                        Math.abs(page - currentPage) <= 1;
+
+                                                    // Show ellipsis
+                                                    const showEllipsisBefore = page === currentPage - 2 && currentPage > 3;
+                                                    const showEllipsisAfter = page === currentPage + 2 && currentPage < totalPages - 2;
+
+                                                    if (showEllipsisBefore || showEllipsisAfter) {
+                                                        return <span key={page} className="px-2 text-slate-400">...</span>;
+                                                    }
+
+                                                    if (!showPage) return null;
+
+                                                    return (
+                                                        <button
+                                                            key={page}
+                                                            onClick={() => goToPage(page)}
+                                                            className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${currentPage === page
+                                                                ? 'bg-[#D4AF37] text-white shadow-lg'
+                                                                : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
+                                                                }`}
+                                                        >
+                                                            {page}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Next Button */}
+                                            <button
+                                                onClick={() => goToPage(currentPage + 1)}
+                                                disabled={currentPage === totalPages}
+                                                className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${currentPage === totalPages
+                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                    : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
+                                                    }`}
+                                            >
+                                                Next
+                                                <ChevronRight size={18} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                /* Empty State */
+                                <div className="flex flex-col items-center justify-center py-24 bg-white/40 rounded-[2rem] border border-dashed border-slate-300 text-center">
+                                    <div className="bg-white p-6 rounded-full mb-6 shadow-xl shadow-slate-200/50">
+                                        <Sparkles className="text-[#D4AF37]" size={32} />
+                                    </div>
+                                    <h3 className="text-slate-900 font-serif text-2xl mb-2">
+                                        {hasDateFilter
+                                            ? 'No events in this date range'
+                                            : activeTab === 'thisWeek' && !query
+                                                ? 'No events this week'
+                                                : 'No experiences found'}
+                                    </h3>
+                                    <p className="text-slate-500 mb-6">
+                                        {hasDateFilter
+                                            ? 'Try adjusting your date range.'
+                                            : activeTab === 'thisWeek' && !query
+                                                ? 'Check out all upcoming events instead.'
+                                                : 'Try adjusting your search criteria.'}
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            if (hasDateFilter) {
+                                                clearDateFilter();
+                                            } else if (query) {
+                                                setQuery('');
+                                            } else {
+                                                setActiveTab('allEvents');
+                                            }
+                                        }}
+                                        className="text-xs font-bold tracking-widest border-b-2 border-[#D4AF37] pb-1 text-slate-900 hover:text-[#C5A028] transition-all uppercase"
+                                    >
+                                        {hasDateFilter
+                                            ? 'Clear Date Filter'
+                                            : activeTab === 'thisWeek' && !query
+                                                ? 'View All Events'
+                                                : 'Clear Filters'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* RIGHT: Map */}
+                        <div className={`${viewMode === 'map' ? 'block' : 'hidden lg:block'}`}>
+                            <div className="lg:sticky lg:top-[260px] animate-fade-up delay-200">
+                                <TulsaMap
+                                    events={tabFilteredEvents}
+                                    onMarkerClick={setSelectedEvent}
+                                    hoveredEventId={hoveredEventId}
+                                    className="h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white"
+                                />
+                                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400 font-medium uppercase tracking-widest">
+                                    <Compass size={14} />
+                                    <span>Interactive Discovery Map</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                )}
+            </main>
+
+            {/* ===== EVENT MODAL ===== */}
+            <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+            <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+        </div>
+    );
 }

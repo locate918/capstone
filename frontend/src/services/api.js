@@ -12,6 +12,52 @@ const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localho
 // Set to false to use real APIs
 const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
 
+// =============================================================================
+// CATEGORY DEFINITIONS
+// =============================================================================
+
+/**
+ * Master category list with keywords for flexible matching.
+ * Each category has related terms that will map to it.
+ */
+const CATEGORY_KEYWORDS = {
+    // Music / Live Music
+    music: ['music', 'concert', 'live music', 'band', 'singer', 'dj', 'jazz', 'rock', 'country', 'hip hop', 'rap', 'classical', 'orchestra', 'symphony', 'choir', 'karaoke', 'open mic', 'acoustic', 'blues', 'folk', 'indie', 'metal', 'punk', 'edm', 'electronic', 'r&b', 'soul', 'gospel', 'reggae'],
+
+    // Nature / Outdoors
+    nature: ['nature', 'outdoor', 'outdoors', 'park', 'garden', 'hiking', 'trail', 'camping', 'wildlife', 'bird', 'fishing', 'lake', 'river', 'kayak', 'canoe', 'botanical', 'zoo', 'aquarium', 'farm', 'ranch', 'picnic', 'bbq', 'barbecue'],
+
+    // Educational / History
+    educational: ['educational', 'education', 'history', 'historical', 'museum', 'lecture', 'workshop', 'class', 'seminar', 'tour', 'exhibit', 'exhibition', 'science', 'library', 'book', 'reading', 'author', 'learning', 'school', 'university', 'college', 'heritage', 'culture', 'cultural'],
+
+    // Film / Movie
+    film: ['film', 'movie', 'cinema', 'screening', 'documentary', 'indie film', 'short film', 'film festival', 'drive-in', 'premiere', 'director', 'animation', 'animated'],
+
+    // Art / Performing Arts
+    art: ['art', 'arts', 'theater', 'theatre', 'dance', 'ballet', 'opera', 'musical', 'play', 'performance', 'performing', 'gallery', 'painting', 'sculpture', 'photography', 'craft', 'pottery', 'drawing', 'illustration', 'design', 'fashion', 'drag', 'burlesque', 'circus', 'magic', 'improv', 'sketch'],
+
+    // Food
+    food: ['food', 'dining', 'restaurant', 'culinary', 'chef', 'cooking', 'tasting', 'wine', 'beer', 'brewery', 'distillery', 'cocktail', 'brunch', 'dinner', 'lunch', 'breakfast', 'foodie', 'food truck', 'farmers market', 'baking', 'dessert', 'chocolate', 'coffee', 'tea'],
+
+    // Shopping / Tradeshows
+    shopping: ['shopping', 'market', 'tradeshow', 'trade show', 'expo', 'fair', 'bazaar', 'flea market', 'antique', 'vintage', 'craft fair', 'artisan', 'vendor', 'sale', 'auction', 'collectible', 'handmade', 'boutique', 'pop-up', 'popup'],
+
+    // Pets
+    pets: ['pet', 'pets', 'dog', 'cat', 'animal', 'adoption', 'rescue', 'veterinary', 'grooming', 'training', 'kennel', 'shelter', 'puppy', 'kitten', 'horse', 'equestrian', 'bird', 'reptile'],
+
+    // Fitness
+    fitness: ['fitness', 'workout', 'exercise', 'gym', 'yoga', 'pilates', 'crossfit', 'running', 'marathon', '5k', '10k', 'cycling', 'bike', 'swim', 'swimming', 'tennis', 'golf', 'wellness', 'health', 'meditation', 'mindfulness', 'spin', 'aerobics', 'zumba', 'bootcamp'],
+
+    // Comedy
+    comedy: ['comedy', 'comedian', 'stand-up', 'standup', 'improv', 'sketch', 'funny', 'humor', 'laugh', 'comic', 'roast', 'open mic comedy'],
+
+    // Family
+    family: ['family', 'kid', 'kids', 'children', 'child', 'family-friendly', 'all ages', 'youth', 'teen', 'toddler', 'baby', 'parent', 'carnival', 'festival', 'fair', 'playground', 'storytime', 'puppet', 'magic show'],
+
+    // Sports
+    sports: ['sport', 'sports', 'game', 'match', 'tournament', 'league', 'football', 'basketball', 'baseball', 'soccer', 'hockey', 'wrestling', 'boxing', 'mma', 'ufc', 'racing', 'nascar', 'rodeo', 'bull riding', 'esports', 'gaming', 'poker', 'volleyball', 'softball', 'lacrosse']
+};
+
 // Attach Supabase access token when available so backend can verify identity.
 const authedFetch = async (url, options = {}) => {
     let token = null;
@@ -42,7 +88,8 @@ export const fetchEvents = async () => {
     }
 
     try {
-        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events`);
+        // Request up to 1000 events (backend max)
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events?limit=1000`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -182,8 +229,8 @@ const transformBackendEvents = (events) => {
         location: event.venue || event.location || "TBA",
         venue_address: event.venue_address,
         venue_website: event.venue_website,
-        imageUrl: event.image_url || getDefaultImage(event.categories),
-        vibe_tags: mapCategoriesToVibes(event.categories),
+        imageUrl: event.image_url || getDefaultImage(event.categories, event.title, event.description),
+        vibe_tags: mapCategoriesToVibes(event.categories, event.title, event.description),
         original_url: event.source_url,
         originalSource: event.source_name,
         price_min: event.price_min,
@@ -204,44 +251,128 @@ const transformBackendEvents = (events) => {
 };
 
 /**
- * Map backend categories to frontend vibe tags.
+ * Detect category from text using keyword matching.
+ * Returns the best matching category or null.
  */
-const mapCategoriesToVibes = (categories) => {
-    if (!categories || categories.length === 0) return ["General"];
+const detectCategoryFromText = (text) => {
+    if (!text) return null;
+    const lowerText = text.toLowerCase();
 
-    const vibeMap = {
-        concerts: "Nightlife",
-        music: "Nightlife",
-        jazz: "Chill",
-        sports: "Exclusive",
-        family: "Chill",
-        comedy: "Nightlife",
-        nightlife: "Nightlife",
-        business: "Business",
-        networking: "Business",
-        outdoor: "Chill",
-        wellness: "Chill",
+    for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+        for (const keyword of keywords) {
+            if (lowerText.includes(keyword)) {
+                return category;
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * Map backend categories to frontend display labels.
+ * Uses flexible keyword matching to broaden category detection.
+ */
+const mapCategoriesToVibes = (categories, title = '', description = '') => {
+    const results = new Set();
+
+    // First, try to match from explicit categories
+    if (categories && categories.length > 0) {
+        for (const cat of categories) {
+            const lowerCat = cat.toLowerCase();
+
+            // Check if category matches any of our keywords
+            for (const [mainCategory, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+                if (keywords.some(kw => lowerCat.includes(kw) || kw.includes(lowerCat))) {
+                    results.add(formatCategoryLabel(mainCategory));
+                    break;
+                }
+            }
+
+            // If no match found, add the original category capitalized
+            if (results.size === 0) {
+                results.add(cat.charAt(0).toUpperCase() + cat.slice(1));
+            }
+        }
+    }
+
+    // If no categories found, try to detect from title and description
+    if (results.size === 0) {
+        const titleCategory = detectCategoryFromText(title);
+        if (titleCategory) results.add(formatCategoryLabel(titleCategory));
+
+        const descCategory = detectCategoryFromText(description);
+        if (descCategory && results.size === 0) results.add(formatCategoryLabel(descCategory));
+    }
+
+    // Default fallback
+    if (results.size === 0) {
+        results.add("General");
+    }
+
+    return Array.from(results).slice(0, 3); // Max 3 tags
+};
+
+/**
+ * Format category key to display label.
+ */
+const formatCategoryLabel = (category) => {
+    const labels = {
+        music: "Music",
+        nature: "Nature & Outdoors",
+        educational: "Educational",
+        film: "Film",
+        art: "Arts & Culture",
+        food: "Food & Drink",
+        shopping: "Shopping & Markets",
+        pets: "Pets",
+        fitness: "Fitness & Wellness",
+        comedy: "Comedy",
+        family: "Family",
+        sports: "Sports"
     };
-
-    return categories.map((cat) => vibeMap[cat.toLowerCase()] || cat);
+    return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
 };
 
 /**
  * Get a default image based on event category.
+ * Uses keyword matching for flexible detection.
  */
-const getDefaultImage = (categories) => {
-    const firstCategory = categories?.[0]?.toLowerCase() || "";
-
+const getDefaultImage = (categories, title = '', description = '') => {
     const imageMap = {
-        concerts: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
         music: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
-        sports: "https://images.unsplash.com/photo-1461896836934-28e4c40e7d5c?auto=format&fit=crop&w=800&q=80",
-        family: "https://images.unsplash.com/photo-1536640712-4d4c36ff0e4e?auto=format&fit=crop&w=800&q=80",
+        nature: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=800&q=80",
+        educational: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=800&q=80",
+        film: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80",
+        art: "https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8?auto=format&fit=crop&w=800&q=80",
+        food: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=800&q=80",
+        shopping: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?auto=format&fit=crop&w=800&q=80",
+        pets: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=800&q=80",
+        fitness: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=800&q=80",
         comedy: "https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=800&q=80",
-        business: "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=800&q=80",
+        family: "https://images.unsplash.com/photo-1536640712-4d4c36ff0e4e?auto=format&fit=crop&w=800&q=80",
+        sports: "https://images.unsplash.com/photo-1461896836934-28e4c40e7d5c?auto=format&fit=crop&w=800&q=80",
     };
 
-    return imageMap[firstCategory] || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80";
+    // Try to match from explicit categories first
+    if (categories && categories.length > 0) {
+        for (const cat of categories) {
+            const lowerCat = cat.toLowerCase();
+            for (const [mainCategory, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+                if (keywords.some(kw => lowerCat.includes(kw) || kw.includes(lowerCat))) {
+                    return imageMap[mainCategory];
+                }
+            }
+        }
+    }
+
+    // Try to detect from title/description
+    const detectedCategory = detectCategoryFromText(title) || detectCategoryFromText(description);
+    if (detectedCategory && imageMap[detectedCategory]) {
+        return imageMap[detectedCategory];
+    }
+
+    // Default fallback
+    return "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80";
 };
 
 // =============================================================================
@@ -257,7 +388,7 @@ const getMockEvents = () => [
         location: "The Mayo Hotel, Downtown",
         coordinates: { lat: 36.152, lng: -95.9905 },
         imageUrl: "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=800&q=80",
-        vibe_tags: ["Exclusive", "Business"],
+        vibe_tags: ["Educational", "Food & Drink"],
         original_url: "#",
         originalSource: "Tulsa Remote",
         ai_analysis: { noise_level: "Medium", networking_pressure: "High", crowd_type: "Tech" },
@@ -271,7 +402,7 @@ const getMockEvents = () => [
         location: "Cain's Ballroom",
         coordinates: { lat: 36.1585, lng: -95.995 },
         imageUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
-        vibe_tags: ["Nightlife", "Chill"],
+        vibe_tags: ["Music", "Food & Drink"],
         original_url: "#",
         originalSource: "Cain's Ballroom",
         ai_analysis: { noise_level: "Medium", networking_pressure: "Low", crowd_type: "Music Lovers" },
