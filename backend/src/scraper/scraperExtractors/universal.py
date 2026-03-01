@@ -26,10 +26,15 @@ from .platformExtractors import (
     extract_tnew_events,
     extract_gcal_events,
     extract_squarespace_events,
+    extract_tickettailor_events,
 )
 
 from .apiExtractors import (
     extract_timely_from_html,
+)
+
+from .cmsExtractors import (
+    extract_circle_cinema,
 )
 
 from .genericExtractors import (
@@ -139,6 +144,14 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
             methods_used.append(f"Etix ({len(etix_events)})")
             return _finalize(all_events, methods_used)
 
+    # ── 2b. TicketTailor pages (special early exit) ──
+    if 'tickettailor.com' in base_url:
+        tt_events, tt_detected = extract_tickettailor_events(soup, base_url, source_name)
+        if tt_detected and tt_events:
+            all_events.extend(tt_events)
+            methods_used.append(f"TicketTailor ({len(tt_events)})")
+            return _finalize(all_events, methods_used)
+
     # ── 3. TNEW/Tessitura API data ──
     tnew_events = extract_tnew_events(soup, base_url, source_name)
     if tnew_events:
@@ -207,6 +220,13 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
     if sq_events:
         all_events.extend(sq_events)
         methods_used.append(f"Squarespace ({len(sq_events)})")
+
+    # ── 6b. Circle Cinema (Wix SSR) ──
+    if not all_events:
+        cc_events = extract_circle_cinema(soup, base_url, source_name)
+        if cc_events:
+            all_events.extend(cc_events)
+            methods_used.append(f"Circle Cinema ({len(cc_events)})")
 
     # ── 7. Fallbacks ──
     if not all_events:

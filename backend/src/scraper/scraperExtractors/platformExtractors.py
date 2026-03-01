@@ -747,3 +747,153 @@ def extract_squarespace_events(soup, html: str, base_url: str, source_name: str)
 
     print(f"[Squarespace] Strategy 2 (event links): {len(events)} events")
     return events
+
+
+# ============================================================================
+# TICKETTAILOR EXTRACTOR
+# ============================================================================
+
+def extract_tickettailor_events(soup, base_url: str, source_name: str) -> tuple:
+    """
+    Extract events from TicketTailor pages (tickettailor.com).
+    Used by: The Colony Tulsa, and others.
+    TicketTailor renders event cards with titles, dates, and ticket links.
+    Returns (events_list, was_detected).
+    """
+    if 'tickettailor.com' not in base_url:
+        return [], False
+
+    print(f"[TicketTailor] Detected TicketTailor site")
+
+    events = []
+    seen = set()
+
+    # Strategy 1: Look for structured event cards/links
+    # TicketTailor uses various card layouts with event links
+    card_selectors = [
+        '[class*="event-card"]',
+        '[class*="EventCard"]',
+        '[class*="listing"]',
+        '[class*="event-listing"]',
+        'a[href*="/events/"]',
+        '[data-testid*="event"]',
+        'article',
+        '.card',
+    ]
+
+    cards = []
+    for sel in card_selectors:
+        found = soup.select(sel)
+        if found:
+            cards = found
+            print(f"[TicketTailor] Found {len(found)} elements via '{sel}'")
+            break
+
+    for card in cards:
+        # Debug: show card structure
+        card_text = card.get_text(' ', strip=True)[:150]
+        print(f"[TicketTailor] Card text: {card_text}")
+
+        # Get title from heading, link text, or any prominent text
+        title_el = (
+                card.select_one('h1, h2, h3, h4, h5') or
+                card.select_one('[class*="title"], [class*="Title"], [class*="name"], [class*="Name"]') or
+                card.select_one('[class*="event"], [class*="Event"]') or
+                card.select_one('a[href]') or
+                card.select_one('strong, b, span')
+        )
+        if not title_el and card.name == 'a':
+            title_el = card
+
+        if not title_el:
+            # Last resort: grab first non-trivial text node
+            for text in card.stripped_strings:
+                if len(text) > 3 and text.lower() not in ('get tickets', 'buy tickets', 'view event', 'sold out'):
+                    title = text[:100]
+                    break
+            else:
+                print(f"[TicketTailor] No title found in card")
+                continue
+        else:
+            title = title_el.get_text(strip=True)
+        if not title or len(title) < 3 or title.lower() in ('get tickets', 'buy tickets', 'view event'):
+            continue
+        if title in seen:
+            continue
+        seen.add(title)
+
+        # Get date
+        date_str = ''
+        date_el = card.select_one('time, [class*="date"], [class*="Date"], [datetime]')
+        if date_el:
+            date_str = date_el.get('datetime', '') or date_el.get_text(strip=True)
+        else:
+            # Search card text for date pattern
+            card_text = card.get_text(' ', strip=True)
+            from scraperUtils import extract_date_from_text, extract_time_from_text
+            date_str = extract_date_from_text(card_text) or ''
+            time_str = extract_time_from_text(card_text)
+            if time_str:
+                date_str = f"{date_str} @ {time_str}" if date_str else time_str
+
+        # Get link
+        link = ''
+        link_el = card if card.name == 'a' else card.select_one('a[href]')
+        if link_el:
+            href = link_el.get('href', '')
+            if href and not href.startswith('#') and not href.startswith('javascript:'):
+                if href.startswith('/'):
+                    link = f"https://www.tickettailor.com{href}"
+                elif href.startswith('http'):
+                    link = href
+                else:
+                    link = f"https://www.tickettailor.com/{href}"
+
+        # Get image
+        image = ''
+        img_el = card.select_one('img[src]')
+        if img_el:
+            image = img_el.get('src', '')
+
+        # Get description
+        desc = ''
+        desc_el = card.select_one('[class*="desc"], [class*="Desc"], [class*="summary"], p')
+        if desc_el:
+            desc = desc_el.get_text(strip=True)[:200]
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'description': desc,
+            'source_url': link or base_url,
+            'image_url': image,
+            'source': source_name,
+            'venue': source_name,
+        })
+
+    # Strategy 2: If no cards found, try all links with /events/ pattern
+    if not events:
+        for link in soup.select('a[href*="/events/"]'):
+            href = link.get('href', '')
+            title = link.get_text(strip=True)
+            if not title or len(title) < 3 or title in seen:
+                continue
+            if title.lower() in ('get tickets', 'buy tickets', 'view event', 'view all'):
+                continue
+            seen.add(title)
+
+            if href.startswith('/'):
+                full_url = f"https://www.tickettailor.com{href}"
+            else:
+                full_url = href
+
+            events.append({
+                'title': title,
+                'date': '',
+                'source_url': full_url,
+                'source': source_name,
+                'venue': source_name,
+            })
+
+    print(f"[TicketTailor] Extracted {len(events)} events")
+    return events, True

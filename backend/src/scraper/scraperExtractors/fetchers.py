@@ -42,6 +42,7 @@ async def fetch_with_playwright(url: str) -> str:
         is_etix = 'etix.com' in url
         is_recdesk = 'recdesk.com' in url
         is_ticketleap = 'ticketleap.com' in url
+        is_tickettailor = 'tickettailor.com' in url
         is_tnew = False
         etix_api_data = []
         recdesk_api_data = []
@@ -51,7 +52,8 @@ async def fetch_with_playwright(url: str) -> str:
         if is_etix:
             async def capture_response(response):
                 url_str = response.url
-                if any(p in url_str for p in ['/api/', '/online/', '/ticket/v/', '/performances', '/events']):
+                if any(p in url_str for p in ['/api/', '/online/', '/ticket/v/', '/performances',
+                                              '/events', '/search', '/organization', '/listings']):
                     try:
                         ct = response.headers.get('content-type', '')
                         if 'json' in ct or 'javascript' in ct:
@@ -64,22 +66,26 @@ async def fetch_with_playwright(url: str) -> str:
             page.on('response', capture_response)
 
             try:
-                await page.goto(url, wait_until="networkidle", timeout=45000)
+                await page.goto(url, wait_until="networkidle", timeout=60000)
             except:
-                await page.goto(url, timeout=45000)
+                await page.goto(url, timeout=60000)
 
             try:
                 await page.wait_for_selector(
                     '[class*="performance"], [class*="event-card"], [class*="MuiCard"], '
-                    '[class*="event"], [class*="upcoming"], h3, h4',
-                    timeout=15000
+                    '[class*="event"], [class*="upcoming"], [class*="EventCard"], '
+                    '[class*="listing"], a[href*="/ticket/p/"], h3, h4',
+                    timeout=20000
                 )
             except:
                 pass
 
+            # Extra wait for React hydration + scroll to trigger lazy loading
             await page.wait_for_timeout(5000)
             await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
             await page.wait_for_timeout(3000)
+            await page.evaluate('window.scrollTo(0, 0)')
+            await page.wait_for_timeout(2000)
 
             html_size = len(await page.content())
             print(f"[Etix] Page rendered: {html_size/1024:.1f}KB, captured {len(etix_api_data)} API responses")
@@ -151,6 +157,28 @@ async def fetch_with_playwright(url: str) -> str:
 
             await page.wait_for_timeout(3000)
             print(f"[TicketLeap] Page rendered: {len(await page.content())/1024:.1f}KB")
+
+        elif is_tickettailor:
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=45000)
+            except:
+                await page.goto(url, timeout=45000)
+
+            # TicketTailor renders event cards via JS — wait for them
+            try:
+                await page.wait_for_selector(
+                    '[class*="event"], [class*="listing"], [class*="card"], '
+                    'a[href*="/events/"], a[href*="/tickets/"]',
+                    timeout=15000
+                )
+            except:
+                pass
+
+            await page.wait_for_timeout(3000)
+            # Scroll to load any lazy content
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await page.wait_for_timeout(2000)
+            print(f"[TicketTailor] Page rendered: {len(await page.content())/1024:.1f}KB")
 
         else:
             # ── Generic handler with TNEW and Google Calendar detection ──
