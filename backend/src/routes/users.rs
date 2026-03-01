@@ -1,17 +1,21 @@
 //! # Users Routes
 //!
-//! This module handles all user-related API endpoints including
+//! Handles all user-related API endpoints including
 //! user accounts, preferences, and interaction tracking.
 //!
+//! ## Authentication
+//! All endpoints require a valid Supabase JWT in the `Authorization` header.
+//! User creation is handled automatically by the database trigger when
+//! someone signs up via Supabase Auth — no `POST /api/users` endpoint needed.
+//!
 //! ## Endpoints
-//! - `POST /api/users`                    - Create a new user
-//! - `GET  /api/users/:id`                - Get user by ID
-//! - `GET  /api/users/:id/profile`        - Get full profile (for LLM)
-//! - `GET  /api/users/:id/preferences`    - Get category preferences
-//! - `POST /api/users/:id/preferences`    - Add/update a preference
-//! - `PUT  /api/users/:id/preferences`    - Update user settings
-//! - `GET  /api/users/:id/interactions`   - Get interaction history
-//! - `POST /api/users/:id/interactions`   - Record an interaction
+//! - `GET  /api/users/me`                 - Get current user (from JWT)
+//! - `GET  /api/users/me/profile`         - Get full profile (for LLM)
+//! - `GET  /api/users/me/preferences`     - Get category preferences
+//! - `POST /api/users/me/preferences`     - Add/update a preference
+//! - `PUT  /api/users/me/preferences`     - Update user settings
+//! - `GET  /api/users/me/interactions`    - Get interaction history
+//! - `POST /api/users/me/interactions`    - Record an interaction
 //!
 //! ## Owner
 //! Will (Coordinator/Backend Lead)
@@ -21,16 +25,17 @@
 // =============================================================================
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auth::AuthUser;
 use crate::models::{
-    CreateUser, CreateUserInteraction, CreateUserPreference, UpdateUserPreferences,
+    CreateUserInteraction, CreateUserPreference, UpdateUserPreferences,
     User, UserInteraction, UserInteractionWithEvent, UserPreference, UserProfile,
 };
 
@@ -39,87 +44,50 @@ use crate::models::{
 // =============================================================================
 
 /// Creates the router for all user endpoints.
+///
+/// All routes use the `AuthUser` extractor which validates the Supabase JWT
+/// and extracts the user's UUID. No path parameter needed — identity comes
+/// from the token.
 pub fn routes() -> Router<PgPool> {
     Router::new()
-        .route("/", post(create_user))
-        .route("/:id", get(get_user))
-        .route("/:id/profile", get(get_user_profile))
-        .route("/:id/preferences", get(get_preferences).post(add_preference).put(update_preferences))
-        .route("/:id/interactions", get(get_interactions).post(add_interaction))
+        .route("/me", get(get_current_user))
+        .route("/me/profile", get(get_my_profile))
+        .route(
+            "/me/preferences",
+            get(get_my_preferences)
+                .post(add_my_preference)
+                .put(update_my_preferences),
+        )
+        .route(
+            "/me/interactions",
+            get(get_my_interactions).post(add_my_interaction),
+        )
 }
 
 // =============================================================================
-// HANDLER: CREATE USER
+// HANDLER: GET CURRENT USER
 // =============================================================================
 
-/// Creates a new user account.
+/// Returns the authenticated user's account info.
 ///
 /// # Endpoint
-/// `POST /api/users`
-async fn create_user(
-    State(pool): State<PgPool>,
-    Json(payload): Json<CreateUser>,
-) -> Result<(StatusCode, Json<User>), StatusCode> {
-    let id = Uuid::new_v4();
-    let now = chrono::Utc::now();
-
-    sqlx::query(
-        r#"
-        INSERT INTO users (id, email, name, location_preference, radius_miles, price_max, family_friendly_only, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#,
-    )
-        .bind(&id)
-        .bind(&payload.email)
-        .bind(&payload.name)
-        .bind(&payload.location_preference)
-        .bind(&payload.radius_miles)
-        .bind(&payload.price_max)
-        .bind(&payload.family_friendly_only)
-        .bind(&now)
-        .bind(&now)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let user = User {
-        id,
-        email: payload.email,
-        name: payload.name,
-        location_preference: payload.location_preference,
-        radius_miles: payload.radius_miles,
-        price_max: payload.price_max,
-        family_friendly_only: payload.family_friendly_only,
-        created_at: now,
-        updated_at: now,
-    };
-
-    Ok((StatusCode::CREATED, Json(user)))
-}
-
-// =============================================================================
-// HANDLER: GET USER
-// =============================================================================
-
-/// Returns a single user by ID.
+/// `GET /api/users/me`
 ///
-/// # Endpoint
-/// `GET /api/users/:id`
-async fn get_user(
+/// # Auth
+/// Requires valid Supabase JWT. User ID comes from the `sub` claim.
+async fn get_current_user(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(id): Path<Uuid>,
 ) -> Result<Json<User>, StatusCode> {
     let user = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, name, location_preference, radius_miles, price_max, family_friendly_only, created_at, updated_at
+        SELECT id, email, name, location_preference, radius_miles,
+               price_max, family_friendly_only, created_at, updated_at
         FROM users
         WHERE id = $1
-        "#
+        "#,
     )
-        .bind(id)
+        .bind(auth.user_id)
         .fetch_optional(&pool)
         .await
         .map_err(|e| {
@@ -129,7 +97,16 @@ async fn get_user(
 
     match user {
         Some(u) => Ok(Json(u)),
-        None => Err(StatusCode::NOT_FOUND),
+        None => {
+            // User exists in auth.users but not in public.users yet.
+            // This can happen if the auth trigger hasn't fired or failed.
+            // Return 404 — the frontend can prompt the user to try again.
+            eprintln!(
+                "Auth user {} has no public.users row — trigger may have failed",
+                auth.user_id
+            );
+            Err(StatusCode::NOT_FOUND)
+        }
     }
 }
 
@@ -140,25 +117,25 @@ async fn get_user(
 /// Returns complete user profile for LLM personalization.
 ///
 /// # Endpoint
-/// `GET /api/users/:id/profile`
+/// `GET /api/users/me/profile`
 ///
-/// Includes:
-/// - Basic user info
-/// - All category preferences
-/// - Recent 20 interactions with event details
-async fn get_user_profile(
+/// Includes: basic user info, category preferences, recent 20 interactions
+async fn get_my_profile(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(id): Path<Uuid>,
 ) -> Result<Json<UserProfile>, StatusCode> {
+    let user_id = auth.user_id;
+
     // Fetch user
     let user = sqlx::query_as::<_, User>(
         r#"
-        SELECT id, email, name, location_preference, radius_miles, price_max, family_friendly_only, created_at, updated_at
+        SELECT id, email, name, location_preference, radius_miles,
+               price_max, family_friendly_only, created_at, updated_at
         FROM users
         WHERE id = $1
-        "#
+        "#,
     )
-        .bind(id)
+        .bind(user_id)
         .fetch_optional(&pool)
         .await
         .map_err(|e| {
@@ -169,9 +146,9 @@ async fn get_user_profile(
 
     // Fetch preferences
     let preferences = sqlx::query_as::<_, UserPreference>(
-        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1"
+        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1",
     )
-        .bind(id)
+        .bind(user_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -190,9 +167,9 @@ async fn get_user_profile(
         WHERE ui.user_id = $1
         ORDER BY ui.created_at DESC
         LIMIT 20
-        "#
+        "#,
     )
-        .bind(id)
+        .bind(user_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -211,18 +188,18 @@ async fn get_user_profile(
 // HANDLER: GET PREFERENCES
 // =============================================================================
 
-/// Returns all category preferences for a user.
+/// Returns all category preferences for the authenticated user.
 ///
 /// # Endpoint
-/// `GET /api/users/:id/preferences`
-async fn get_preferences(
+/// `GET /api/users/me/preferences`
+async fn get_my_preferences(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<UserPreference>>, StatusCode> {
     let preferences = sqlx::query_as::<_, UserPreference>(
-        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1 ORDER BY weight DESC"
+        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1 ORDER BY weight DESC",
     )
-        .bind(id)
+        .bind(auth.user_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -240,18 +217,17 @@ async fn get_preferences(
 /// Adds or updates a category preference.
 ///
 /// # Endpoint
-/// `POST /api/users/:id/preferences`
+/// `POST /api/users/me/preferences`
 ///
-/// Uses UPSERT - creates if new, updates if exists.
-async fn add_preference(
+/// Uses UPSERT — creates if new, updates weight if category already exists.
+async fn add_my_preference(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(user_id): Path<Uuid>,
     Json(payload): Json<CreateUserPreference>,
 ) -> Result<(StatusCode, Json<UserPreference>), StatusCode> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
-    // Use INSERT ... ON CONFLICT for upsert behavior
     let result = sqlx::query_as::<_, UserPreference>(
         r#"
         INSERT INTO user_preferences (id, user_id, category, weight, created_at)
@@ -259,10 +235,10 @@ async fn add_preference(
         ON CONFLICT (user_id, category)
         DO UPDATE SET weight = EXCLUDED.weight
         RETURNING id, user_id, category, weight, created_at
-        "#
+        "#,
     )
         .bind(&id)
-        .bind(&user_id)
+        .bind(auth.user_id)
         .bind(&payload.category)
         .bind(&payload.weight)
         .bind(&now)
@@ -280,43 +256,36 @@ async fn add_preference(
 // HANDLER: UPDATE USER PREFERENCES (settings)
 // =============================================================================
 
-/// Updates user's preference settings (location, radius, price, etc).
+/// Updates the authenticated user's preference settings.
 ///
 /// # Endpoint
-/// `PUT /api/users/:id/preferences`
-async fn update_preferences(
+/// `PUT /api/users/me/preferences`
+///
+/// Updates location, radius, price, and family-friendly settings.
+async fn update_my_preferences(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(id): Path<Uuid>,
     Json(payload): Json<UpdateUserPreferences>,
 ) -> Result<Json<User>, StatusCode> {
-    // Build dynamic update query
-    let mut updates = vec!["updated_at = NOW()".to_string()];
-
-    if let Some(ref loc) = payload.location_preference {
-        updates.push(format!("location_preference = '{}'", loc.replace("'", "''")));
-    }
-    if let Some(radius) = payload.radius_miles {
-        updates.push(format!("radius_miles = {}", radius));
-    }
-    if let Some(price) = payload.price_max {
-        updates.push(format!("price_max = {}", price));
-    }
-    if let Some(ff) = payload.family_friendly_only {
-        updates.push(format!("family_friendly_only = {}", ff));
-    }
-
-    let query = format!(
+    // Use parameterized queries to prevent SQL injection
+    let user = sqlx::query_as::<_, User>(
         r#"
         UPDATE users
-        SET {}
+        SET location_preference = COALESCE($2, location_preference),
+            radius_miles = COALESCE($3, radius_miles),
+            price_max = COALESCE($4, price_max),
+            family_friendly_only = COALESCE($5, family_friendly_only),
+            updated_at = NOW()
         WHERE id = $1
-        RETURNING id, email, name, location_preference, radius_miles, price_max, family_friendly_only, created_at, updated_at
+        RETURNING id, email, name, location_preference, radius_miles,
+                  price_max, family_friendly_only, created_at, updated_at
         "#,
-        updates.join(", ")
-    );
-
-    let user = sqlx::query_as::<_, User>(&query)
-        .bind(id)
+    )
+        .bind(auth.user_id)
+        .bind(&payload.location_preference)
+        .bind(&payload.radius_miles)
+        .bind(&payload.price_max)
+        .bind(&payload.family_friendly_only)
         .fetch_optional(&pool)
         .await
         .map_err(|e| {
@@ -332,13 +301,13 @@ async fn update_preferences(
 // HANDLER: GET INTERACTIONS
 // =============================================================================
 
-/// Returns all interactions for a user.
+/// Returns interaction history for the authenticated user.
 ///
 /// # Endpoint
-/// `GET /api/users/:id/interactions`
-async fn get_interactions(
+/// `GET /api/users/me/interactions`
+async fn get_my_interactions(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<UserInteraction>>, StatusCode> {
     let interactions = sqlx::query_as::<_, UserInteraction>(
         r#"
@@ -347,9 +316,9 @@ async fn get_interactions(
         WHERE user_id = $1
         ORDER BY created_at DESC
         LIMIT 100
-        "#
+        "#,
     )
-        .bind(id)
+        .bind(auth.user_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| {
@@ -367,12 +336,12 @@ async fn get_interactions(
 /// Records a new user interaction with an event.
 ///
 /// # Endpoint
-/// `POST /api/users/:id/interactions`
+/// `POST /api/users/me/interactions`
 ///
 /// Automatically captures event category and venue for ML.
-async fn add_interaction(
+async fn add_my_interaction(
+    auth: AuthUser,
     State(pool): State<PgPool>,
-    Path(user_id): Path<Uuid>,
     Json(payload): Json<CreateUserInteraction>,
 ) -> Result<(StatusCode, Json<UserInteraction>), StatusCode> {
     let id = Uuid::new_v4();
@@ -380,7 +349,7 @@ async fn add_interaction(
 
     // Fetch event details for denormalization
     let event = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-        "SELECT (SELECT categories[1] FROM events WHERE id = $1), venue FROM events WHERE id = $1"
+        "SELECT (SELECT categories[1] FROM events WHERE id = $1), venue FROM events WHERE id = $1",
     )
         .bind(&payload.event_id)
         .fetch_optional(&pool)
@@ -396,10 +365,10 @@ async fn add_interaction(
         r#"
         INSERT INTO user_interactions (id, user_id, event_id, interaction_type, event_category, event_venue, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
         .bind(&id)
-        .bind(&user_id)
+        .bind(auth.user_id)
         .bind(&payload.event_id)
         .bind(&payload.interaction_type)
         .bind(&event_category)
@@ -414,7 +383,7 @@ async fn add_interaction(
 
     let interaction = UserInteraction {
         id,
-        user_id,
+        user_id: auth.user_id,
         event_id: payload.event_id,
         interaction_type: payload.interaction_type,
         event_category,

@@ -5,31 +5,28 @@
 import { supabase } from "../lib/supabaseClient";
 
 // Backend URLs - adjust based on environment
-// CRA uses process.env.REACT_APP_*
 const RUST_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localhost:8001";
 
 // Set to false to use real APIs
 const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
 
-// Attach Supabase access token when available so backend can verify identity.
-const authedFetch = async (url, options = {}) => {
-    let token = null;
-    try {
-        const { data } = await supabase.auth.getSession();
-        token = data?.session?.access_token ?? null;
-    } catch (error) {
-        console.warn("Supabase session unavailable. Continuing without auth header.");
-    }
-    const headers = {
-        ...(options.headers || {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-    return fetch(url, { ...options, headers });
+// =============================================================================
+// Auth Helper
+// =============================================================================
+
+/**
+ * Get authorization headers from the current Supabase session.
+ * Returns an object with the Bearer token if logged in, empty object if not.
+ */
+const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return {};
+    return { Authorization: `Bearer ${session.access_token}` };
 };
 
 // =============================================================================
-// Events API (Rust Backend :3000)
+// Events API (Rust Backend :3000) — Public, no auth needed
 // =============================================================================
 
 /**
@@ -42,7 +39,7 @@ export const fetchEvents = async () => {
     }
 
     try {
-        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events`);
+        const response = await fetch(`${RUST_BACKEND_URL}/api/events`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -68,7 +65,7 @@ export const searchEvents = async (params = {}) => {
             Object.entries(params).filter(([_, v]) => v != null)
         ).toString();
 
-        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events/search?${queryString}`);
+        const response = await fetch(`${RUST_BACKEND_URL}/api/events/search?${queryString}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -76,6 +73,158 @@ export const searchEvents = async (params = {}) => {
         return transformBackendEvents(events);
     } catch (error) {
         console.error("Failed to search events:", error);
+        return [];
+    }
+};
+
+// =============================================================================
+// User API (Rust Backend :3000) — Authenticated
+// =============================================================================
+
+/**
+ * Get the current authenticated user's info.
+ * Returns null if not logged in or if user row doesn't exist yet.
+ */
+export const getCurrentUser = async () => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return null;
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me`, {
+            headers: { "Content-Type": "application/json", ...authHeaders },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error("Failed to fetch current user:", error);
+        return null;
+    }
+};
+
+/**
+ * Get the full user profile (for LLM personalization).
+ * Includes preferences and recent interactions.
+ */
+export const getUserProfile = async () => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return null;
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/profile`, {
+            headers: { "Content-Type": "application/json", ...authHeaders },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error("Failed to fetch user profile:", error);
+        return null;
+    }
+};
+
+/**
+ * Get the user's category preferences.
+ * Returns array of { category, weight } objects.
+ */
+export const getUserPreferences = async () => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return [];
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/preferences`, {
+            headers: { "Content-Type": "application/json", ...authHeaders },
+        });
+        if (!response.ok) return [];
+        return response.json();
+    } catch (error) {
+        console.error("Failed to fetch preferences:", error);
+        return [];
+    }
+};
+
+/**
+ * Add or update a category preference.
+ * @param {string} category - Category name (e.g., "jazz", "sports")
+ * @param {number} weight - Preference weight (-5 to +5)
+ */
+export const addPreference = async (category, weight) => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return null;
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/preferences`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders },
+            body: JSON.stringify({ category, weight }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error("Failed to add preference:", error);
+        return null;
+    }
+};
+
+/**
+ * Update user settings (location, radius, price, family-friendly).
+ * Only sends fields that are present in the payload.
+ * @param {Object} settings - { location_preference, radius_miles, price_max, family_friendly_only }
+ */
+export const updateUserSettings = async (settings) => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return null;
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/preferences`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...authHeaders },
+            body: JSON.stringify(settings),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error("Failed to update settings:", error);
+        return null;
+    }
+};
+
+/**
+ * Record a user interaction with an event (click, save, dismiss, attend).
+ * @param {string} eventId - UUID of the event
+ * @param {string} interactionType - "clicked" | "saved" | "dismissed" | "attended"
+ */
+export const recordInteraction = async (eventId, interactionType) => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return null;
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/interactions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders },
+            body: JSON.stringify({ event_id: eventId, interaction_type: interactionType }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error("Failed to record interaction:", error);
+        return null;
+    }
+};
+
+/**
+ * Get the user's interaction history.
+ */
+export const getUserInteractions = async () => {
+    try {
+        const authHeaders = await getAuthHeaders();
+        if (!authHeaders.Authorization) return [];
+
+        const response = await fetch(`${RUST_BACKEND_URL}/api/users/me/interactions`, {
+            headers: { "Content-Type": "application/json", ...authHeaders },
+        });
+        if (!response.ok) return [];
+        return response.json();
+    } catch (error) {
+        console.error("Failed to fetch interactions:", error);
         return [];
     }
 };
@@ -94,7 +243,7 @@ export const smartSearch = async (query) => {
     }
 
     try {
-        const response = await authedFetch(`${LLM_SERVICE_URL}/api/search`, {
+        const response = await fetch(`${LLM_SERVICE_URL}/api/search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query }),
@@ -130,7 +279,7 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
     }
 
     try {
-        const response = await authedFetch(`${LLM_SERVICE_URL}/api/chat`, {
+        const response = await fetch(`${LLM_SERVICE_URL}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
