@@ -25,7 +25,7 @@ const INITIAL_MESSAGE = {
   text: "Welcome to Tulsa! I am Tully and I can help you curate a Date Night, find Family Activities, or discover Hidden Gems. How can I assist you today?"
 };
 
-const AIChatWidget = () => {
+const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [inputValue, setInputValue] = useState("");
@@ -33,13 +33,15 @@ const AIChatWidget = () => {
   const messagesEndRef = useRef(null);
 
   // Generate or retrieve a persistent guest ID
-  const [userId] = useState(() => {
+  const [guestId] = useState(() => {
     const stored = localStorage.getItem('locate918_guest_id');
     if (stored) return stored;
     const newId = 'guest_' + Math.random().toString(36).substr(2, 9);
     localStorage.setItem('locate918_guest_id', newId);
     return newId;
   });
+
+  const userId = authenticatedUserId || guestId;
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -152,7 +154,11 @@ const AIChatWidget = () => {
                     li: ({node, ...props}) => <li {...props} className="my-1" />,
                     p: ({node, ...props}) => <p {...props} className="my-2 last:mb-0 first:mt-0" />,
                     strong: ({node, ...props}) => <strong {...props} className="font-bold text-slate-900" />,
-                    a: ({node, ...props}) => <a {...props} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer" />
+                    a: ({node, children, ...props}) => (
+                      <a {...props} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    )
                   }}
                 >
                   {msg.text}

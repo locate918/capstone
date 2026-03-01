@@ -13,7 +13,7 @@
  */
 
 import React, { useState } from 'react';
-import { Search, Filter, ChevronDown, User, Bell } from 'lucide-react';
+import { Search, Filter, ChevronDown, User, Bell, LogOut } from 'lucide-react';
 import headerImage from '../assets/header_bg.png'; 
 
 // =============================================================================
@@ -32,7 +32,7 @@ const VIBES = [
 // COMPONENT
 // =============================================================================
 
-const Header = ({ query, setQuery }) => {
+const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Find selected vibe based on current query
@@ -145,11 +145,28 @@ const Header = ({ query, setQuery }) => {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-[#f8f1e0]" />
               </button>
 
-              {/* Sign In Button */}
-              <button className="flex items-center gap-2 bg-[#162b4a] hover:bg-[#1f3a60] text-white px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl font-medium text-sm shadow-lg shadow-[#162b4a]/20 transition-all hover:scale-105 active:scale-95">
-                <User size={14} />
-                <span>Sign In</span>
-              </button>
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span className="hidden md:inline text-xs text-slate-600 max-w-[180px] truncate">
+                    {user.email}
+                  </span>
+                  <button
+                    onClick={onSignOut}
+                    className="flex items-center gap-2 bg-[#162b4a] hover:bg-[#1f3a60] text-white px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl font-medium text-sm shadow-lg shadow-[#162b4a]/20 transition-all hover:scale-105 active:scale-95"
+                  >
+                    <LogOut size={14} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={onOpenAuth}
+                  className="flex items-center gap-2 bg-[#162b4a] hover:bg-[#1f3a60] text-white px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl font-medium text-sm shadow-lg shadow-[#162b4a]/20 transition-all hover:scale-105 active:scale-95"
+                >
+                  <User size={14} />
+                  <span>Sign In</span>
+                </button>
+              )}
             </div>
 
           </div>

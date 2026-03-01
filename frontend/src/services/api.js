@@ -2,6 +2,8 @@
 // API Configuration
 // =============================================================================
 
+import { supabase } from "../lib/supabaseClient";
+
 // Backend URLs - adjust based on environment
 // CRA uses process.env.REACT_APP_*
 const RUST_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
@@ -9,6 +11,22 @@ const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localho
 
 // Set to false to use real APIs
 const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
+
+// Attach Supabase access token when available so backend can verify identity.
+const authedFetch = async (url, options = {}) => {
+    let token = null;
+    try {
+        const { data } = await supabase.auth.getSession();
+        token = data?.session?.access_token ?? null;
+    } catch (error) {
+        console.warn("Supabase session unavailable. Continuing without auth header.");
+    }
+    const headers = {
+        ...(options.headers || {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    return fetch(url, { ...options, headers });
+};
 
 // =============================================================================
 // Events API (Rust Backend :3000)
@@ -24,7 +42,7 @@ export const fetchEvents = async () => {
     }
 
     try {
-        const response = await fetch(`${RUST_BACKEND_URL}/api/events`);
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -50,7 +68,7 @@ export const searchEvents = async (params = {}) => {
             Object.entries(params).filter(([_, v]) => v != null)
         ).toString();
 
-        const response = await fetch(`${RUST_BACKEND_URL}/api/events/search?${queryString}`);
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events/search?${queryString}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -76,7 +94,7 @@ export const smartSearch = async (query) => {
     }
 
     try {
-        const response = await fetch(`${LLM_SERVICE_URL}/api/search`, {
+        const response = await authedFetch(`${LLM_SERVICE_URL}/api/search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query }),
@@ -112,7 +130,7 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
     }
 
     try {
-        const response = await fetch(`${LLM_SERVICE_URL}/api/chat`, {
+        const response = await authedFetch(`${LLM_SERVICE_URL}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
