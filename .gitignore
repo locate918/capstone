@@ -28,4 +28,26 @@ npm-debug.log*
 # Secrets
 .env
 *.pem
+<<<<<<< Updated upstream
 *.key
+=======
+*.key
+
+# Backup files
+*.bak
+
+# Scraped data output
+backend/src/scraper/scraped_data/
+
+# Data exports and database dumps
+*.csv
+locate918_backup.sql
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+"@
+backend/.env.example
+>>>>>>> Stashed changes
