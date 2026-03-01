@@ -20,4 +20,4 @@ ENV PORT=8001
 EXPOSE $PORT
 
 # Run with uvicorn, binding to 0.0.0.0 on the PORT env var
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
