@@ -28,7 +28,7 @@
  */
 
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
-import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X } from 'lucide-react';
+import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle } from 'lucide-react';
 import { fetchEvents, smartSearch } from './services/api';
 import { useAuth } from './context/AuthContext';
 
@@ -126,6 +126,85 @@ const filterByDateRange = (events, fromDate, toDate) => {
 };
 
 // =============================================================================
+// BETA DISCLAIMER MODAL
+// =============================================================================
+
+// =============================================================================
+// BETA DISCLAIMER MODAL
+// =============================================================================
+
+const BetaDisclaimer = ({ isOpen, onClose }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+            onClick={onClose}
+        >
+            <div
+                className="bg-[#1a1a2e] border border-[#D4AF37]/30 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-2xl shadow-[#D4AF37]/10"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Icon */}
+                <div className="flex justify-center mb-4">
+                    <div className="bg-[#D4AF37]/20 p-4 rounded-full">
+                        <AlertCircle size={32} className="text-[#D4AF37]" />
+                    </div>
+                </div>
+
+                {/* Title */}
+                <h2 className="text-2xl sm:text-3xl font-serif text-white text-center mb-2">
+                    Welcome to <span className="text-[#D4AF37]">Locate918</span>
+                </h2>
+
+                {/* Beta Badge */}
+                <div className="flex justify-center mb-4">
+                    <span className="bg-[#D4AF37] text-black text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                        Open Beta
+                    </span>
+                </div>
+
+                {/* Message */}
+                <p className="text-slate-300 text-center text-sm sm:text-base leading-relaxed mb-6">
+                    This site is currently in <strong className="text-white">open beta</strong>.
+                    Event information is aggregated from multiple sources and may contain inaccuracies.
+                    Please verify event details with the original source before attending.
+                </p>
+
+                {/* Disclaimer Points */}
+                <ul className="text-slate-400 text-xs sm:text-sm space-y-2 mb-6">
+                    <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 flex-shrink-0"></span>
+                        <span>Event dates, times, and locations may change without notice</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 flex-shrink-0"></span>
+                        <span>Some features are still under development</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 flex-shrink-0"></span>
+                        <span>We appreciate your feedback as we improve</span>
+                    </li>
+                </ul>
+
+                {/* Button */}
+                <button
+                    onClick={onClose}
+                    className="w-full bg-[#D4AF37] hover:bg-[#C5A028] text-black font-bold py-3 sm:py-4 rounded-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+                >
+                    I Understand, Let's Explore!
+                </button>
+
+                {/* Footer */}
+                <p className="text-slate-500 text-[10px] sm:text-xs text-center mt-4">
+                    By continuing, you acknowledge this is a beta product.
+                </p>
+            </div>
+        </div>
+    );
+};
+
+// =============================================================================
 // MAIN APP COMPONENT
 // =============================================================================
 
@@ -146,6 +225,7 @@ export default function App() {
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [showDateFilter, setShowDateFilter] = useState(false);
+    const [showBetaDisclaimer, setShowBetaDisclaimer] = useState(false);
 
     const handleSignOut = async () => {
         const { error } = await signOut();
@@ -155,6 +235,19 @@ export default function App() {
     };
 
     // --- EFFECTS ---
+
+    // Show beta disclaimer on first visit (per session)
+    useEffect(() => {
+        const hasSeenDisclaimer = sessionStorage.getItem('locate918_beta_seen');
+        if (!hasSeenDisclaimer) {
+            setShowBetaDisclaimer(true);
+        }
+    }, []);
+
+    const handleCloseBetaDisclaimer = () => {
+        sessionStorage.setItem('locate918_beta_seen', 'true');
+        setShowBetaDisclaimer(false);
+    };
 
     // Slideshow auto-advance timer
     useEffect(() => {
@@ -275,6 +368,9 @@ export default function App() {
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
 
+            {/* ===== BETA DISCLAIMER MODAL ===== */}
+            <BetaDisclaimer isOpen={showBetaDisclaimer} onClose={handleCloseBetaDisclaimer} />
+
             {/* ===== FIXED HEADER ===== */}
             <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
                 <Header
@@ -318,7 +414,7 @@ export default function App() {
                             {/* Decorative Line */}
                             <div className="flex items-center justify-center gap-4 mb-6 opacity-0 animate-fade-up">
                                 <span className="h-px w-12 bg-[#D4AF37]" />
-                                <span className="text-[#D4AF37] text-xs font-semibold tracking-[0.3em] uppercase">
+                                <span className="text-[#D4AF37] text-xs sm:text-sm md:text-base font-semibold tracking-[0.3em] uppercase">
                                     Discover Local Events
                                 </span>
                                 <span className="h-px w-12 bg-[#D4AF37]" />
