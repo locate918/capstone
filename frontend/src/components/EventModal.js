@@ -130,20 +130,7 @@ const EventModal = ({ event, onClose }) => {
                                 </div>
                             )}
 
-                            {/* Event Source Link */}
-                            {event.original_url && (
-                                <div className="flex items-start gap-3 text-slate-300">
-                                    <Link size={18} className="text-[#d4af37] shrink-0 mt-0.5" />
-                                    <a
-                                        href={event.original_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-slate-400 hover:text-white hover:underline transition-colors break-all"
-                                    >
-                                        View original listing
-                                    </a>
-                                </div>
-                            )}
+                            
                         </div>
 
                         {/* Summary */}
@@ -206,7 +193,7 @@ const EventModal = ({ event, onClose }) => {
                         className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
                         style={styles.primaryBg}
                     >
-                        RSVP via Source <ExternalLink size={16} />
+                        View Original Listing  <ExternalLink size={16} />
                     </a>
                 </div>
             </div>
