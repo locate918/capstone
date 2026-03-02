@@ -261,6 +261,7 @@ export default function App() {
 
     // --- HANDLERS ---
     const goToPage = (page) => {
+        setHoveredEventId(null); // Clear hover state to prevent stale flyTo
         setCurrentPage(Math.max(1, Math.min(page, totalPages)));
         window.scrollTo({ top: 400, behavior: 'smooth' });
     };
@@ -287,19 +288,18 @@ export default function App() {
 
             {/* ===== HERO SECTION (shown when no search query) ===== */}
             {!query && (
-                <section className="relative h-[65vh] min-h-[400px] flex items-center justify-center py-12 overflow-hidden mt-[90px] md:mt-[202px] lg:mt-[234px] xl:mt-[250px]">
+                <section className="relative h-[50vh] sm:h-[55vh] md:h-[65vh] min-h-[280px] sm:min-h-[350px] md:min-h-[400px] flex items-center justify-center overflow-hidden mt-[100px] md:mt-[172px] lg:mt-[204px] xl:mt-[220px]">
                     {/* Slideshow Background */}
                     <div className="absolute inset-0 z-0">
                         {HERO_SLIDES.map((slide, index) => (
                             <div
                                 key={index}
-                                className={`absolute inset-0 w-full h-full transition-opacity duration-[2000ms] ease-in-out ${index === currentSlide ? 'opacity-100' : 'opacity-0'
-                                    }`}
+                                className={`absolute inset-0 w-full h-full transition-opacity duration-[2000ms] ease-in-out ${index === currentSlide ? 'opacity-100' : 'opacity-0'}`}
                             >
                                 <img
                                     src={slide}
                                     alt="Tulsa"
-                                    className="w-full h-full object-cover object-top"
+                                    className="w-full h-full object-cover object-center scale-105"
                                     onError={(e) => {
                                         e.target.onerror = null;
                                         e.target.src = FALLBACK_SLIDES[index % FALLBACK_SLIDES.length];
@@ -307,57 +307,96 @@ export default function App() {
                                 />
                             </div>
                         ))}
-                        {/* Overlays */}
-                        <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]"></div>
-                        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-[#f8f1e0]"></div>
+                        {/* Cinematic Overlays */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-[#f8f1e0]" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/30" />
                     </div>
 
-                    {/* Hero Text */}
-                    <div className="max-w-7xl mx-auto px-6 lg:px-12 relative z-10">
-                        <div className="max-w-4xl mx-auto text-center opacity-0 animate-fade-up">
-                            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 mb-8 leading-[1.1] text-outline-gold">
-                                Experience Tulsa <br />
+                    {/* Hero Content */}
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 relative z-10">
+                        <div className="max-w-4xl mx-auto text-center">
+                            {/* Decorative Line */}
+                            <div className="flex items-center justify-center gap-4 mb-6 opacity-0 animate-fade-up">
+                                <span className="h-px w-12 bg-[#D4AF37]" />
+                                <span className="text-[#D4AF37] text-xs font-semibold tracking-[0.3em] uppercase">
+                                    Discover Local Events
+                                </span>
+                                <span className="h-px w-12 bg-[#D4AF37]" />
+                            </div>
+
+                            {/* Main Title */}
+                            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.1] opacity-0 animate-fade-up delay-100 drop-shadow-2xl">
+                                Experience
+                                <span className="block text-[#D4AF37] mt-2">Tulsa</span>
                             </h1>
-                            <p className="text-xl text-slate-500 mb-10 max-w-2xl mx-auto leading-relaxed font-light opacity-0 animate-fade-up delay-100 bg-white/75 backdrop-blur-sm rounded-xl p-2 inline-block">
-                                A curated collection of Tulsa's culture, places, and moments brought together in one place.
+
+                            {/* Subtitle */}
+                            <p className="text-base sm:text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto leading-relaxed font-light opacity-0 animate-fade-up delay-200 drop-shadow-lg">
+                                A curated collection of the city's finest culture, entertainment, and hidden gems.
                             </p>
+
+                            {/* CTA Button */}
+                            <div className="opacity-0 animate-fade-up delay-300">
+                                <button
+                                    onClick={() => document.getElementById('events-section')?.scrollIntoView({ behavior: 'smooth' })}
+                                    className="group inline-flex items-center gap-2 bg-[#D4AF37] hover:bg-[#C5A028] text-white px-8 py-4 rounded-full font-semibold text-sm tracking-wide shadow-xl shadow-black/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl"
+                                >
+                                    Explore Events
+                                    <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </div>
                         </div>
+                    </div>
+
+                    {/* Slide Indicators */}
+                    <div className="absolute bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 z-20 flex gap-1.5 sm:gap-2">
+                        {HERO_SLIDES.map((_, index) => (
+                            <button
+                                key={index}
+                                onClick={() => setCurrentSlide(index)}
+                                className={`slide-indicator rounded-full transition-all duration-300 !min-h-0 ${index === currentSlide
+                                    ? 'bg-[#D4AF37] w-5 h-1.5 sm:w-6 sm:h-2'
+                                    : 'bg-white/50 hover:bg-white/80 w-1.5 h-1.5 sm:w-2 sm:h-2'
+                                    }`}
+                                aria-label={`Go to slide ${index + 1}`}
+                            />
+                        ))}
                     </div>
                 </section>
             )}
 
             {/* ===== MAIN CONTENT ===== */}
-            <main className={`max-w-7xl mx-auto px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[130px] md:pt-[242px] lg:pt-[274px] xl:pt-[290px]' : 'pt-12'
-                }`}>
+            <main id="events-section" className={`max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[120px] md:pt-[192px] lg:pt-[224px] xl:pt-[240px]' : 'pt-6 sm:pt-12'}`}>
 
                 {/* AI Chat Widget (only on home page) */}
                 {!query && <AIChatWidget userId={user?.id} />}
 
                 {/* Results Header */}
-                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 pb-6 border-b border-slate-200/60 animate-fade-up delay-300 gap-4">
-                    <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-4 mb-6 sm:mb-8 pb-4 sm:pb-6 border-b border-slate-200/60 animate-fade-up delay-300">
+                    <div className="flex flex-col gap-1 w-full">
                         {query ? (
                             <>
-                                <h2 className="text-3xl font-serif tracking-tight text-slate-900">
-                                    Curated Results: "{query}"
+                                <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
+                                    Results: "{query}"
                                 </h2>
                                 <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
                                     {filteredEvents.length} Experiences Found
                                 </span>
                             </>
                         ) : (
-                            /* Tab Buttons */
-                            <div className="flex gap-2">
+                            /* Tab Buttons - scrollable on mobile */
+                            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-hide">
                                 <button
                                     onClick={() => setActiveTab('thisWeek')}
-                                    className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'thisWeek'
+                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'thisWeek'
                                         ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
                                         : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
                                         }`}
                                 >
-                                    <Calendar size={18} />
-                                    This Week in Tulsa
-                                    <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${activeTab === 'thisWeek'
+                                    <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                    <span className="hidden sm:inline">This Week in Tulsa</span>
+                                    <span className="sm:hidden">This Week</span>
+                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'thisWeek'
                                         ? 'bg-white/20 text-white'
                                         : 'bg-slate-100 text-slate-500'
                                         }`}>
@@ -366,14 +405,14 @@ export default function App() {
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('allEvents')}
-                                    className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${activeTab === 'allEvents'
+                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'allEvents'
                                         ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
                                         : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
                                         }`}
                                 >
-                                    <LayoutGrid size={18} />
+                                    <LayoutGrid size={16} className="sm:w-[18px] sm:h-[18px]" />
                                     All Events
-                                    <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${activeTab === 'allEvents'
+                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'allEvents'
                                         ? 'bg-white/20 text-white'
                                         : 'bg-slate-100 text-slate-500'
                                         }`}>
@@ -385,21 +424,21 @@ export default function App() {
                     </div>
 
                     {/* Mobile View Toggle */}
-                    <div className="flex lg:hidden bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
+                    <div className="flex lg:hidden bg-white rounded-lg p-1 border border-slate-200 shadow-sm self-start">
                         <button
                             onClick={() => setViewMode('list')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
                                 }`}
                         >
-                            <List size={16} />
+                            <List size={14} />
                             List
                         </button>
                         <button
                             onClick={() => setViewMode('map')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
                                 }`}
                         >
-                            <MapIcon size={16} />
+                            <MapIcon size={14} />
                             Map
                         </button>
                     </div>
@@ -407,16 +446,16 @@ export default function App() {
 
                 {/* ===== DATE FILTER ===== */}
                 {(activeTab === 'allEvents' || query) && (
-                    <div className="mb-6 animate-fade-up">
+                    <div className="mb-4 sm:mb-6 animate-fade-up">
                         {/* Filter Toggle Button */}
                         <button
                             onClick={() => setShowDateFilter(!showDateFilter)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all mb-3 ${hasDateFilter
-                                    ? 'bg-[#D4AF37] text-white'
-                                    : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50'
+                            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all mb-3 ${hasDateFilter
+                                ? 'bg-[#D4AF37] text-white'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50'
                                 }`}
                         >
-                            <Filter size={16} />
+                            <Filter size={14} className="sm:w-4 sm:h-4" />
                             {hasDateFilter ? 'Date Filter Active' : 'Filter by Date'}
                             {hasDateFilter && (
                                 <span
@@ -426,16 +465,16 @@ export default function App() {
                                     }}
                                     className="ml-1 p-0.5 hover:bg-white/20 rounded-full cursor-pointer"
                                 >
-                                    <X size={14} />
+                                    <X size={12} className="sm:w-3.5 sm:h-3.5" />
                                 </span>
                             )}
                         </button>
 
-                        {/* Date Filter Inputs */}
+                        {/* Date Filter Inputs - stack on mobile */}
                         {showDateFilter && (
-                            <div className="flex flex-wrap items-center gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                                <div className="flex items-center gap-2">
-                                    <label htmlFor="dateFrom" className="text-sm font-medium text-slate-600">
+                            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                                    <label htmlFor="dateFrom" className="text-xs sm:text-sm font-medium text-slate-600">
                                         From:
                                     </label>
                                     <input
@@ -443,11 +482,11 @@ export default function App() {
                                         id="dateFrom"
                                         value={dateFrom}
                                         onChange={(e) => setDateFrom(e.target.value)}
-                                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
+                                        className="w-full sm:w-auto px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
                                     />
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <label htmlFor="dateTo" className="text-sm font-medium text-slate-600">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                                    <label htmlFor="dateTo" className="text-xs sm:text-sm font-medium text-slate-600">
                                         To:
                                     </label>
                                     <input
@@ -456,13 +495,13 @@ export default function App() {
                                         value={dateTo}
                                         onChange={(e) => setDateTo(e.target.value)}
                                         min={dateFrom || undefined}
-                                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
+                                        className="w-full sm:w-auto px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37]"
                                     />
                                 </div>
                                 {hasDateFilter && (
                                     <button
                                         onClick={clearDateFilter}
-                                        className="text-sm text-slate-500 hover:text-[#D4AF37] transition-colors underline"
+                                        className="text-xs sm:text-sm text-slate-500 hover:text-[#D4AF37] transition-colors underline self-start sm:self-auto"
                                     >
                                         Clear dates
                                     </button>
@@ -474,11 +513,11 @@ export default function App() {
 
                 {/* Page Info */}
                 {!loading && tabFilteredEvents.length > 0 && (
-                    <div className="mb-6 text-sm text-slate-500">
+                    <div className="mb-4 sm:mb-6 text-xs sm:text-sm text-slate-500">
                         Showing {((currentPage - 1) * EVENTS_PER_PAGE) + 1}-{Math.min(currentPage * EVENTS_PER_PAGE, tabFilteredEvents.length)} of {tabFilteredEvents.length} events
                         {hasDateFilter && (
                             <span className="ml-2 text-[#D4AF37]">
-                                (filtered by date)
+                                (filtered)
                             </span>
                         )}
                     </div>
@@ -490,13 +529,13 @@ export default function App() {
                         <Loader2 className="animate-spin text-[#C5A028]" size={40} />
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12 lg:gap-16">
 
                         {/* LEFT: Events List */}
                         <div className={`${viewMode === 'list' ? 'block' : 'hidden lg:block'}`}>
                             {paginatedEvents.length > 0 ? (
                                 <>
-                                    <div className="grid md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-8">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
                                         {paginatedEvents.map((event, index) => (
                                             <div
                                                 key={event.id}
@@ -515,18 +554,18 @@ export default function App() {
 
                                     {/* Pagination Controls */}
                                     {totalPages > 1 && (
-                                        <div className="flex items-center justify-center gap-2 mt-12">
+                                        <div className="flex items-center justify-center gap-1 sm:gap-2 mt-8 sm:mt-12 flex-wrap">
                                             {/* Previous Button */}
                                             <button
                                                 onClick={() => goToPage(currentPage - 1)}
                                                 disabled={currentPage === 1}
-                                                className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${currentPage === 1
+                                                className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === 1
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
                                                     }`}
                                             >
-                                                <ChevronLeft size={18} />
-                                                Prev
+                                                <ChevronLeft size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                                <span className="hidden sm:inline">Prev</span>
                                             </button>
 
                                             {/* Page Numbers */}
@@ -542,7 +581,7 @@ export default function App() {
                                                     const showEllipsisAfter = page === currentPage + 2 && currentPage < totalPages - 2;
 
                                                     if (showEllipsisBefore || showEllipsisAfter) {
-                                                        return <span key={page} className="px-2 text-slate-400">...</span>;
+                                                        return <span key={page} className="px-1 sm:px-2 text-slate-400 text-xs sm:text-sm">...</span>;
                                                     }
 
                                                     if (!showPage) return null;
@@ -551,7 +590,7 @@ export default function App() {
                                                         <button
                                                             key={page}
                                                             onClick={() => goToPage(page)}
-                                                            className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${currentPage === page
+                                                            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === page
                                                                 ? 'bg-[#D4AF37] text-white shadow-lg'
                                                                 : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
                                                                 }`}
@@ -566,31 +605,31 @@ export default function App() {
                                             <button
                                                 onClick={() => goToPage(currentPage + 1)}
                                                 disabled={currentPage === totalPages}
-                                                className={`flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${currentPage === totalPages
+                                                className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === totalPages
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
                                                     }`}
                                             >
-                                                Next
-                                                <ChevronRight size={18} />
+                                                <span className="hidden sm:inline">Next</span>
+                                                <ChevronRight size={16} className="sm:w-[18px] sm:h-[18px]" />
                                             </button>
                                         </div>
                                     )}
                                 </>
                             ) : (
                                 /* Empty State */
-                                <div className="flex flex-col items-center justify-center py-24 bg-white/40 rounded-[2rem] border border-dashed border-slate-300 text-center">
-                                    <div className="bg-white p-6 rounded-full mb-6 shadow-xl shadow-slate-200/50">
-                                        <Sparkles className="text-[#D4AF37]" size={32} />
+                                <div className="flex flex-col items-center justify-center py-16 sm:py-24 bg-white/40 rounded-2xl sm:rounded-[2rem] border border-dashed border-slate-300 text-center px-4">
+                                    <div className="bg-white p-4 sm:p-6 rounded-full mb-4 sm:mb-6 shadow-xl shadow-slate-200/50">
+                                        <Sparkles className="text-[#D4AF37]" size={24} />
                                     </div>
-                                    <h3 className="text-slate-900 font-serif text-2xl mb-2">
+                                    <h3 className="text-slate-900 font-serif text-xl sm:text-2xl mb-2">
                                         {hasDateFilter
                                             ? 'No events in this date range'
                                             : activeTab === 'thisWeek' && !query
                                                 ? 'No events this week'
                                                 : 'No experiences found'}
                                     </h3>
-                                    <p className="text-slate-500 mb-6">
+                                    <p className="text-slate-500 mb-4 sm:mb-6 text-sm sm:text-base">
                                         {hasDateFilter
                                             ? 'Try adjusting your date range.'
                                             : activeTab === 'thisWeek' && !query
@@ -626,11 +665,11 @@ export default function App() {
                                     events={tabFilteredEvents}
                                     onMarkerClick={setSelectedEvent}
                                     hoveredEventId={hoveredEventId}
-                                    className="h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white"
+                                    className="h-[60vh] min-h-[400px] sm:h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white"
                                 />
-                                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400 font-medium uppercase tracking-widest">
-                                    <Compass size={14} />
-                                    <span>Interactive Discovery Map</span>
+                                <div className="mt-3 sm:mt-4 flex items-center justify-center gap-2 text-[10px] sm:text-xs text-slate-400 font-medium uppercase tracking-widest">
+                                    <Compass size={12} className="sm:w-3.5 sm:h-3.5" />
+                                    <span>Interactive Map</span>
                                 </div>
                             </div>
                         </div>
