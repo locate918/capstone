@@ -132,8 +132,8 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     - **Structure**:
       - Start with a warm, brief opening.
       - List events using this Markdown format:
-        *   [**Event Title**](source_url) (If no URL, just **Event Title**)
-            *   📍 **Venue**: [Venue Name](venue_website) (If no URL, just Venue Name)
+        *   [**Event Title**](source_url) (Use Markdown link syntax. Do NOT show raw URL.)
+            *   📍 **Venue**: [Venue Name](venue_website) (Use Markdown link syntax. Do NOT show raw URL.)
             *   ⏰ **Time**: [Day of week], [Time in Central Time]
             *   💰 **Price**: [Price range or "Free"]
             *   📝 [One sentence punchy description]
@@ -179,7 +179,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             else:
                 # If no handler is provided, return the tool call to the client
                 return {
-                    "message": None,
+                    "message": "I tried to perform an action that isn't supported. Please ask something else.",
                     "tool_call": {
                         "name": func_name,
                         "args": func_args
@@ -194,7 +194,10 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
 
     try:
         text_response = response.text
-    except Exception:
+        if not text_response:
+            text_response = "I checked the events but couldn't generate a response. Please try asking differently."
+    except Exception as e:
+        print(f"Gemini Response Error: {e}")
         text_response = "I'm having trouble formulating a response right now."
 
     return {"message": text_response, "tool_call": None}
