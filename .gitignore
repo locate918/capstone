@@ -2,7 +2,7 @@
 Set-Content -Path .gitignore -Value @"
 # Rust
 target/
-Cargo.lock
+
 
 # Node/React
 node_modules/

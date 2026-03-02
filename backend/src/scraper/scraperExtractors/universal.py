@@ -8,6 +8,7 @@ FIX: Garbage title filter now applies to ALL extraction methods universally,
      not just date proximity. Catches "click here for tickets", UI labels, etc.
 """
 
+import html
 import re
 from bs4 import BeautifulSoup
 
@@ -31,10 +32,6 @@ from .platformExtractors import (
 
 from .apiExtractors import (
     extract_timely_from_html,
-)
-
-from .cmsExtractors import (
-    extract_circle_cinema,
 )
 
 from .genericExtractors import (
@@ -221,13 +218,6 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
         all_events.extend(sq_events)
         methods_used.append(f"Squarespace ({len(sq_events)})")
 
-    # ── 6b. Circle Cinema (Wix SSR) ──
-    if not all_events:
-        cc_events = extract_circle_cinema(soup, base_url, source_name)
-        if cc_events:
-            all_events.extend(cc_events)
-            methods_used.append(f"Circle Cinema ({len(cc_events)})")
-
     # ── 7. Fallbacks ──
     if not all_events:
         timely_html = extract_timely_from_html(soup, base_url, source_name)
@@ -250,8 +240,33 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
     return _finalize(all_events, methods_used)
 
 
+def _clean_description(text: str) -> str:
+    """
+    Strip HTML tags and decode HTML entities from description text.
+    Handles raw HTML like '&lt;p&gt;Some text&lt;/p&gt;' and tagged HTML like '<p>Some text</p>'.
+    """
+    if not text:
+        return ''
+
+    # 1. Decode HTML entities FIRST (&lt; → <, &amp; → &, etc.)
+    #    Run twice to catch double-encoded entities like &amp;amp;
+    text = html.unescape(html.unescape(text))
+
+    # 2. Strip HTML tags (<p>, <br>, <a href="...">, etc.)
+    text = re.sub(r'<[^>]+>', ' ', text)
+
+    # 3. Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # 4. Truncate to 200 chars
+    if len(text) > 200:
+        text = text[:197] + '...'
+
+    return text
+
+
 def _finalize(all_events: list, methods_used: list) -> list:
-    """Apply universal garbage filter and deduplication."""
+    """Apply universal garbage filter, description cleaning, and deduplication."""
 
     # FIX: Universal garbage title filter (applies to ALL methods)
     filtered = []
@@ -261,6 +276,8 @@ def _finalize(all_events: list, methods_used: list) -> list:
         if _is_garbage_title(title):
             garbage_count += 1
             continue
+        # Clean HTML from descriptions
+        event['description'] = _clean_description(event.get('description', ''))
         filtered.append(event)
 
     if garbage_count:
