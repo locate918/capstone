@@ -462,7 +462,7 @@ export default function App() {
             )}
 
             {/* ===== MAIN CONTENT ===== */}
-            <main id="events-section" className={`max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[120px] md:pt-[192px] lg:pt-[224px] xl:pt-[240px]' : 'pt-6 sm:pt-12'}`}>
+            <main id="events-section" className={`max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[145px] md:pt-[230px] lg:pt-[235px] xl:pt-[275px]' : 'pt-6 sm:pt-12'}`}>
 
                 {/* AI Chat Widget (only on home page) */}
                 {!query && <AIChatWidget userId={user?.id} />}
