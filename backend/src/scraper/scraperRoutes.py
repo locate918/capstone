@@ -23,6 +23,7 @@ from scraperUtils import (
     load_saved_urls,
     save_url,
     delete_saved_url,
+    resolve_source_name,
 )
 
 from scraperExtractors import (
@@ -880,6 +881,9 @@ def register_routes(app):
         if not url:
             return jsonify({"error": "URL required"}), 400
 
+        # Resolve canonical venue name from URL (prevents typos like "shrine")
+        source_name = resolve_source_name(url, source_name)
+
         robots_result = check_robots_txt(url)
         print(f"[robots.txt] {url}: {robots_result['message']}")
 
@@ -1048,6 +1052,9 @@ def register_routes(app):
                 name = entry.get('name', 'unknown')
                 use_pw = entry.get('use_playwright', True)
 
+                # Resolve canonical venue name from URL
+                name = resolve_source_name(url, name)
+
                 yield f"data: {json.dumps({'type': 'source_start', 'name': name, 'index': i})}\n\n"
 
                 try:
@@ -1156,14 +1163,38 @@ def register_routes(app):
 
                     yield f"data: {json.dumps({'type': 'source_scraped', 'name': name, 'index': i, 'count': len(events), 'methods': methods})}\n\n"
 
-                    # Save JSON
+                    # Save JSON to disk (backup)
                     saved_count = 0
                     if events:
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         safe_name = re.sub(r'[^\w\-]', '_', name)
                         filename = f"{safe_name}_{timestamp}.json"
                         (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
-                        saved_count = len(events)
+
+                        # --- Normalize via LLM service then POST to backend ---
+                        normalized = normalize_batch(events, source_url=url, source_name=name)
+                        events_to_post = normalized if normalized else events
+
+                        db_saved = 0
+                        for ev in events_to_post:
+                            try:
+                                transformed = transform_event_for_backend(ev)
+                                # Ensure source fields are set
+                                if not transformed.get('source_url'):
+                                    transformed['source_url'] = url
+                                if not transformed.get('source_name'):
+                                    transformed['source_name'] = name
+                                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+                                if resp.status_code in [200, 201]:
+                                    db_saved += 1
+                                else:
+                                    print(f"[ScrapeAll DB] Rejected: {resp.status_code} - {resp.text[:100]}")
+                            except Exception as db_err:
+                                print(f"[ScrapeAll DB] Error: {db_err}")
+
+                        saved_count = db_saved
+                        norm_tag = "normalized" if normalized else "fallback"
+                        print(f"[ScrapeAll DB] {name}: {db_saved}/{len(events_to_post)} saved ({norm_tag})")
 
                     total_events += len(events)
                     total_saved += saved_count
@@ -1220,9 +1251,26 @@ def register_routes(app):
 
         print(f"[DB] Processing {len(events)} events...")
 
-        # --- Step 0: Collect, register, and auto-enrich venues ---
+        # --- Step 1: Normalize through Gemini FIRST ---
+        # This must happen before venue registration so we register
+        # canonical names ("The Shrine") not raw names ("shrine").
+        source_url = events[0].get('source_url', '') if events else ''
+        source_name = events[0].get('source', '') or events[0].get('source_name', '') if events else ''
+
+        normalized_events = normalize_batch(events, source_url, source_name)
+
+        use_normalized = len(normalized_events) > 0
+        if use_normalized:
+            print(f"[DB] ✓ Normalized {len(events)} → {len(normalized_events)} events via Gemini")
+            events_to_save = normalized_events
+        else:
+            print(f"[DB] ⚠ Normalization unavailable, using basic transform fallback")
+            events_to_save = events
+
+        # --- Step 2: Collect, register, and auto-enrich venues ---
+        # Uses normalized events so venue names are canonical.
         venues_to_save = {}
-        for event in events:
+        for event in events_to_save:
             venue_name = event.get('venue', '').strip()
             if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
                 venue_key = venue_name.lower()
@@ -1292,21 +1340,7 @@ def register_routes(app):
 
             print(f"[DB] Venues: {len(venues_to_save)} registered, {venues_with_websites} with websites, {venues_enriched} enriched via Google")
 
-        # --- Step 1: Normalize through Gemini ---
-        source_url = events[0].get('source_url', '') if events else ''
-        source_name = events[0].get('source', '') or events[0].get('source_name', '') if events else ''
-
-        normalized_events = normalize_batch(events, source_url, source_name)
-
-        use_normalized = len(normalized_events) > 0
-        if use_normalized:
-            print(f"[DB] ✓ Normalized {len(events)} → {len(normalized_events)} events via Gemini")
-            events_to_save = normalized_events
-        else:
-            print(f"[DB] ⚠ Normalization unavailable, using basic transform fallback")
-            events_to_save = events
-
-        # --- Step 2: Transform and send to Rust backend ---
+        # --- Step 3: Transform and send to Rust backend ---
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
@@ -1361,24 +1395,39 @@ def register_routes(app):
         total_events = len(all_events)
         print(f"[Upload] {total_events} events from {files_processed} files")
 
+        # Normalize through Gemini before sending to database
+        source_url = all_events[0].get('source_url', '') if all_events else ''
+        source_name = all_events[0].get('source', '') or all_events[0].get('source_name', '') if all_events else ''
+        normalized = normalize_batch(all_events, source_url, source_name)
+
+        use_normalized = len(normalized) > 0
+        if use_normalized:
+            print(f"[Upload] ✓ Normalized {total_events} → {len(normalized)} events via Gemini")
+            events_to_post = normalized
+        else:
+            print(f"[Upload] ⚠ Normalization unavailable, using basic transform fallback")
+            events_to_post = all_events
+
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
                 resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
                 return resp.status_code in [200, 201]
-            except:
+            except Exception as e:
+                print(f"[Upload] Error: {e}")
                 return False
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(post_event, all_events))
+            results = list(executor.map(post_event, events_to_post))
 
         total_saved = sum(results)
-        print(f"[Upload] Complete: {total_saved}/{total_events} saved")
+        print(f"[Upload] Complete: {total_saved}/{len(events_to_post)} saved (normalized: {use_normalized})")
 
         return jsonify({
             "files_processed": files_processed,
             "total_events": total_events,
             "saved": total_saved,
+            "normalized": use_normalized,
             "errors": errors
         })
 

@@ -227,24 +227,42 @@ def extract_stubwire_events(soup, base_url: str, source_name: str) -> list:
 
         if container:
             container_text = container.get_text(' ', strip=True)
-            months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-            for month in months:
-                if month in container_text:
-                    month_idx = container_text.find(month)
-                    before = container_text[:month_idx].strip()
-                    day_match = re.search(r'(\d{1,2})\s*$', before)
-                    if day_match:
-                        date_str = f"{month} {day_match.group(1)}"
-                        break
-                    after = container_text[month_idx + len(month):].strip()
-                    day_match = re.search(r'^[\s,]*(\d{1,2})', after)
-                    if day_match:
-                        date_str = f"{month} {day_match.group(1)}"
-                        break
+            # FIX: Use shared date/time extractors instead of manual month search.
+            date_str = extract_date_from_text(container_text) or ''
+            time_str = extract_time_from_text(container_text) or ''
 
-            time_match = re.search(r'(\d{1,2}:\d{2}\s*[APap][Mm])', container_text)
-            if time_match:
-                time_str = time_match.group(1)
+            # FIX: Shrine-style layouts put the date in a SIBLING element above
+            # the event card, not inside it.  Structure looks like:
+            #   <div class="date">05<br>Mar</div>   ← sibling
+            #   <div class="event">[title, time]</div>  ← container
+            # Walk backwards through previous siblings to find a date.
+            if not date_str:
+                sibling = container.find_previous_sibling()
+                checked = 0
+                while sibling and checked < 5:
+                    sib_text = sibling.get_text(' ', strip=True)
+                    if sib_text:
+                        date_str = extract_date_from_text(sib_text) or ''
+                        if date_str:
+                            break
+                        # Also check for bare "05 Mar" or "12 Apr" split across elements
+                        # (day and month might be in separate child elements)
+                        day_month = re.match(r'^(\d{1,2})\s+([A-Za-z]{3,})', sib_text)
+                        if day_month:
+                            date_str = f"{day_month.group(1)} {day_month.group(2)}"
+                            break
+                    sibling = sibling.find_previous_sibling()
+                    checked += 1
+
+            # FIX: Also try parent container if still no date
+            if not date_str and container.parent:
+                parent_text = container.parent.get_text(' ', strip=True)
+                # Only use parent date if we can isolate it near our event
+                # Look for "DD Mon" pattern right before the event title in parent text
+                title_idx = parent_text.find(title[:20]) if title else -1
+                if title_idx > 0:
+                    preceding = parent_text[:title_idx]
+                    date_str = extract_date_from_text(preceding) or ''
 
         full_date = date_str
         if time_str:

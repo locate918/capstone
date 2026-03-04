@@ -20,6 +20,7 @@ See backend/src/services/llm.rs for the Rust client that calls these.
 
 import os
 import json
+import time
 import httpx
 from typing import List, Dict, Any
 from datetime import datetime
@@ -32,6 +33,48 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _client = None
+
+# ── Venue Name Cache ──────────────────────────────────────────────────────────
+# Fetches canonical venue names from Supabase so Gemini can match against them.
+# Refreshes every hour to pick up newly added venues.
+
+_venue_cache: List[str] = []
+_venue_cache_time: float = 0
+VENUE_CACHE_TTL = 3600  # 1 hour
+
+
+async def get_venue_names() -> List[str]:
+    """Fetch canonical venue names from Supabase, cached for 1 hour."""
+    global _venue_cache, _venue_cache_time
+
+    if _venue_cache and (time.time() - _venue_cache_time) < VENUE_CACHE_TTL:
+        return _venue_cache
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_KEY", "")
+
+    if not supabase_url or not supabase_key:
+        print("[VenueCache] SUPABASE_URL or SUPABASE_KEY not set, skipping venue list")
+        return _venue_cache
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{supabase_url}/rest/v1/venues?select=name&order=name",
+                headers={
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            _venue_cache = [v["name"] for v in resp.json() if v.get("name")]
+            _venue_cache_time = time.time()
+            print(f"[VenueCache] Loaded {len(_venue_cache)} venue names")
+    except Exception as e:
+        print(f"[VenueCache] Failed to fetch venues: {e}")
+
+    return _venue_cache
 
 
 def get_client():
@@ -208,6 +251,26 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     current_date = datetime.now().strftime("%Y-%m-%d")
     original_data = {}
 
+    # Fetch canonical venue names for matching
+    venue_names = await get_venue_names()
+    venue_block = ""
+    if venue_names:
+        venue_list = "\n".join(f"  - {name}" for name in venue_names)
+        venue_block = f"""
+    VENUE NAME MATCHING (CRITICAL):
+    Below is the list of canonical venue names in our database. When you encounter a venue
+    in the raw data, you MUST match it to one of these names if it refers to the same place.
+    Use case-insensitive matching. Handle common variations:
+    - "The Shrine" → "shrine" (drop "The", match case of canonical)
+    - "The Vanguard Tulsa" → "The Vanguard" (drop city suffix)
+    - "Hard Rock Casino Tulsa" → "Hard Rock Hotel & Casino Tulsa" (match closest)
+    - "Loony Bin Comedy Club" → "Loony Bin" (match shorter canonical form)
+    If the venue does NOT match any name below, output it as-is — do not force a bad match.
+    
+    Known venues:
+{venue_list}
+    """
+
     # 1. Parse JSON input to preserve IDs and metadata
     if content_type.lower() == "json":
         try:
@@ -240,6 +303,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     {instruction}
     Source URL: {source_url}
     Current Date: {current_date}
+    {venue_block}
     
     TIMEZONE RULES (CRITICAL):
     - All events are in the Tulsa area, Oklahoma which is America/Chicago timezone (Central Time).
@@ -281,7 +345,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
 
     Output Format: A JSON list of objects with these exact keys:
     - title (string)
-    - venue (string)
+    - venue (string — MUST match a known venue name from the list above if the place is the same, otherwise use the name as-is)
     - venue_address (string, full address if available)
     - source_url (string, the URL for this specific event page — use the input Source URL if no per-event URL exists)
     - source_name (string, human-readable name of the source website, e.g. "Cain's Ballroom", "Eventbrite")
