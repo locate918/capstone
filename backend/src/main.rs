@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     // STEP 4: Run Database Migrations
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    //sqlx::migrate!("./migrations").run(&pool).await?;
 
     // STEP 5: Configure CORS
     // Allow both local dev and production frontend origins.
