@@ -472,12 +472,24 @@ export default function App() {
                     <div className="flex flex-col gap-1 w-full">
                         {query ? (
                             <>
-                                <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
-                                    Results: "{query}"
-                                </h2>
-                                <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
-                                    {filteredEvents.length} Experiences Found
-                                </span>
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
+                                            Results: "{query}"
+                                        </h2>
+                                        <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
+                                            {filteredEvents.length} Experiences Found
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => setQuery('')}
+                                        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-all shadow-sm"
+                                    >
+                                        <X size={14} className="sm:w-4 sm:h-4" />
+                                        <span className="hidden sm:inline">Clear Filter</span>
+                                        <span className="sm:hidden">Clear</span>
+                                    </button>
+                                </div>
                             </>
                         ) : (
                             /* Tab Buttons - scrollable on mobile */
