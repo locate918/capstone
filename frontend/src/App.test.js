@@ -34,7 +34,8 @@ jest.mock('./components/EventModal', () => function MockEventModal() {
 
 import App from './App';
 
-test('renders trending collections heading', () => {
+test('renders app shell after data load', async () => {
   render(<App />);
-  expect(screen.getByText(/trending collections/i)).toBeInTheDocument();
+  expect(screen.getByText(/header/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no events this week/i)).toBeInTheDocument();
 });
