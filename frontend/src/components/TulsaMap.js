@@ -341,6 +341,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
     const center = [36.1540, -95.9928];
     const containerRef = useRef(null);
     const mapRef = useRef(null);
+    const normalizedEvents = Array.isArray(events) ? events : [];
 
     useEffect(() => {
         injectMapStyles();
@@ -365,7 +366,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
     }, []);
 
     // Filter events to only those with valid coordinates
-    const eventsWithValidCoords = events.filter(event => isValidCoordinates(event.coordinates));
+    const eventsWithValidCoords = normalizedEvents.filter(event => isValidCoordinates(event.coordinates));
 
     return (
         <div
@@ -383,7 +384,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                 zoomControl={false}
                 ref={mapRef}
             >
-                <MapController hoveredEventId={hoveredEventId} events={events} />
+                <MapController hoveredEventId={hoveredEventId} events={eventsWithValidCoords} />
 
                 <TileLayer
                     attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -402,17 +403,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                     zoomToBoundsOnClick={true}
                     disableClusteringAtZoom={16}
                 >
-                    {events.map((event) => {
-                        // Skip events without valid coordinates
-                        if (
-                            !event.coordinates?.lat ||
-                            !event.coordinates?.lng ||
-                            isNaN(event.coordinates.lat) ||
-                            isNaN(event.coordinates.lng)
-                        ) {
-                            return null;
-                        }
-
+                    {eventsWithValidCoords.map((event) => {
                         return (
                             <Marker
                                 key={event.id}
