@@ -9,7 +9,7 @@
  */
 
 import React from 'react';
-import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2, Link } from 'lucide-react';
+import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
 
 const EventModal = ({ event, onClose }) => {
