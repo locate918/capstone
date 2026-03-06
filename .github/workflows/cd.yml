@@ -51,10 +51,14 @@ jobs:
           test -n "$FRONTEND_HEALTHCHECK_URL" || (echo "Missing FRONTEND_HEALTHCHECK_URL" && exit 1)
 
       - name: Trigger Vercel frontend deploy
-        if: ${{ secrets.VERCEL_DEPLOY_HOOK != '' }}
         env:
           VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: curl -fsS -X POST "$VERCEL_DEPLOY_HOOK"
+        run: |
+          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
+            curl -fsS -X POST "$VERCEL_DEPLOY_HOOK"
+          else
+            echo "VERCEL_DEPLOY_HOOK not set; skipping Vercel deploy trigger."
+          fi
 
       - name: Wait for backend health check
         env:
