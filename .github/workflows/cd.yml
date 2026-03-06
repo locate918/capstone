@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: cd-${{ github.workflow }}-production
@@ -41,11 +40,58 @@ jobs:
           npm ci --prefix frontend
           npm run build --prefix frontend
 
-      # ====================
-      # Deployment Step
-      # ====================
-      - name: Deploy Application
+      - name: Validate health check secrets
+        env:
+          BACKEND_HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
+          LLM_HEALTHCHECK_URL: ${{ secrets.LLM_HEALTHCHECK_URL }}
+          FRONTEND_HEALTHCHECK_URL: ${{ secrets.FRONTEND_HEALTHCHECK_URL }}
         run: |
-          echo "Deploying to production environment..."
-          # Example:
-          # ssh user@server "docker compose pull && docker compose up -d"
+          test -n "$BACKEND_HEALTHCHECK_URL" || (echo "Missing BACKEND_HEALTHCHECK_URL" && exit 1)
+          test -n "$LLM_HEALTHCHECK_URL" || (echo "Missing LLM_HEALTHCHECK_URL" && exit 1)
+          test -n "$FRONTEND_HEALTHCHECK_URL" || (echo "Missing FRONTEND_HEALTHCHECK_URL" && exit 1)
+
+      - name: Trigger Vercel frontend deploy
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
+            curl -fsS -X POST "$VERCEL_DEPLOY_HOOK"
+          else
+            echo "VERCEL_DEPLOY_HOOK not set; skipping Vercel deploy trigger."
+          fi
+
+      - name: Wait for backend health check
+        env:
+          BACKEND_HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
+        run: |
+          for i in {1..30}; do
+            curl -fsS "$BACKEND_HEALTHCHECK_URL" && exit 0
+            echo "Backend not ready yet ($i/30)..."
+            sleep 10
+          done
+          echo "Backend health check failed"
+          exit 1
+
+      - name: Wait for LLM health check
+        env:
+          LLM_HEALTHCHECK_URL: ${{ secrets.LLM_HEALTHCHECK_URL }}
+        run: |
+          for i in {1..30}; do
+            curl -fsS "$LLM_HEALTHCHECK_URL" && exit 0
+            echo "LLM service not ready yet ($i/30)..."
+            sleep 10
+          done
+          echo "LLM health check failed"
+          exit 1
+
+      - name: Wait for frontend health check
+        env:
+          FRONTEND_HEALTHCHECK_URL: ${{ secrets.FRONTEND_HEALTHCHECK_URL }}
+        run: |
+          for i in {1..30}; do
+            curl -fsS "$FRONTEND_HEALTHCHECK_URL" && exit 0
+            echo "Frontend not ready yet ($i/30)..."
+            sleep 10
+          done
+          echo "Frontend health check failed"
+          exit 1

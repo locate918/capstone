@@ -93,6 +93,7 @@ const getThisWeekRange = () => {
  * Filter events to only those happening this week
  */
 const filterThisWeekEvents = (events) => {
+    if (!Array.isArray(events)) return [];
     const { start, end } = getThisWeekRange();
     return events.filter(event => {
         if (!event.date_iso) return false;
@@ -105,6 +106,7 @@ const filterThisWeekEvents = (events) => {
  * Filter events by date range
  */
 const filterByDateRange = (events, fromDate, toDate) => {
+    if (!Array.isArray(events)) return [];
     return events.filter(event => {
         if (!event.date_iso) return false;
         const eventDate = new Date(event.date_iso);
@@ -283,9 +285,10 @@ export default function App() {
                 let data;
                 if (query) {
                     const result = await smartSearch(query);
-                    data = result.events;
+                    data = Array.isArray(result?.events) ? result.events : [];
                 } else {
-                    data = await fetchEvents();
+                    const eventsData = await fetchEvents();
+                    data = Array.isArray(eventsData) ? eventsData : [];
                 }
                 setEvents(data);
             } catch (err) {
@@ -304,7 +307,7 @@ export default function App() {
 
     // Client-side filtering (backup for API search)
     const filteredEvents = useMemo(() => {
-        let filtered = events;
+        let filtered = Array.isArray(events) ? events : [];
 
         // Apply search filter if query exists
         if (query) {

@@ -225,19 +225,88 @@ def delete_saved_url(url: str) -> list:
 
 
 # ============================================================================
+# KNOWN VENUE URL → CANONICAL NAME MAPPING
+# ============================================================================
+# Maps URL domains to their correct venue names.  Prevents operator typos
+# (e.g. "shrine" instead of "The Shrine") from polluting the database.
+# Add new venues here as they get onboarded.
+
+KNOWN_VENUE_URLS = {
+    'tulsashrine.com':              'The Shrine',
+    'www.tulsashrine.com':          'The Shrine',
+    'thevanguardtulsa.com':         'The Vanguard',
+    'www.thevanguardtulsa.com':     'The Vanguard',
+    'cainsballroom.com':            "Cain's Ballroom",
+    'www.cainsballroom.com':        "Cain's Ballroom",
+    'bokcenter.com':                'BOK Center',
+    'www.bokcenter.com':            'BOK Center',
+    'guthriegreen.com':             'Guthrie Green',
+    'www.guthriegreen.com':         'Guthrie Green',
+    'philbrook.org':                'Philbrook Museum of Art',
+    'www.philbrook.org':            'Philbrook Museum of Art',
+    'gilcrease.org':                'Gilcrease Museum',
+    'my.gilcrease.org':             'Gilcrease Museum',
+    'tulsapac.com':                 'Tulsa PAC',
+    'www.tulsapac.com':             'Tulsa PAC',
+    'circlecinema.org':             'Circle Cinema',
+    'www.circlecinema.org':         'Circle Cinema',
+    'gatheringplace.org':           'Gathering Place',
+    'www.gatheringplace.org':       'Gathering Place',
+    'exposquare.com':               'Expo Square',
+    'www.exposquare.com':           'Expo Square',
+    'hardrockcasinotulsa.com':      'Hard Rock Hotel & Casino Tulsa',
+    'www.hardrockcasinotulsa.com':  'Hard Rock Hotel & Casino Tulsa',
+    'tulsatheater.com':             'Tulsa Theater',
+    'www.tulsatheater.com':         'Tulsa Theater',
+    'mercuryloungetulsa.com':       'Mercury Lounge',
+    'www.mercuryloungetulsa.com':   'Mercury Lounge',
+    'motherroadmarket.com':         'Mother Road Market',
+    'www.motherroadmarket.com':     'Mother Road Market',
+    'bobdylancenter.com':           'Bob Dylan Center',
+    'www.bobdylancenter.com':       'Bob Dylan Center',
+    'thestarlitebar.com':           'Starlite',
+    'www.thestarlitebar.com':       'Starlite',
+    'discoverylab.org':             'Discovery Lab',
+    'www.discoverylab.org':         'Discovery Lab',
+    'tulsasymphony.org':            'Tulsa Symphony Orchestra',
+    'www.tulsasymphony.org':        'Tulsa Symphony Orchestra',
+}
+
+
+def resolve_source_name(url: str, user_source_name: str) -> str:
+    """
+    Given a scrape URL and the operator-typed source name, return the
+    canonical venue name if we recognize the domain.  Falls back to the
+    user-provided name otherwise.
+    """
+    try:
+        domain = urlparse(url).netloc.lower()
+        if domain in KNOWN_VENUE_URLS:
+            canonical = KNOWN_VENUE_URLS[domain]
+            if canonical.lower() != user_source_name.lower():
+                print(f"[VenueResolve] '{user_source_name}' → '{canonical}' (from URL)")
+            return canonical
+    except Exception:
+        pass
+    return user_source_name
+
+
+# ============================================================================
 # DATE/TIME PATTERN MATCHING
 # ============================================================================
 
 # Regex patterns for dates
 DATE_PATTERNS = [
-    # "Feb 5", "February 5", "Feb 5, 2026"
-    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+\d{4})?',
+    # "Feb 5", "February 5", "Feb 5, 2026", "March 07th, 2026", "March 7th"
+    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?',
+    # Day-first: "05 Mar", "12 April", "3 Jun" (Shrine calendar widget format)
+    r'\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?(?:\s+\d{4})?\b',
     # "2/5/2026", "02/05/26"
     r'\d{1,2}/\d{1,2}/\d{2,4}',
     # "2026-02-05"
     r'\d{4}-\d{2}-\d{2}',
-    # "Thursday, February 5"
-    r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+[A-Z][a-z]+\s+\d{1,2}',
+    # "Thursday, February 5" / "Thursday February 5th" / "Saturday March 07th, 2026"
+    r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+[A-Z][a-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?',
 ]
 
 # Regex patterns for times
