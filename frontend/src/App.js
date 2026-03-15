@@ -217,6 +217,7 @@ export default function App() {
     const [events, setEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
     const [selectedEvent, setSelectedEvent] = useState(null);
     const [hoveredEventId, setHoveredEventId] = useState(null);
     const [viewMode, setViewMode] = useState('list');
@@ -259,10 +260,20 @@ export default function App() {
         return () => clearInterval(timer);
     }, []);
 
+    // Debounce search query
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedQuery(query);
+        }, 500); // 500ms debounce delay
+        return () => clearTimeout(timer);
+    }, [query]);
+
     // Scroll to top when search query changes
     useLayoutEffect(() => {
-        window.scrollTo({ top: 0, behavior: 'auto' });
-    }, [query]);
+        if (debouncedQuery) {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+        }
+    }, [debouncedQuery]);
 
     // Reset to page 1 when tab changes, query changes, or date filters change
     useEffect(() => {
@@ -278,13 +289,14 @@ export default function App() {
         }
     }, [activeTab]);
 
+
     // Fetch events (all or search results)
     useEffect(() => {
         const loadData = async () => {
             try {
                 let data;
-                if (query) {
-                    const result = await smartSearch(query);
+                if (debouncedQuery) {
+                    const result = await smartSearch(debouncedQuery, user?.id);
                     data = Array.isArray(result?.events) ? result.events : [];
                 } else {
                     const eventsData = await fetchEvents();
@@ -301,7 +313,7 @@ export default function App() {
 
         setLoading(true);
         loadData();
-    }, [query]);
+    }, [debouncedQuery, user?.id]);
 
     // --- DERIVED STATE ---
 
@@ -310,8 +322,8 @@ export default function App() {
         let filtered = Array.isArray(events) ? events : [];
 
         // Apply search filter if query exists
-        if (query) {
-            const searchStr = query.toLowerCase();
+        if (debouncedQuery) {
+            const searchStr = debouncedQuery.toLowerCase();
             filtered = filtered.filter(e =>
                 e.title?.toLowerCase().includes(searchStr) ||
                 e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
@@ -321,11 +333,11 @@ export default function App() {
         }
 
         return filtered;
-    }, [events, query]);
+    }, [events, debouncedQuery]);
 
     // Apply tab filter (This Week vs All Events) and date range filter
     const tabFilteredEvents = useMemo(() => {
-        if (query) {
+        if (debouncedQuery) {
             // During search, apply date filter if set
             return (dateFrom || dateTo)
                 ? filterByDateRange(filteredEvents, dateFrom, dateTo)
@@ -340,7 +352,7 @@ export default function App() {
         return (dateFrom || dateTo)
             ? filterByDateRange(filteredEvents, dateFrom, dateTo)
             : filteredEvents;
-    }, [filteredEvents, activeTab, query, dateFrom, dateTo]);
+    }, [filteredEvents, activeTab, debouncedQuery, dateFrom, dateTo]);
 
     // Pagination calculations
     const totalPages = Math.ceil(tabFilteredEvents.length / EVENTS_PER_PAGE);

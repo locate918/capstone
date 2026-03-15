@@ -64,6 +64,9 @@ class NormalizeResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
+    user_id: Optional[str] = Field(default=None, alias="userId")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class SearchResponse(BaseModel):
     parsed_params: Dict[str, Any]

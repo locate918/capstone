@@ -170,7 +170,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
        - When a user asks for restaurants near a venue, identify the venue's neighborhood first (e.g., "Since the Mabee Center is in South Tulsa...").
        - Recommend at least 3 permanent restaurants in that specific area (e.g., near 71st/81st & Lewis for Mabee Center; near the Arts District for Cain's Ballroom). 
        - DO NOT say "There are no restaurant events." Restaurants are businesses, not events.
-    9. **Links (Strict)**: You MUST ALWAYS link [Event Title](source_url) and [Venue Name](venue_website).
+    9. **Links (Strict)**: You MUST ALWAYS link [Event Title](source_url) and [Venue Name](venue_website) without fail.
     
     RESPONSE FORMATTING (Markdown):
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
@@ -213,13 +213,6 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
                 # Execute the tool
                 tool_result = await tool_functions[func_name](func_args)
 
-                # Add the result to the list of outputs
-                tool_outputs.append(
-                    types.Part.from_function_response(
-                        name=func_name,
-                        response={"result": tool_result}
-                    )
-                )
                 if not tool_result and func_name == "search_events":
                     tool_result = "0 results found. CRITICAL: Do not report failure yet. Execute search_events again with broader dates and fewer category filters."
 

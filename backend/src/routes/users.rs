@@ -228,6 +228,24 @@ async fn add_my_preference(
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
+    // Ensure the user exists in public.users to avoid foreign key constraint error
+    let user_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if !user_exists {
+        eprintln!(
+            "[ERROR] Preference update failed: User {} does not exist in public.users. Profile trigger may have failed.",
+            auth.user_id
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let result = sqlx::query_as::<_, UserPreference>(
         r#"
         INSERT INTO user_preferences (id, user_id, category, weight, created_at)
@@ -248,6 +266,12 @@ async fn add_my_preference(
             eprintln!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // DEBUG: User preferences updated (category-specific)
+    println!(
+        "[DEBUG] User preference updated: User {} set category '{}' to weight {}",
+        auth.user_id, result.category, result.weight
+    );
 
     Ok((StatusCode::CREATED, Json(result)))
 }
@@ -293,6 +317,12 @@ async fn update_my_preferences(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    // DEBUG: User preferences updated (settings)
+    println!(
+        "[DEBUG] User preferences updated: User {} updated their profile settings",
+        auth.user_id
+    );
 
     Ok(Json(user))
 }
@@ -360,6 +390,30 @@ async fn add_my_interaction(
         })?;
 
     let (event_category, event_venue) = event.unwrap_or((None, None));
+
+    // Ensure the user exists in public.users to avoid foreign key constraint error
+    let user_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if !user_exists {
+        eprintln!(
+            "[ERROR] Interaction tracking failed: User {} does not exist in public.users. Profile trigger may have failed.",
+            auth.user_id
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // DEBUG: Interaction detected
+    println!(
+        "[DEBUG] Interaction detected: User {} performed '{}' on Event {}",
+        auth.user_id, payload.interaction_type, payload.event_id
+    );
 
     sqlx::query(
         r#"
