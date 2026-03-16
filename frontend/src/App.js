@@ -93,6 +93,7 @@ const getThisWeekRange = () => {
  * Filter events to only those happening this week
  */
 const filterThisWeekEvents = (events) => {
+    if (!Array.isArray(events)) return [];
     const { start, end } = getThisWeekRange();
     return events.filter(event => {
         if (!event.date_iso) return false;
@@ -105,6 +106,7 @@ const filterThisWeekEvents = (events) => {
  * Filter events by date range
  */
 const filterByDateRange = (events, fromDate, toDate) => {
+    if (!Array.isArray(events)) return [];
     return events.filter(event => {
         if (!event.date_iso) return false;
         const eventDate = new Date(event.date_iso);
@@ -283,9 +285,10 @@ export default function App() {
                 let data;
                 if (query) {
                     const result = await smartSearch(query);
-                    data = result.events;
+                    data = Array.isArray(result?.events) ? result.events : [];
                 } else {
-                    data = await fetchEvents();
+                    const eventsData = await fetchEvents();
+                    data = Array.isArray(eventsData) ? eventsData : [];
                 }
                 setEvents(data);
             } catch (err) {
@@ -304,7 +307,7 @@ export default function App() {
 
     // Client-side filtering (backup for API search)
     const filteredEvents = useMemo(() => {
-        let filtered = events;
+        let filtered = Array.isArray(events) ? events : [];
 
         // Apply search filter if query exists
         if (query) {
@@ -472,12 +475,24 @@ export default function App() {
                     <div className="flex flex-col gap-1 w-full">
                         {query ? (
                             <>
-                                <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
-                                    Results: "{query}"
-                                </h2>
-                                <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
-                                    {filteredEvents.length} Experiences Found
-                                </span>
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
+                                            Results: "{query}"
+                                        </h2>
+                                        <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
+                                            {filteredEvents.length} Experiences Found
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => setQuery('')}
+                                        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-all shadow-sm"
+                                    >
+                                        <X size={14} className="sm:w-4 sm:h-4" />
+                                        <span className="hidden sm:inline">Clear Filter</span>
+                                        <span className="sm:hidden">Clear</span>
+                                    </button>
+                                </div>
                             </>
                         ) : (
                             /* Tab Buttons - scrollable on mobile */
