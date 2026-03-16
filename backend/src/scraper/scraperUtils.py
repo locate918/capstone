@@ -16,6 +16,107 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ============================================================================
+# AGGREGATOR / SOURCE PRIORITY
+# ============================================================================
+
+# Domains we treat as low-trust aggregators (priority 3).
+# Events whose source_url comes from one of these will never win a canonical_url
+# slot over a direct venue or ticketing source.
+AGGREGATOR_DOMAINS = [
+    'visittulsa.com',
+    'bit918.com',
+    'do918.com',
+    'eventbrite.com',
+    'eventbrite.co.uk',
+    'evbuc.com',          # Eventbrite short links
+    'allevents.in',
+    'events.com',
+    'eventful.com',
+    'meetup.com',
+    'facebook.com',       # FB event pages are aggregator-level for our purposes
+]
+
+# Ticketing platforms — better than pure aggregators but still not the venue
+TICKETING_DOMAINS = [
+    'ticketmaster.com',
+    'livenation.com',
+    'axs.com',
+    'etix.com',
+    'tickettailor.com',
+    'ticketleap.com',
+    'dice.fm',
+    'seetickets.us',
+]
+
+
+def is_aggregator_url(url: str) -> bool:
+    """Return True if the URL belongs to a known aggregator domain."""
+    if not url:
+        return False
+    try:
+        hostname = urlparse(url).netloc.lower().lstrip('www.')
+        return any(hostname == d or hostname.endswith('.' + d) for d in AGGREGATOR_DOMAINS)
+    except Exception:
+        return False
+
+
+def get_source_priority(url: str, explicit_priority: int = None) -> int:
+    """
+    Derive a source priority from the URL domain.
+      1 = direct venue website  (best)
+      2 = ticketing platform    (good)
+      3 = aggregator / unknown  (worst)
+    An explicit_priority from saved_urls.json always wins.
+    """
+    if explicit_priority is not None:
+        return explicit_priority
+    if not url:
+        return 3
+    try:
+        hostname = urlparse(url).netloc.lower().lstrip('www.')
+        if any(hostname == d or hostname.endswith('.' + d) for d in AGGREGATOR_DOMAINS):
+            return 3
+        if any(hostname == d or hostname.endswith('.' + d) for d in TICKETING_DOMAINS):
+            return 2
+        # Recognise known venue domains as priority 1
+        if hostname in KNOWN_VENUE_URLS or hostname.lstrip('www.') in {
+            k.lstrip('www.') for k in KNOWN_VENUE_URLS
+        }:
+            return 1
+        # Unknown external URL — treat as mid-tier until classified
+        return 2
+    except Exception:
+        return 3
+
+
+def make_content_hash(title: str, start_time: str, venue: str = '') -> str:
+    """
+    Generate a stable fingerprint for an event based on title + date/hour + venue.
+    Two events from different sources that represent the same real-world event
+    will produce the same hash and be deduplicated by the UPSERT.
+    """
+    import hashlib
+    from dateutil import parser as date_parser
+
+    def _norm(s: str) -> str:
+        s = (s or '').lower().strip()
+        s = re.sub(r'[^a-z0-9 ]', '', s)   # strip punctuation / special chars
+        s = re.sub(r'\band\b', '&', s)      # normalise "and" → "&"
+        s = re.sub(r'\s+', ' ', s)          # collapse whitespace
+        return s.strip()
+
+    # Round to date + hour only — absorbs minor time discrepancies between sources
+    try:
+        dt = date_parser.parse(str(start_time), fuzzy=True)
+        time_part = dt.strftime('%Y-%m-%d-%H')
+    except Exception:
+        time_part = str(start_time or '')[:10]  # fallback: just YYYY-MM-DD
+
+    key = f"{_norm(title)}|{time_part}|{_norm(venue)}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
 # Check if Playwright is available
 try:
     from playwright.async_api import async_playwright
@@ -200,18 +301,22 @@ def load_saved_urls() -> list:
     return []
 
 
-def save_url(url: str, name: str, use_playwright: bool = True) -> list:
-    """Add a URL to saved list."""
+def save_url(url: str, name: str, use_playwright: bool = True, priority: int = None) -> list:
+    """Add a URL to saved list. priority: 1=venue, 2=ticketing, 3=aggregator (auto-detected if omitted)."""
     urls = load_saved_urls()
-    # Update if exists, otherwise add
+    resolved_priority = priority if priority is not None else get_source_priority(url)
     for u in urls:
         if u['url'] == url:
             u['name'] = name
             u['playwright'] = use_playwright
+            if priority is not None:
+                u['priority'] = resolved_priority
+            elif 'priority' not in u:
+                u['priority'] = resolved_priority
             SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
             return urls
 
-    urls.append({'url': url, 'name': name, 'playwright': use_playwright})
+    urls.append({'url': url, 'name': name, 'playwright': use_playwright, 'priority': resolved_priority})
     SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
     return urls
 

@@ -353,178 +353,216 @@ async def _fetch_simpleview_events(base_url: str, source_name: str, future_only:
             print(f"[Simpleview] Failed to get token: {e}")
             return []
 
-        now = datetime.now(timezone.utc)
-        start_date = now.strftime("%Y-%m-%dT06:00:00.000Z") if future_only else "2020-01-01T06:00:00.000Z"
-        end_date = (now + timedelta(days=365)).strftime("%Y-%m-%dT06:00:00.000Z")
+        from datetime import timezone as _tz
+        import time as _time
+        utc_offset_seconds = -_time.timezone if not _time.daylight else -_time.altzone
+        local_tz = timezone(timedelta(seconds=utc_offset_seconds))
+        now_local = datetime.now(local_tz)
+        midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_utc = midnight_local.astimezone(timezone.utc)
+
+        # Paginate in 30-day windows matching what the browser sends
+        all_events_collected = []
+        window_start = midnight_utc
+        total_days = 365
+        days_fetched = 0
 
         batch_size = 100
-        skip = 0
-        total_fetched = 0
+        seen_ids = set()
 
-        while True:
-            query = {
-                "filter": {
-                    "active": True,
-                    "date_range": {
-                        "start": {"$date": start_date},
-                        "end": {"$date": end_date}
-                    }
-                },
-                "options": {
-                    "limit": batch_size, "skip": skip, "count": True,
-                    "castDocs": False,
-                    "fields": {
-                        "_id": 1, "location": 1, "date": 1, "startDate": 1, "endDate": 1,
-                        "recurrence": 1, "recurType": 1, "latitude": 1, "longitude": 1,
-                        "media_raw": 1, "recid": 1, "title": 1, "url": 1, "description": 1,
-                        "categories": 1, "listing.primary_category": 1, "listing.title": 1,
-                        "listing.url": 1, "address": 1,
+        while days_fetched < total_days:
+            window_end = window_start + timedelta(days=30)
+            start_date = window_start.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            end_date = window_end.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            skip = 0
+            window_fetched = 0
+            window_total = 0
+
+            while True:
+                query = {
+                    "filter": {
+                        "active": True,
+                        "$and": [{"categories.catId": {"$in": [
+                            "4","7","12","19","53","22","24","36",
+                            "26","18","32","54","35","37","41","49","21","55","44","45"
+                        ]}}],
+                        "date_range": {
+                            "start": {"$date": start_date},
+                            "end": {"$date": end_date}
+                        }
                     },
-                    "hooks": [],
-                    "sort": {"date": 1, "rank": 1, "title_sort": 1}
+                    "options": {
+                        "limit": batch_size, "skip": skip, "count": True,
+                        "castDocs": False,
+                        "fields": {
+                            "_id": 1, "location": 1, "date": 1, "startDate": 1, "endDate": 1,
+                            "recurrence": 1, "recurType": 1, "latitude": 1, "longitude": 1,
+                            "media_raw": 1, "recid": 1, "title": 1, "url": 1, "description": 1,
+                            "categories": 1, "listing.primary_category": 1, "listing.title": 1,
+                            "listing.url": 1, "address": 1,
+                        },
+                        "hooks": [],
+                        "sort": {"date": 1, "rank": 1, "title_sort": 1}
+                    }
                 }
-            }
 
-            json_str = json.dumps(query)
-            api_url = f"{base_url}/includes/rest_v2/plugins_events_events_by_date/find/?json={quote(json_str)}&token={token}"
+                json_str = json.dumps(query, separators=(',', ':'))
+                api_url = f"{base_url}/includes/rest_v2/plugins_events_events_by_date/find/?json={json_str}&token={token}"
 
-            print(f"[Simpleview] Fetching events (skip={skip})...")
-            try:
-                resp = await client.get(api_url)
-                data = resp.json()
-            except:
-                break
-
-            docs = []
-            total_count = 0
-
-            if isinstance(data, dict):
-                if 'docs' in data and isinstance(data['docs'], dict):
-                    inner = data['docs']
-                    docs = inner.get('docs', [])
-                    total_count = inner.get('count', 0)
-                else:
-                    docs = data.get('docs', [])
-                    total_count = data.get('count', 0)
-                if not docs:
-                    docs = data.get('results', []) or data.get('items', [])
-            elif isinstance(data, list):
-                docs = data
-                total_count = len(data)
-
-            if not docs:
-                break
-
-            print(f"[Simpleview] Got {len(docs)} events (total: {total_count})")
-
-            for doc in docs:
+                print(f"[Simpleview] Fetching events (skip={skip})...")
                 try:
-                    if not isinstance(doc, dict):
-                        continue
-                    title = doc.get('title', '')
-                    if not title:
-                        continue
+                    resp = await client.get(api_url)
+                    data = resp.json()
+                except Exception as e:
+                    print(f"[Simpleview] Request/parse error: {e}. Status: {resp.status_code if resp else 'N/A'}. Raw: {resp.text[:300] if resp else 'N/A'}")
+                    break  # break inner, outer will advance window
 
-                    date_str = ''
-                    if doc.get('startDate'):
-                        sd = doc['startDate']
-                        date_str = sd['$date'] if isinstance(sd, dict) and '$date' in sd else sd
+                docs = []
+                total_count = 0
+
+                if isinstance(data, dict):
+                    if 'docs' in data and isinstance(data['docs'], dict):
+                        inner = data['docs']
+                        docs = inner.get('docs', [])
+                        total_count = inner.get('count', 0)
                     else:
-                        date_str = doc.get('date', '')
+                        docs = data.get('docs', [])
+                        total_count = data.get('count', 0)
+                    if not docs:
+                        docs = data.get('results', []) or data.get('items', [])
+                elif isinstance(data, list):
+                    docs = data
+                    total_count = len(data)
 
-                    # Find external URL
-                    event_url = ''
-                    for key in ['ticketUrl', 'ticket_url', 'externalUrl', 'external_url',
-                                'registrationUrl', 'registration_url', 'eventUrl', 'event_url',
-                                'websiteUrl', 'website_url', 'link']:
-                        v = doc.get(key)
-                        if v:
-                            event_url = v
-                            break
+                if not docs:
+                    print(f"[Simpleview] Empty docs. HTTP {resp.status_code}. Raw response: {str(data)[:500]}")
+                    break
 
-                    listing = doc.get('listing')
-                    if not event_url and listing and isinstance(listing, dict):
-                        for key in ['ticketUrl', 'externalUrl', 'websiteUrl', 'website', 'web']:
-                            v = listing.get(key)
+                if window_total == 0:
+                    window_total = total_count
+                print(f"[Simpleview] Got {len(docs)} events (window total: {window_total})")
+
+                for doc in docs:
+                    try:
+                        if not isinstance(doc, dict):
+                            continue
+                        title = doc.get('title', '')
+                        if not title:
+                            continue
+
+                        # Deduplicate across windows by _id
+                        doc_id = str(doc.get('_id', '') or doc.get('recid', ''))
+                        if doc_id and doc_id in seen_ids:
+                            continue
+                        if doc_id:
+                            seen_ids.add(doc_id)
+
+                        date_str = ''
+                        if doc.get('startDate'):
+                            sd = doc['startDate']
+                            date_str = sd['$date'] if isinstance(sd, dict) and '$date' in sd else sd
+                        else:
+                            date_str = doc.get('date', '')
+
+                        # Find external URL
+                        event_url = ''
+                        for key in ['ticketUrl', 'ticket_url', 'externalUrl', 'external_url',
+                                    'registrationUrl', 'registration_url', 'eventUrl', 'event_url',
+                                    'websiteUrl', 'website_url', 'link']:
+                            v = doc.get(key)
                             if v:
                                 event_url = v
                                 break
 
-                    if event_url:
-                        if not event_url.startswith('http'):
-                            if event_url.startswith('www.') or '.' in event_url:
-                                event_url = 'https://' + event_url
-                    else:
-                        event_url = doc.get('url', '')
-                        if event_url and not event_url.startswith('http'):
-                            event_url = base_url + event_url
+                        listing = doc.get('listing')
+                        if not event_url and listing and isinstance(listing, dict):
+                            for key in ['ticketUrl', 'externalUrl', 'websiteUrl', 'website', 'web']:
+                                v = listing.get(key)
+                                if v:
+                                    event_url = v
+                                    break
 
-                    venue = ''
-                    loc = doc.get('location', '')
-                    if loc and isinstance(loc, str):
-                        venue = loc
-                    if not venue and listing and isinstance(listing, dict):
-                        venue = listing.get('title', '')
+                        if event_url:
+                            if not event_url.startswith('http'):
+                                if event_url.startswith('www.') or '.' in event_url:
+                                    event_url = 'https://' + event_url
+                        else:
+                            event_url = doc.get('url', '')
+                            if event_url and not event_url.startswith('http'):
+                                event_url = base_url + event_url
 
-                    image_url = ''
-                    media_raw = doc.get('media_raw')
-                    if media_raw and isinstance(media_raw, list) and len(media_raw) > 0:
-                        m = media_raw[0]
-                        image_url = m.get('mediaurl', '') or m.get('url', '') if isinstance(m, dict) else (m if isinstance(m, str) else '')
+                        venue = ''
+                        loc = doc.get('location', '')
+                        if loc and isinstance(loc, str):
+                            venue = loc
+                        if not venue and listing and isinstance(listing, dict):
+                            venue = listing.get('title', '')
 
-                    description = doc.get('description', '')
-                    if isinstance(description, str):
-                        description = re.sub(r'<[^>]+>', '', description)[:500]
-                    else:
-                        description = ''
+                        image_url = ''
+                        media_raw = doc.get('media_raw')
+                        if media_raw and isinstance(media_raw, list) and len(media_raw) > 0:
+                            m = media_raw[0]
+                            image_url = m.get('mediaurl', '') or m.get('url', '') if isinstance(m, dict) else (m if isinstance(m, str) else '')
 
-                    categories = []
-                    for cat in (doc.get('categories') or []):
-                        if isinstance(cat, dict) and cat.get('catName'):
-                            categories.append(cat['catName'])
-                        elif isinstance(cat, str):
-                            categories.append(cat)
+                        description = doc.get('description', '')
+                        if isinstance(description, str):
+                            description = re.sub(r'<[^>]+>', '', description)[:500]
+                        else:
+                            description = ''
 
-                    address = doc.get('address', '')
-                    if not isinstance(address, str):
-                        address = ''
+                        categories = []
+                        for cat in (doc.get('categories') or []):
+                            if isinstance(cat, dict) and cat.get('catName'):
+                                categories.append(cat['catName'])
+                            elif isinstance(cat, str):
+                                categories.append(cat)
 
-                    venue_website = ''
-                    if listing and isinstance(listing, dict):
-                        for key in ['website', 'websiteUrl', 'web', 'url_website', 'externalUrl']:
-                            v = listing.get(key)
-                            if v:
-                                venue_website = v
-                                break
-                        if venue_website and not venue_website.startswith('http'):
-                            if venue_website.startswith('www.') or '.' in venue_website:
-                                venue_website = 'https://' + venue_website
+                        address = doc.get('address', '')
+                        if not isinstance(address, str):
+                            address = ''
 
-                    events.append({
-                        'title': title,
-                        'start_time': date_str,
-                        'end_time': doc.get('endDate'),
-                        'source_url': event_url or f"{base_url}/events/",
-                        'source_name': source_name,
-                        'venue': venue or source_name,
-                        'venue_address': address,
-                        'location': 'Tulsa',
-                        'description': description,
-                        'image_url': image_url,
-                        'categories': categories,
-                        'outdoor': False,
-                        'family_friendly': False,
-                        '_venue_website': venue_website,
-                    })
-                except Exception as e:
-                    continue
+                        venue_website = ''
+                        if listing and isinstance(listing, dict):
+                            for key in ['website', 'websiteUrl', 'web', 'url_website', 'externalUrl']:
+                                v = listing.get(key)
+                                if v:
+                                    venue_website = v
+                                    break
+                            if venue_website and not venue_website.startswith('http'):
+                                if venue_website.startswith('www.') or '.' in venue_website:
+                                    venue_website = 'https://' + venue_website
 
-            total_fetched += len(docs)
-            skip += batch_size
-            if total_count > 0 and total_fetched >= total_count:
-                break
-            if len(docs) < batch_size:
-                break
+                        events.append({
+                            'title': title,
+                            'start_time': date_str,
+                            'end_time': doc.get('endDate'),
+                            'source_url': event_url or f"{base_url}/events/",
+                            'source_name': source_name,
+                            'venue': venue or source_name,
+                            'venue_address': address,
+                            'location': 'Tulsa',
+                            'description': description,
+                            'image_url': image_url,
+                            'categories': categories,
+                            'outdoor': False,
+                            'family_friendly': False,
+                            '_venue_website': venue_website,
+                        })
+                    except Exception as e:
+                        continue
+
+                window_fetched += len(docs)
+                skip += batch_size
+                if window_total > 0 and window_fetched >= window_total:
+                    break
+                if len(docs) < batch_size:
+                    break
+                await asyncio.sleep(0.3)
+
+            # Advance to next 30-day window
+            window_start = window_end
+            days_fetched += 30
             await asyncio.sleep(0.3)
 
         print(f"[Simpleview] Total events fetched: {len(events)}")

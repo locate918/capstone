@@ -13,6 +13,41 @@ const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localho
 const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
 
 // =============================================================================
+// AGGREGATOR BLOCKLIST
+// =============================================================================
+
+/**
+ * Domains we treat as low-trust aggregators.
+ * Any event whose best known URL comes from one of these will have its
+ * original_url suppressed in the UI — the Venue button still works via
+ * venue_website, but the "Info / View Listing" button won't route users
+ * back to BIT / Visit Tulsa / Eventbrite.
+ */
+const AGGREGATOR_DOMAINS = [
+    'visittulsa.com',
+    'bit918.com',
+    'do918.com',
+    'eventbrite.com',
+    'eventbrite.co.uk',
+    'evbuc.com',
+    'allevents.in',
+    'events.com',
+    'eventful.com',
+    'meetup.com',
+    'facebook.com',
+];
+
+const isAggregatorUrl = (url) => {
+    if (!url) return false;
+    try {
+        const hostname = new URL(url).hostname.replace(/^www\./, '');
+        return AGGREGATOR_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+    } catch {
+        return false;
+    }
+};
+
+// =============================================================================
 // CATEGORY DEFINITIONS
 // =============================================================================
 
@@ -245,7 +280,13 @@ const transformBackendEvents = (events) => {
         venue_website: event.venue_website,
         imageUrl: event.image_url || getDefaultImage(event.categories, event.title, event.description),
         vibe_tags: mapCategoriesToVibes(event.categories, event.title, event.description),
-        original_url: event.source_url,
+        original_url: (() => {
+            // Prefer canonical_url (set only by direct venue/ticketing sources).
+            // Fall back to source_url. Suppress entirely if the best URL we have
+            // is still an aggregator — the Venue button covers that case.
+            const best = event.canonical_url || event.source_url;
+            return isAggregatorUrl(best) ? null : best;
+        })(),
         originalSource: event.source_name,
         price_min: event.price_min,
         price_max: event.price_max,

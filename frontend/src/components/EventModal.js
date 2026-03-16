@@ -2,7 +2,7 @@
  * EventModal Component
  * ====================
  * Full-screen overlay showing detailed event information.
- * 
+ *
  * PROPS:
  * - event: Event object to display (null to hide modal)
  * - onClose: Function called when modal should close
@@ -130,7 +130,7 @@ const EventModal = ({ event, onClose }) => {
                                 </div>
                             )}
 
-                            
+
                         </div>
 
                         {/* Summary */}
@@ -186,15 +186,27 @@ const EventModal = ({ event, onClose }) => {
 
                 {/* ===== FOOTER ===== */}
                 <div className="p-4 sm:p-6 border-t border-white/5 bg-black/20 flex-shrink-0">
-                    <a
-                        href={event.original_url || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
-                        style={styles.primaryBg}
-                    >
-                        View Original Listing  <ExternalLink size={16} />
-                    </a>
+                    {event.original_url ? (
+                        <a
+                            href={event.original_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                            style={styles.primaryBg}
+                        >
+                            View Original Listing  <ExternalLink size={16} />
+                        </a>
+                    ) : event.venue_website ? (
+                        <a
+                            href={event.venue_website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                            style={styles.primaryBg}
+                        >
+                            Visit Venue Website  <ExternalLink size={16} />
+                        </a>
+                    ) : null}
                 </div>
             </div>
         </div>

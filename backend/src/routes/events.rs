@@ -53,6 +53,9 @@ pub struct Event {
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
     pub time_estimated: Option<bool>,
+    pub content_hash: Option<String>,
+    pub source_priority: Option<i32>,
+    pub canonical_url: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Venue data from venues table via LEFT JOIN
@@ -80,6 +83,9 @@ pub struct CreateEvent {
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
     pub time_estimated: Option<bool>,
+    pub content_hash: Option<String>,
+    pub source_priority: Option<i32>,
+    pub canonical_url: Option<String>,
 }
 
 // =============================================================================
@@ -126,7 +132,7 @@ async fn list_events(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -168,7 +174,7 @@ async fn get_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -210,34 +216,57 @@ async fn create_event(
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
+    // Determine effective priority — default 3 (aggregator) if not provided
+    let priority = payload.source_priority.unwrap_or(3);
+
     // First, do the UPSERT
+    // Conflict resolution strategy:
+    //   - content_hash collision = same real-world event from a different source
+    //   - source_url / source_name always reflect the most recent scrape (audit trail)
+    //   - canonical_url only upgrades to a better (lower priority) source, never downgrades
+    //   - image_url / description use COALESCE so a richer source fills gaps without clobbering
     let _result = sqlx::query(
         r#"
         INSERT INTO events (
             id, title, description, venue, venue_address, location,
             source_url, source_name, start_time, end_time, categories,
             price_min, price_max, outdoor, family_friendly, image_url,
-            time_estimated,
+            time_estimated, content_hash, source_priority, canonical_url,
             created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        )
         ON CONFLICT (source_url) DO UPDATE SET
-            title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            venue = EXCLUDED.venue,
-            venue_address = EXCLUDED.venue_address,
-            location = EXCLUDED.location,
-            source_name = EXCLUDED.source_name,
-            start_time = EXCLUDED.start_time,
-            end_time = EXCLUDED.end_time,
-            categories = EXCLUDED.categories,
-            price_min = EXCLUDED.price_min,
-            price_max = EXCLUDED.price_max,
-            outdoor = EXCLUDED.outdoor,
+            title          = EXCLUDED.title,
+            description    = CASE
+                               WHEN LENGTH(EXCLUDED.description) > LENGTH(events.description)
+                               THEN EXCLUDED.description
+                               ELSE COALESCE(events.description, EXCLUDED.description)
+                             END,
+            venue          = EXCLUDED.venue,
+            venue_address  = EXCLUDED.venue_address,
+            location       = EXCLUDED.location,
+            source_name    = EXCLUDED.source_name,
+            start_time     = EXCLUDED.start_time,
+            end_time       = EXCLUDED.end_time,
+            categories     = EXCLUDED.categories,
+            price_min      = EXCLUDED.price_min,
+            price_max      = EXCLUDED.price_max,
+            outdoor        = EXCLUDED.outdoor,
             family_friendly = EXCLUDED.family_friendly,
-            image_url = EXCLUDED.image_url,
+            image_url      = COALESCE(events.image_url, EXCLUDED.image_url),
             time_estimated = EXCLUDED.time_estimated,
-            updated_at = NOW()
+            content_hash   = COALESCE(events.content_hash, EXCLUDED.content_hash),
+            source_priority = EXCLUDED.source_priority,
+            canonical_url  = CASE
+                               WHEN EXCLUDED.source_priority < COALESCE(events.source_priority, 99)
+                                    AND EXCLUDED.canonical_url IS NOT NULL
+                               THEN EXCLUDED.canonical_url
+                               ELSE COALESCE(events.canonical_url, EXCLUDED.canonical_url)
+                             END,
+            updated_at     = NOW()
         "#
     )
         .bind(&id)
@@ -257,6 +286,9 @@ async fn create_event(
         .bind(&payload.family_friendly)
         .bind(&payload.image_url)
         .bind(&payload.time_estimated)
+        .bind(&payload.content_hash)
+        .bind(&priority)
+        .bind(&payload.canonical_url)
         .bind(&now)
         .bind(&now)
         .execute(&pool)
@@ -273,7 +305,7 @@ async fn create_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
             v.website AS venue_website,
             v.latitude AS venue_latitude,
@@ -419,7 +451,7 @@ async fn search_events(
                 e.id, e.title, e.description, e.venue, e.venue_address, e.location,
                 e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-                e.time_estimated,
+                e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
                 e.created_at, e.updated_at,
                 v.website AS venue_website,
                 v.latitude AS venue_latitude,
@@ -465,6 +497,7 @@ async fn search_events(
 
     if let Some(ref max_price) = params.max_price {
         query_builder = query_builder.bind(max_price);
+
     }
 
     query_builder = query_builder.bind(limit).bind(offset);

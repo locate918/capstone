@@ -24,6 +24,9 @@ from scraperUtils import (
     save_url,
     delete_saved_url,
     resolve_source_name,
+    is_aggregator_url,
+    get_source_priority,
+    make_content_hash,
 )
 
 from scraperExtractors import (
@@ -493,7 +496,7 @@ loadSaved();
 # EVENT TRANSFORMATION
 # ============================================================================
 
-def transform_event_for_backend(event: dict) -> dict:
+def transform_event_for_backend(event: dict, source_priority: int = None) -> dict:
     """
     Transform scraped event to match Rust backend's CreateEvent schema.
     Used as primary transform after normalization, or as fallback if LLM is down.
@@ -513,6 +516,19 @@ def transform_event_for_backend(event: dict) -> dict:
             ''
     )
     transformed['source_url'] = source_url
+
+    # --- Priority and canonical URL ---
+    # Use explicitly passed priority, then check event dict, then auto-detect from URL
+    priority = (
+            source_priority
+            or event.get('source_priority')
+            or get_source_priority(source_url)
+    )
+    transformed['source_priority'] = priority
+
+    # canonical_url only gets set when the source is a direct venue or ticketing site
+    if source_url and not is_aggregator_url(source_url):
+        transformed['canonical_url'] = source_url
 
     date_str = (
             event.get('start_time') or
@@ -634,6 +650,13 @@ def transform_event_for_backend(event: dict) -> dict:
         transformed['family_friendly'] = bool(event['family_friendly'])
     else:
         transformed['family_friendly'] = False
+
+    # --- Content hash for cross-source deduplication ---
+    transformed['content_hash'] = make_content_hash(
+        transformed.get('title', ''),
+        transformed.get('start_time', ''),
+        transformed.get('venue', ''),
+    )
 
     return transformed
 
@@ -860,7 +883,12 @@ def register_routes(app):
     @app.route('/saved-urls', methods=['POST'])
     def add_saved_url():
         data = request.json
-        urls = save_url(data.get('url', ''), data.get('name', ''), data.get('playwright', True))
+        urls = save_url(
+            data.get('url', ''),
+            data.get('name', ''),
+            data.get('playwright', True),
+            data.get('priority'),  # None → auto-detected from domain
+        )
         return jsonify(urls)
 
     @app.route('/saved-urls', methods=['DELETE'])
@@ -1178,7 +1206,7 @@ def register_routes(app):
                         db_saved = 0
                         for ev in events_to_post:
                             try:
-                                transformed = transform_event_for_backend(ev)
+                                transformed = transform_event_for_backend(ev, source_priority=source.get('priority'))
                                 # Ensure source fields are set
                                 if not transformed.get('source_url'):
                                     transformed['source_url'] = url
