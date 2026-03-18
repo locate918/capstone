@@ -539,9 +539,15 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
     )
     if date_str:
         try:
+            import pytz
+            tulsa_tz = pytz.timezone('America/Chicago')
             parsed_date = date_parser.parse(str(date_str), fuzzy=True)
             if parsed_date.tzinfo is None:
-                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                # Naive datetime — assume Tulsa local time (CDT/CST) and convert to UTC
+                parsed_date = tulsa_tz.localize(parsed_date).astimezone(pytz.utc)
+            else:
+                # Already has timezone info — just convert to UTC
+                parsed_date = parsed_date.astimezone(pytz.utc)
             transformed['start_time'] = parsed_date.isoformat()
         except:
             fallback = datetime.now(timezone.utc) + timedelta(days=1)
@@ -559,9 +565,13 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
     )
     if end_str:
         try:
+            import pytz
+            tulsa_tz = pytz.timezone('America/Chicago')
             parsed_end = date_parser.parse(str(end_str), fuzzy=True)
             if parsed_end.tzinfo is None:
-                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+                parsed_end = tulsa_tz.localize(parsed_end).astimezone(pytz.utc)
+            else:
+                parsed_end = parsed_end.astimezone(pytz.utc)
             transformed['end_time'] = parsed_end.isoformat()
         except:
             pass

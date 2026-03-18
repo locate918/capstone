@@ -670,7 +670,8 @@ def extract_squarespace_events(soup, html: str, base_url: str, source_name: str)
         end_raw = dates_match.group(2)
 
         try:
-            start_dt = datetime.strptime(start_raw, '%Y%m%dT%H%M%SZ')
+            from datetime import timezone as _tz
+            start_dt = datetime.strptime(start_raw, '%Y%m%dT%H%M%SZ').replace(tzinfo=_tz.utc)
             date_str = start_dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
         except:
             date_str = start_raw
@@ -701,7 +702,7 @@ def extract_squarespace_events(soup, html: str, base_url: str, source_name: str)
 
         events.append({
             'title': title,
-            'date_start': f"{start_dt.isoformat()}Z" if dates_match else '',
+            'date_start': start_dt.isoformat() if dates_match else '',
             'date': date_str,
             'source_url': base_url,
             'source': source_name,
