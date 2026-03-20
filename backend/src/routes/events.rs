@@ -379,7 +379,7 @@ async fn search_events(
     State(pool): State<PgPool>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(50).min(100);
+    let limit = params.limit.unwrap_or(500).min(1000);
     let offset = params.offset.unwrap_or(0);
 
     // Build dynamic WHERE clauses

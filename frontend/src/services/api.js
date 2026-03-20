@@ -194,7 +194,7 @@ export const smartSearch = async (query) => {
     } catch (error) {
         console.error("Smart search failed:", error);
         // Fallback to basic search
-        return { events: await searchEvents({ q: query }), parsed: { query } };
+        return { events: await searchEvents({ q: query, limit: 500 }), parsed: { query } };
     }
 };
 
