@@ -446,8 +446,7 @@ async fn search_events(
 
     let query = format!(
         r#"
-        SELECT * FROM (
-            SELECT DISTINCT ON (LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date)
+        SELECT DISTINCT ON (e.source_url)
                 e.id, e.title, e.description, e.venue, e.venue_address, e.location,
                 e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
@@ -459,9 +458,7 @@ async fn search_events(
             FROM events e
             LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
             WHERE {}
-            ORDER BY LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date, e.time_estimated ASC, e.updated_at DESC
-        ) deduped
-        ORDER BY start_time ASC
+            ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}
         "#,
         where_clause, bind_index, bind_index + 1
