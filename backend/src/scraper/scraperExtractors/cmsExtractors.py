@@ -1162,16 +1162,25 @@ def _cc_parse_homepage_cards(soup, base_url: str) -> list:
     SKIP_TITLES = {
         'NOW SHOWING', 'FEATURE FILMS NOW SHOWING', 'SPECIAL SCREENINGS',
         'COMING SOON', 'FEATURE FILMS COMING SOON', 'COMING ATTRACTIONS',
+        'CONTACT US', 'FOLLOW US', 'FOLLOW US:', 'SIGN UP FOR NEWS & UPDATES',
+        'SIGN UP FOR NEWS AND UPDATES', 'NEWSLETTER', 'SUBSCRIBE',
+        'FILM SCHEDULE', 'RENTALS', 'WHO WE ARE', 'WHAT WE DO', 'GET INVOLVED',
+        'FILM FESTIVALS', 'TICKET HUB', 'MEMBERSHIP', 'GIFT CARDS', 'DONATE',
+        'BACK TO ALL FILMS', 'NEXT FILM',
     }
     LABEL_TEXTS = {'release date', 'rating', 'genre', 'run time', 'tickets', 'info'}
+    NAV_LABELS = {'info', 'tickets', 'back', 'next', 'new', 'trailer',
+                  'buy tickets', 'view trailer', 'buy tickets view trailer'}
 
     for h6 in all_h6:
         title = h6.get_text(strip=True).strip('\u201c\u201d"')
-        if not title or len(title) < 3:
+        if not title or len(title) < 4:
             continue
-        if title.upper() in SKIP_TITLES:
+        if title.upper() in SKIP_TITLES or title.upper().rstrip(':') in SKIP_TITLES:
             continue
         if title.lower().rstrip(':') in LABEL_TEXTS:
+            continue
+        if title.lower().strip() in NAV_LABELS:
             continue
         if title in seen_titles:
             continue
@@ -1293,21 +1302,23 @@ async def extract_circle_cinema_events(
             showtimes = _cc_extract_showtimes_from_page(detail_text, year)
 
             if showtimes:
-                print(f"  [CircleCinema] {title}: {len(showtimes)} showtime(s)")
-                for dt in showtimes:
-                    events.append({
-                        'title': title,
-                        'description': full_desc,
-                        'start_time': dt.strftime('%Y-%m-%dT%H:%M:%S'),
-                        'time_estimated': False,
-                        'source_url': source_url,
-                        'venue': 'Circle Cinema',
-                        'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
-                        'image_url': image_url,
-                        'categories': ['Film', 'Arts'],
-                    })
-                    if ticket_url:
-                        events[-1]['ticket_url'] = ticket_url
+                # One card per film — next upcoming showtime
+                dt = showtimes[0]
+                print(f"  [CircleCinema] {title}: next showtime {dt.strftime('%m/%d %I:%M%p')}")
+                event = {
+                    'title': title,
+                    'description': full_desc,
+                    'start_time': dt.strftime('%Y-%m-%dT%H:%M:%S'),
+                    'time_estimated': False,
+                    'source_url': source_url,
+                    'venue': 'Circle Cinema',
+                    'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
+                    'image_url': image_url,
+                    'categories': ['Film', 'Arts'],
+                }
+                if ticket_url:
+                    event['ticket_url'] = ticket_url
+                events.append(event)
                 continue
 
         # No detail page or no showtimes found — fall back to release date, time_estimated
