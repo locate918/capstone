@@ -386,13 +386,13 @@ async fn search_events(
     let mut conditions = vec!["e.start_time >= NOW()".to_string()];
     let mut bind_index = 1;
 
-    // Text search
+    // Text search — matches title, description, venue name, or source_name
     if let Some(ref _q) = params.q {
         conditions.push(format!(
-            "(e.title ILIKE ${} OR e.description ILIKE ${})",
-            bind_index, bind_index + 1
+            "(e.title ILIKE ${} OR e.description ILIKE ${} OR e.venue ILIKE ${} OR e.source_name ILIKE ${})",
+            bind_index, bind_index + 1, bind_index + 2, bind_index + 3
         ));
-        bind_index += 2;
+        bind_index += 4;
     }
 
     // Category filter (using array overlap)
@@ -472,7 +472,11 @@ async fn search_events(
 
     if let Some(ref q) = params.q {
         let pattern = format!("%{}%", q);
-        query_builder = query_builder.bind(pattern.clone()).bind(pattern);
+        query_builder = query_builder
+            .bind(pattern.clone())  // title
+            .bind(pattern.clone())  // description
+            .bind(pattern.clone())  // venue
+            .bind(pattern);         // source_name
     }
 
     if let Some(ref category) = params.category {
@@ -497,7 +501,6 @@ async fn search_events(
 
     if let Some(ref max_price) = params.max_price {
         query_builder = query_builder.bind(max_price);
-
     }
 
     query_builder = query_builder.bind(limit).bind(offset);

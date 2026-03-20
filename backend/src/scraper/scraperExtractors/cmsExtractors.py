@@ -931,245 +931,428 @@ async def extract_ticketleap_events(html: str, source_name: str, url: str = '', 
 
 
 # ============================================================================
-# CIRCLE CINEMA (Wix SSR) — circlecinema.org
+# CIRCLE CINEMA — async, detail-page scraper
+# ============================================================================
+# Architecture:
+#   1. Parse homepage HTML for all film cards (title, info_url, ticket_url,
+#      image_url, description, rating, runtime, release_date)
+#   2. For each film, fetch its /movies-events/<slug> detail page
+#   3. Parse the SHOWTIMES section: "Day M/D: time1, time2"
+#   4. Emit one NormalizedEvent per showtime (future only, capped at 14 days
+#      out for regular films with many showtimes)
+#
+# Showtime format on detail pages:
+#   "Thu 3/19: 1:00p, 5:00p"
+#   "Fri 3/20: 1:20p, 3:20p, 5:20p"
+#   "Sat 3/21: 3:00p"
+#   "Thu 4/23: 5pm preshow in lobby\n6:30pm films"  ← skip preshow, use film time
 # ============================================================================
 
-# Labels that indicate metadata fields, NOT movie titles
-_CC_LABEL_TEXTS = {'release date', 'rating', 'genre', 'run time', 'tickets', 'info'}
+# Regex for one showtime line: "Day M/D: time, time, time"
+_CC_SHOWTIME_LINE_RE = re.compile(
+    r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+(\d{1,2}/\d{1,2}):\s*(.+)',
+    re.IGNORECASE,
+)
+
+# Matches individual time tokens: "1:00p", "5:00pm", "6:30pm", "7pm"
+_CC_TIME_TOKEN_RE = re.compile(
+    r'\b(\d{1,2}(?::\d{2})?)\s*(am|pm|p|a)\b',
+    re.IGNORECASE,
+)
+
+# Lines to skip (preshow / reception / doors)
+_CC_SKIP_KEYWORDS = ('preshow', 'pre-show', 'reception', 'lobby', 'doors', 'open')
 
 
-def _cc_is_label(text: str) -> bool:
-    """Check if an h6's text is a metadata label rather than a movie title."""
-    return text.strip().lower().rstrip(':') in _CC_LABEL_TEXTS
-
-
-def _cc_parse_runtime_minutes(runtime_str: str) -> int | None:
-    """Convert runtime strings like '2h14min', '1h 30min', '1hr 24m' to minutes."""
-    if not runtime_str:
+def _cc_parse_time_token(token: str) -> tuple | None:
+    """Parse '1:00p' / '6:30pm' / '7pm' → (hour24, minute)."""
+    m = _CC_TIME_TOKEN_RE.match(token.strip())
+    if not m:
         return None
-    runtime_str = runtime_str.strip().lower()
-    m = re.match(r'(\d+)\s*h(?:r|rs|ours?)?\s*(\d+)?\s*m(?:in)?', runtime_str)
-    if m:
-        hours = int(m.group(1))
-        mins = int(m.group(2)) if m.group(2) else 0
-        return hours * 60 + mins
-    m = re.match(r'(\d+)\s*m(?:in)?', runtime_str)
-    if m:
-        return int(m.group(1))
-    return None
+    time_part = m.group(1)
+    meridiem = m.group(2).lower()
+    if ':' in time_part:
+        h, mn = int(time_part.split(':')[0]), int(time_part.split(':')[1])
+    else:
+        h, mn = int(time_part), 0
+    if meridiem in ('pm', 'p') and h < 12:
+        h += 12
+    elif meridiem in ('am', 'a') and h == 12:
+        h = 0
+    return h, mn
 
 
-def _cc_parse_date(date_str: str) -> str | None:
-    """Parse Circle Cinema date formats into ISO 8601 (default 7pm showtime)."""
-    date_str = date_str.strip()
-    if not date_str:
-        return None
+def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
+    """
+    Parse the SHOWTIMES block text from a Circle Cinema detail page.
+    Returns list of datetime objects (future only relative to now).
 
-    # M/D/YY format (e.g., '2/20/26')
-    m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{2,4})', date_str)
-    if m:
-        month, day, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if year < 100:
-            year += 2000
-        try:
-            dt = datetime(year, month, day, 19, 0)
-            return dt.strftime('%Y-%m-%dT%H:%M:%S')
-        except ValueError:
-            pass
+    Handles:
+      "Thu 3/19: 1:00p, 5:00p"
+      "Thu 4/23: 5pm preshow in lobby\n6:30pm films"  → picks 6:30pm
+    """
+    now = datetime.now()
+    results = []
 
-    # "Mon DD, YYYY" formats
-    for fmt in ('%b %d, %Y', '%B %d, %Y', '%b %d %Y', '%m/%d/%Y'):
-        try:
-            dt = datetime.strptime(date_str, fmt).replace(hour=19, minute=0)
-            return dt.strftime('%Y-%m-%dT%H:%M:%S')
-        except ValueError:
+    # Split into lines; a new showtime line starts with a day name
+    lines = re.split(r'\n|\r|(?=(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d)', showtimes_text)
+
+    for line in lines:
+        line = line.strip()
+        day_match = _CC_SHOWTIME_LINE_RE.match(line)
+        if not day_match:
             continue
 
-    # Fallback to utility
-    result = extract_date_from_text(date_str)
+        date_str = day_match.group(1)   # e.g. "3/19"
+        times_str = day_match.group(2)  # e.g. "1:00p, 5:00p"
+
+        # Parse M/D into a date
+        try:
+            month, day = int(date_str.split('/')[0]), int(date_str.split('/')[1])
+            # If month is earlier than current month, it's next year
+            dt_date = datetime(year, month, day).date()
+            if dt_date < now.date():
+                continue
+        except (ValueError, IndexError):
+            continue
+
+        # Handle multi-line time entries (e.g. preshow + film)
+        # Collect all time tokens, skipping lines that contain skip keywords
+        time_tokens = []
+        sub_lines = re.split(r'[,\n]', times_str)
+        for sub in sub_lines:
+            sub_lower = sub.lower()
+            # If this sub-line has a skip keyword, skip it
+            if any(kw in sub_lower for kw in _CC_SKIP_KEYWORDS):
+                continue
+            for token_match in _CC_TIME_TOKEN_RE.finditer(sub):
+                full_token = token_match.group(0)
+                parsed = _cc_parse_time_token(full_token)
+                if parsed:
+                    time_tokens.append(parsed)
+
+        # If ALL sub-lines were skipped (e.g. only preshow listed), try taking last time
+        if not time_tokens:
+            for token_match in _CC_TIME_TOKEN_RE.finditer(times_str):
+                full_token = token_match.group(0)
+                parsed = _cc_parse_time_token(full_token)
+                if parsed:
+                    time_tokens.append(parsed)
+            # Use only the last one (most likely the main film after preshow)
+            if time_tokens:
+                time_tokens = [time_tokens[-1]]
+
+        for h, mn in time_tokens:
+            try:
+                dt = datetime(year, month, day, h, mn)
+                if dt > now:
+                    results.append(dt)
+            except ValueError:
+                continue
+
+    return results
+
+
+def _cc_extract_card_meta(h6_title_elem, soup_root) -> dict:
+    """
+    Extract metadata for one Circle Cinema film card by walking UP from the
+    title h6 until we find a container whose text includes a date, then
+    scanning that container with regex.
+    """
+    result = {
+        'release_date': '', 'rating': '', 'runtime': '', 'genre': '',
+        'description': '', 'ticket_url': '', 'info_url': '', 'image_url': '',
+    }
+
+    # Walk up to find card container (has a date in its text)
+    container = h6_title_elem.parent
+    card = container
+    for _ in range(8):
+        if container is None:
+            break
+        text = container.get_text(' ', strip=True)
+        if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s+\d{4}', text):
+            card = container
+            break
+        container = getattr(container, 'parent', None)
+
+    card_text = card.get_text(' ', strip=True) if card else ''
+
+    # Release date — M/D/YY or "Mar 21, 2026"
+    dm = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4})', card_text)
+    if dm:
+        result['release_date'] = dm.group(1)
+    else:
+        dm2 = re.search(
+            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})',
+            card_text, re.IGNORECASE
+        )
+        if dm2:
+            result['release_date'] = dm2.group(1)
+
+    # Rating
+    rm = re.search(r'RATING\s+([A-Za-z0-9 +\-]+?)(?:\s+(?:GENRE|RUN TIME|RELEASE|$))', card_text)
+    if rm:
+        val = rm.group(1).strip()
+        if val and val.lower() not in ('​', '', 'genre'):
+            result['rating'] = val
+
+    # Runtime
+    rtm = re.search(r'(\d+\s*h(?:r|rs|ours?)?\s*\d*\s*m(?:in)?|\d+\s*m(?:in)?)', card_text, re.IGNORECASE)
+    if rtm:
+        result['runtime'] = rtm.group(1).strip()
+
+    # Genre
+    gm = re.search(r'GENRE\s+([^\n\r]+?)(?:\s+(?:RUN TIME|RELEASE|RATING|TICKETS|INFO|$))', card_text)
+    if gm:
+        g = gm.group(1).strip()
+        if g and g not in ('​', ''):
+            result['genre'] = g
+
+    # Description — first paragraph with real content
+    title_text = h6_title_elem.get_text(strip=True)
+    for p in (card.find_all('p') if card else []):
+        t = p.get_text(strip=True)
+        if t and t != title_text and len(t) > 20 and t not in ('​', ''):
+            result['description'] = t[:300]
+            break
+
+    # Ticket / info links and image
+    title_words = {w for w in re.split(r'[^a-z0-9]+', title_text.lower()) if len(w) > 2}
+    info_candidates = []
+    for link in (card.find_all('a', href=True) if card else []):
+        href = link['href']
+        if 'easy-ware-ticketing.com' in href:
+            result['ticket_url'] = result['ticket_url'] or href
+        elif '/movies-events/' in href:
+            from urllib.parse import unquote
+            full = href if href.startswith('http') else urljoin('https://www.circlecinema.org', href)
+            slug_words = set(re.split(r'[^a-z0-9]+', unquote(full).lower()))
+            overlap = len(title_words & slug_words)
+            info_candidates.append((overlap, full))
+    if info_candidates:
+        info_candidates.sort(key=lambda x: -x[0])
+        result['info_url'] = info_candidates[0][1]
+
+    # Fallback: construct info_url from title if DOM scan missed it
+    # Pattern: lowercase title, spaces→hyphens, special chars URL-encoded
+    if not result['info_url']:
+        from urllib.parse import quote
+        slug = quote(h6_title_elem.get_text(strip=True).lower().replace(' ', '-'), safe='-')
+        result['info_url'] = f'https://www.circlecinema.org/movies-events/{slug}'
+
+    for img in (card.find_all('img', src=True) if card else []):
+        if 'wixstatic.com' in img['src']:
+            result['image_url'] = img['src']
+            break
+
     return result
 
 
-def _cc_get_next_text(element) -> str:
-    """Get the next meaningful text content after an element."""
-    elem = element.next_sibling
-    while elem:
-        if hasattr(elem, 'get_text'):
-            t = elem.get_text(strip=True)
-            if t and t != '\u200b':
-                return t
-        elif hasattr(elem, 'strip'):
-            t = elem.strip()
-            if t and t != '\u200b':
-                return t
-        elem = elem.next_sibling
+def _cc_parse_homepage_cards(soup, base_url: str) -> list:
+    """
+    Parse the homepage for all film cards.
+    Returns list of dicts: {title, info_url, ticket_url, image_url,
+                             description, rating, runtime, release_date}
+    """
+    cards = []
+    seen_titles = set()
 
-    next_el = element.find_next_sibling()
-    if next_el:
-        return next_el.get_text(strip=True)
+    all_h6 = soup.find_all('h6')
+    SKIP_TITLES = {
+        'NOW SHOWING', 'FEATURE FILMS NOW SHOWING', 'SPECIAL SCREENINGS',
+        'COMING SOON', 'FEATURE FILMS COMING SOON', 'COMING ATTRACTIONS',
+    }
+    LABEL_TEXTS = {'release date', 'rating', 'genre', 'run time', 'tickets', 'info'}
+
+    for h6 in all_h6:
+        title = h6.get_text(strip=True).strip('\u201c\u201d"')
+        if not title or len(title) < 3:
+            continue
+        if title.upper() in SKIP_TITLES:
+            continue
+        if title.lower().rstrip(':') in LABEL_TEXTS:
+            continue
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+
+        # Use _cc_extract_card_meta to get all fields
+        meta = _cc_extract_card_meta(h6, soup)
+
+        cards.append({
+            'title': title,
+            'info_url': meta['info_url'],
+            'ticket_url': meta['ticket_url'],
+            'image_url': meta['image_url'],
+            'description': meta['description'],
+            'rating': meta['rating'],
+            'runtime': meta['runtime'],
+            'release_date': meta['release_date'],
+        })
+
+    return cards
+
+
+async def _cc_fetch_detail_page(info_url: str) -> str:
+    """Fetch a Circle Cinema film detail page. Returns page text or ''."""
+    if not info_url or not info_url.startswith('http'):
+        return ''
+    try:
+        async with httpx.AsyncClient(headers=HEADERS, timeout=15, follow_redirects=True) as client:
+            resp = await client.get(info_url)
+            if resp.status_code == 200:
+                return resp.text
+    except Exception as e:
+        print(f"[CircleCinema] Error fetching {info_url}: {e}")
     return ''
 
 
-def extract_circle_cinema(soup, base_url: str, source_name: str) -> list:
+def _cc_extract_showtimes_from_page(page_text: str, year: int) -> list:
     """
-    Extract events from circlecinema.org homepage (Wix SSR).
-
-    Parses h6-based movie card structure:
-      h6 (title) → p (description) → h6 RELEASE DATE → h6 RATING → GENRE → h6 RUN TIME
-      + ticket links (easy-ware-ticketing.com) and info links (/movies-events/)
-
-    Detection: 'circlecinema' in URL or (wixstatic + easy-ware-ticketing in HTML).
-    Called from universal.py (sync, DOM-based).
+    Extract showtime datetimes from a detail page's plain text.
+    Looks for the SHOWTIMES block and parses it.
     """
-    is_circle = 'circlecinema' in base_url.lower()
-    if not is_circle:
-        # Secondary: check HTML markers
-        html_text = str(soup)
-        if 'circlecinema.easy-ware-ticketing.com' in html_text and 'wixstatic.com' in html_text:
-            is_circle = True
-
-    if not is_circle:
+    # Find the SHOWTIMES block
+    idx = page_text.upper().find('SHOWTIMES')
+    if idx == -1:
         return []
 
-    print(f"[CircleCinema] Detected Circle Cinema site, parsing movie cards...")
+    # Grab text from SHOWTIMES to RELEASE DATE (end of showtimes block)
+    block_start = idx + len('SHOWTIMES')
+    block_end_markers = ['RELEASE DATE', 'RATING', 'RUN TIME', 'BACK TO ALL']
+    block_end = len(page_text)
+    for marker in block_end_markers:
+        pos = page_text.upper().find(marker, block_start)
+        if pos != -1 and pos < block_end:
+            block_end = pos
 
-    events = []
+    showtimes_block = page_text[block_start:block_end]
+    return _cc_parse_showtimes_text(showtimes_block, year)
+
+
+async def extract_circle_cinema_events(
+        html: str, source_name: str, url: str = '', future_only: bool = True
+) -> tuple[list, bool]:
+    """
+    Async Circle Cinema extractor. Fetches individual film pages for real showtimes.
+    Returns (events, was_detected).
+    """
+    if 'circlecinema' not in url.lower():
+        if 'circlecinema.easy-ware-ticketing.com' not in html or 'wixstatic.com' not in html:
+            return [], False
+
+    print(f"[CircleCinema] Detected Circle Cinema, parsing homepage cards...")
+
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+    cards = _cc_parse_homepage_cards(soup, url or 'https://www.circlecinema.org')
+    print(f"[CircleCinema] Found {len(cards)} film cards on homepage")
+
+    if not cards:
+        return [], True
+
     now = datetime.now()
+    year = now.year
+    events = []
 
-    # Skip section headers
-    SKIP_TITLES = {'NOW SHOWING', 'FEATURE FILMS NOW SHOWING', 'SPECIAL SCREENINGS',
-                   'COMING SOON', 'COMING ATTRACTIONS'}
+    # Fetch detail pages concurrently (max 5 at a time)
+    semaphore = asyncio.Semaphore(5)
 
-    all_h6 = soup.find_all('h6')
-    i = 0
-    while i < len(all_h6):
-        h6 = all_h6[i]
-        text = h6.get_text(strip=True)
+    async def fetch_card(card):
+        async with semaphore:
+            detail_text = await _cc_fetch_detail_page(card['info_url'])
+            return card, detail_text
 
-        # Skip empty, labels, section headers
-        if not text or _cc_is_label(text) or len(text) < 3 or text in SKIP_TITLES:
-            i += 1
-            continue
+    results = await asyncio.gather(*[fetch_card(c) for c in cards])
 
-        # This h6 is a movie title
-        title = text.strip().strip('\u201c\u201d"')
-
-        # Get description from sibling elements before next h6
-        desc_parts = []
-        elem = h6.next_sibling
-        while elem:
-            if hasattr(elem, 'name') and elem.name == 'h6':
-                break
-            if hasattr(elem, 'get_text'):
-                t = elem.get_text(strip=True)
-                if t and not _cc_is_label(t) and t != '\u200b':
-                    desc_parts.append(t)
-            elem = elem.next_sibling if hasattr(elem, 'next_sibling') else None
-        description = ' '.join(desc_parts)
-
-        # Scan subsequent h6s for labeled metadata
-        release_date = ''
-        rating = ''
-        runtime = ''
-        j = i + 1
-        while j < len(all_h6) and j < i + 12:
-            label_h6 = all_h6[j]
-            label_text = label_h6.get_text(strip=True).lower().rstrip(':')
-
-            if label_text == 'release date':
-                val = _cc_get_next_text(label_h6)
-                if val:
-                    release_date = val
-            elif label_text == 'rating':
-                val = _cc_get_next_text(label_h6)
-                if val and val != '\u200b':
-                    rating = val
-            elif label_text == 'run time':
-                val = _cc_get_next_text(label_h6)
-                if val and val != '\u200b':
-                    runtime = val
-            elif not _cc_is_label(label_text) and len(label_text) > 3:
-                break  # hit next movie title
-            j += 1
-
-        # Find genre from parent text context
-        genre = ''
-        parent = h6.parent
-        if parent:
-            parent_text = parent.get_text()
-            genre_match = re.search(r'GENRE\s*\n?\s*(.+?)(?:\n|RUN TIME|$)', parent_text)
-            if genre_match:
-                g = genre_match.group(1).strip()
-                if g and g != '\u200b':
-                    genre = g
-
-        # Find ticket/info URLs from nearby container
-        ticket_url = ''
-        info_url = ''
-        image_url = ''
-        container = h6.parent
-        for _ in range(5):
-            if container and container.parent:
-                links = container.find_all('a', href=True)
-                if len(links) >= 1:
-                    break
-                container = container.parent
-
-        if container:
-            for link in container.find_all('a', href=True):
-                href = link['href']
-                if 'easy-ware-ticketing.com' in href:
-                    ticket_url = href
-                elif '/movies-events/' in href:
-                    info_url = href
-                    if not info_url.startswith('http'):
-                        info_url = urljoin('https://www.circlecinema.org', info_url)
-
-            for img in container.find_all('img', src=True):
-                if 'wixstatic.com' in img['src']:
-                    image_url = img['src']
-                    break
-
-        # Parse date
-        start_time = _cc_parse_date(release_date) if release_date else None
-
-        # Future filter
-        if start_time:
-            try:
-                dt = datetime.fromisoformat(start_time)
-                if dt < now.replace(hour=0, minute=0, second=0, microsecond=0):
-                    i = j if j > i else i + 1
-                    continue
-            except:
-                pass
-
-        source_url = info_url or ticket_url or base_url
+    for card, detail_text in results:
+        title        = card['title']
+        info_url     = card['info_url']
+        ticket_url   = card['ticket_url']
+        image_url    = card['image_url']
+        rating       = card['rating']
+        runtime      = card['runtime']
+        description  = card['description']
 
         # Build description with metadata
         meta_parts = []
-        if rating and rating != '\u200b':
+        if rating and rating not in ('\u200b', ''):
             meta_parts.append(f"Rated {rating}")
-        if genre:
-            meta_parts.append(genre)
-        if runtime:
+        if runtime and runtime not in ('\u200b', ''):
             meta_parts.append(runtime)
-        full_desc = f"{description} ({' | '.join(meta_parts)})" if description and meta_parts else description or ' | '.join(meta_parts) or 'Showing at Circle Cinema.'
+        full_desc = (
+            f"{description} ({' | '.join(meta_parts)})"
+            if description and meta_parts
+            else description or ' | '.join(meta_parts) or 'Showing at Circle Cinema.'
+        )
 
-        event = {
+        source_url = info_url or ticket_url or url or 'https://www.circlecinema.org'
+
+        if detail_text:
+            showtimes = _cc_extract_showtimes_from_page(detail_text, year)
+
+            if showtimes:
+                print(f"  [CircleCinema] {title}: {len(showtimes)} showtime(s)")
+                for dt in showtimes:
+                    events.append({
+                        'title': title,
+                        'description': full_desc,
+                        'start_time': dt.strftime('%Y-%m-%dT%H:%M:%S'),
+                        'time_estimated': False,
+                        'source_url': source_url,
+                        'venue': 'Circle Cinema',
+                        'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
+                        'image_url': image_url,
+                        'categories': ['Film', 'Arts'],
+                    })
+                    if ticket_url:
+                        events[-1]['ticket_url'] = ticket_url
+                continue
+
+        # No detail page or no showtimes found — fall back to release date, time_estimated
+        release_date = card.get('release_date', '')
+        start_time = None
+        if release_date:
+            # Parse M/D/YY or "Mar 21, 2026"
+            m = re.match(r'(\d{1,2})/(\d{1,2})/(\d{2,4})$', release_date.strip())
+            if m:
+                mo, dy, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if yr < 100: yr += 2000
+                try:
+                    start_time = datetime(yr, mo, dy, 0, 0).strftime('%Y-%m-%dT%H:%M:%S')
+                except ValueError:
+                    pass
+            if not start_time:
+                for fmt in ('%b %d, %Y', '%B %d, %Y', '%b %d %Y'):
+                    try:
+                        start_time = datetime.strptime(release_date.strip(), fmt).strftime('%Y-%m-%dT%H:%M:%S')
+                        break
+                    except ValueError:
+                        continue
+
+        if start_time and future_only:
+            try:
+                if datetime.fromisoformat(start_time) < now.replace(hour=0, minute=0, second=0, microsecond=0):
+                    print(f"  [CircleCinema] {title}: past, skipping")
+                    continue
+            except Exception:
+                pass
+
+        print(f"  [CircleCinema] {title}: no detail showtimes, time_estimated=True ({release_date})")
+        events.append({
             'title': title,
             'description': full_desc,
             'start_time': start_time or '',
+            'time_estimated': True,
             'source_url': source_url,
             'venue': 'Circle Cinema',
             'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
             'image_url': image_url,
-        }
-        if ticket_url and ticket_url != source_url:
-            event['ticket_url'] = ticket_url
+            'categories': ['Film', 'Arts'],
+        })
+        if ticket_url:
+            events[-1]['ticket_url'] = ticket_url
 
-        events.append(event)
-        print(f"  [CircleCinema] Found: {title} ({release_date})")
-        i = j if j > i else i + 1
-
-    print(f"[CircleCinema] Total: {len(events)} events extracted")
-    return events
+    print(f"[CircleCinema] Total: {len(events)} events")
+    return events, True

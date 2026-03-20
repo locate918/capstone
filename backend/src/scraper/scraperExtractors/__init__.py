@@ -26,7 +26,7 @@ from .cmsExtractors import (
     extract_sitewrench_events,
     extract_recdesk_events,
     extract_ticketleap_events,
-    extract_circle_cinema,
+    extract_circle_cinema_events,
 )
 
 from .universal import extract_events_universal
@@ -46,7 +46,7 @@ __all__ = [
     'extract_sitewrench_events',
     'extract_recdesk_events',
     'extract_ticketleap_events',
-    'extract_circle_cinema',
+    'extract_circle_cinema_events',
     'extract_events_universal',
     'fetch_with_httpx',
     'fetch_with_playwright',

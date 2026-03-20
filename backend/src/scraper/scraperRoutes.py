@@ -33,6 +33,7 @@ from scraperExtractors import (
     extract_eventcalendarapp,
     extract_timely,
     extract_bok_center,
+    extract_circle_cinema_events,
     extract_expo_square_events,
     extract_eventbrite_api_events,
     extract_simpleview_events,
@@ -539,20 +540,29 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
     )
     if date_str:
         try:
-            import pytz
-            tulsa_tz = pytz.timezone('America/Chicago')
+            import pytz as _pytz
+            tulsa_tz = _pytz.timezone('America/Chicago')
             parsed_date = date_parser.parse(str(date_str), fuzzy=True)
             if parsed_date.tzinfo is None:
                 # Naive datetime — assume Tulsa local time (CDT/CST) and convert to UTC
-                parsed_date = tulsa_tz.localize(parsed_date).astimezone(pytz.utc)
+                parsed_date = tulsa_tz.localize(parsed_date).astimezone(_pytz.utc)
             else:
                 # Already has timezone info — just convert to UTC
-                parsed_date = parsed_date.astimezone(pytz.utc)
+                parsed_date = parsed_date.astimezone(_pytz.utc)
             transformed['start_time'] = parsed_date.isoformat()
-        except:
-            fallback = datetime.now(timezone.utc) + timedelta(days=1)
-            transformed['start_time'] = fallback.isoformat()
-            print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
+        except Exception as e:
+            print(f"[DB] Timezone parse error for '{date_str}': {e}")
+            # Fallback: try basic parse and stamp as UTC
+            try:
+                parsed_date = date_parser.parse(str(date_str), fuzzy=True)
+                from datetime import timezone as _tz
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=_tz.utc)
+                transformed['start_time'] = parsed_date.isoformat()
+            except:
+                fallback = datetime.now(timezone.utc) + timedelta(days=1)
+                transformed['start_time'] = fallback.isoformat()
+                print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
     else:
         fallback = datetime.now(timezone.utc) + timedelta(days=1)
         transformed['start_time'] = fallback.isoformat()
@@ -565,16 +575,23 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
     )
     if end_str:
         try:
-            import pytz
-            tulsa_tz = pytz.timezone('America/Chicago')
+            import pytz as _pytz
+            tulsa_tz = _pytz.timezone('America/Chicago')
             parsed_end = date_parser.parse(str(end_str), fuzzy=True)
             if parsed_end.tzinfo is None:
-                parsed_end = tulsa_tz.localize(parsed_end).astimezone(pytz.utc)
+                parsed_end = tulsa_tz.localize(parsed_end).astimezone(_pytz.utc)
             else:
-                parsed_end = parsed_end.astimezone(pytz.utc)
+                parsed_end = parsed_end.astimezone(_pytz.utc)
             transformed['end_time'] = parsed_end.isoformat()
-        except:
-            pass
+        except Exception as e:
+            try:
+                parsed_end = date_parser.parse(str(end_str), fuzzy=True)
+                from datetime import timezone as _tz
+                if parsed_end.tzinfo is None:
+                    parsed_end = parsed_end.replace(tzinfo=_tz.utc)
+                transformed['end_time'] = parsed_end.isoformat()
+            except:
+                pass
 
     source_name = event.get('source_name') or event.get('source') or ''
     if source_name:
@@ -688,13 +705,23 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
     """
     all_normalized = []
     chunk_size = 10
+    failed_chunks = 0
 
     for i in range(0, len(events), chunk_size):
         chunk = events[i:i + chunk_size]
 
+        # Strip blank start_time so Gemini infers from title/description
+        # rather than receiving an empty string that fails Pydantic validation
+        clean_chunk = []
+        for ev in chunk:
+            ev_copy = dict(ev)
+            if not ev_copy.get('start_time'):
+                ev_copy.pop('start_time', None)
+            clean_chunk.append(ev_copy)
+
         try:
             payload = {
-                "raw_content": json.dumps(chunk),
+                "raw_content": json.dumps(clean_chunk),
                 "source_url": source_url,
                 "content_type": "json"
             }
@@ -713,18 +740,21 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
                     print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
                     all_normalized.extend(normalized)
                 else:
-                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, falling back")
-                    return []
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
+                    failed_chunks += 1
             else:
                 print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
-                return []
+                failed_chunks += 1
 
         except httpx.ConnectError:
             print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
             return []
         except Exception as e:
             print(f"[Normalize] Error: {e}")
-            return []
+            failed_chunks += 1
+
+    if failed_chunks:
+        print(f"[Normalize] {failed_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")
 
     return all_normalized
 
@@ -966,6 +996,13 @@ def register_routes(app):
                     print(f"[BOK Center] SUCCESS: {len(events)} events via API")
 
             if not events:
+                cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, source_name, url, future_only))
+                if cc_detected and cc_events:
+                    events = cc_events
+                    methods.append(f"Circle Cinema ({len(events)})")
+                    print(f"[CircleCinema] SUCCESS: {len(events)} events")
+
+            if not events:
                 expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
                 if expo_detected and expo_events:
                     events = expo_events
@@ -1128,6 +1165,12 @@ def register_routes(app):
                         if bok_detected and bok_events:
                             events = bok_events
                             methods.append(f"BOK Center API ({len(events)})")
+
+                    if not events:
+                        cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, name, url, True))
+                        if cc_detected and cc_events:
+                            events = cc_events
+                            methods.append(f"Circle Cinema ({len(events)})")
 
                     if not events:
                         expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
