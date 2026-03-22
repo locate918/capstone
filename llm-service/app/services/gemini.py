@@ -10,6 +10,11 @@ Setup:
 2. pip install google-genai
 3. Add GEMINI_API_KEY to .env
 
+Functions to implement:
+- parse_user_intent(message) → SearchParams
+- generate_chat_response(message, events, user_profile) → str
+- normalize_events(raw_events) → List[NormalizedEvent]
+
 See backend/src/services/llm.rs for the Rust client that calls these.
 """
 
@@ -21,7 +26,6 @@ from typing import List, Dict, Any
 from datetime import datetime
 from google import genai
 from google.genai import types
-from bs4 import BeautifulSoup
 from app.models.schemas import NormalizedEvent
 from app.tools.definitions import gemini_tools
 from dotenv import load_dotenv
@@ -136,62 +140,79 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     - Today's Date: {current_time}
     - User Profile: {json.dumps(user_profile)}
     
-    CRITICAL - DATA SOURCES:
-    1. **Events**: Use the `search_events` tool for live music, festivals, comedy, etc. This queries a live PostgreSQL database.
-    2. **Places/Restaurants**: For restaurants, bars, or "things to do" that aren't specific dated events, DO NOT use `search_events`. Instead, use your internal knowledge of Tulsa geography and neighborhoods or the Google Search tool to find permanent businesses
+    CRITICAL - YOUR DATA SOURCE:
+    You have access to a REAL PostgreSQL database containing events scraped from 60+ Tulsa venues
+    and event sources. When you call search_events, it queries this live database via the Rust 
+    backend API on port 3000. You are NOT making things up — you are returning real scraped data.
+    Never tell users you "can't access databases" or "don't have access to Supabase" — you DO 
+    query the actual production database through your search_events tool.
+
+    You also have access to a `search_places` tool containing 500+ real bars, restaurants,
+    nightclubs, breweries, and cafes across the Tulsa metro — seeded from Google Places.
+    Use this whenever a user asks about drinks, dinner, nightlife, or anywhere to go before/after
+    an event. You MUST provide the venue's lat/lng coordinates to use it.
     
     GUIDELINES:
-    1. **Search Protocol**: 
-       - If the user asks "What's happening...", "Events this weekend", or "Live music" -> Use `search_events`.
-       - If the user asks "Where should I eat?", "Restaurants near [Venue]", or "Best bars" -> Do NOT use `search_events`. Use your knowledge of Tulsa's geography (e.g., Mabee Center is near 81st & Lewis/ORU; Cain's is in the Arts District).
+    1. **Search First**: Always use `search_events` to find real data before answering.
     2. **Tulsa-Centric**: Assume all queries are for Tulsa. Do not ask for location.
-    3. **Mandatory Suggestions**: If a user asks for "ideas" or "recommendations," you are FORBIDDEN from asking clarifying questions (e.g., "What do you like?") without first providing at least TWO specific event suggestions found in the database.
-    4. **Smart Dates**: Interpret "this weekend", "tonight", "next week" relative to Current Date.
-       - "tonight" = {current_time} onwards
+    3. **Smart Dates**: Interpret "this weekend", "tonight", "next week" relative to Current Date.
+       - "tonight" = today's date, events from now onward
        - "tomorrow" = the next calendar day
-       - "this weekend" = Friday evening through Sunday
-    5. **Imaginative Search**: Users often ask for "vibes" rather than keywords. Translate these:
-       - "Date Ideas" -> Search for e.g. `q="jazz"`, `q="comedy"`, `q="wine"`, `q="dinner"`, `q="theatre"`, or `category="Arts"`. Do NOT just set `family_friendly=False`.
-       - "Family Fun" -> `family_friendly=True` is good, but also try `q="festival"`, `q="market"`, `q="zoo"`, ect. 
+       - "this weekend" = upcoming Saturday and Sunday
+    4. **Imaginative Search**: Users often ask for "vibes" rather than keywords. Translate these:
+       - "Date Ideas" -> Search for `q="jazz"`, `q="comedy"`, `q="wine"`, `q="dinner"`, `q="theatre"`, or `category="Arts"`. Do NOT just set `family_friendly=False`.
+       - "Family Fun" -> `family_friendly=True` is good, but also try `q="festival"`, `q="market"`, `q="zoo"`.
        - "Nightlife" -> `q="concert"`, `q="dj"`, `q="party"`, `q="cocktail"`.
        - "Chill" -> `q="acoustic"`, `q="poetry"`, `q="yoga"`.
-       - Interpret the "vibe" the user is asking for with imaginative search terms.
-       - Search with multiple categories and keywords each time and be broad in your searching.
-    6. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
+    5. **Places (Bars & Restaurants)**: Use `search_places` whenever a user asks about:
+       - Where to get drinks, dinner, or food near an event
+       - Bars, restaurants, breweries, or nightlife near a venue
+       - A "date night" or "night out" that combines an event + food/drinks
+       - Anything to do before or after a show
+       To use it you need the venue's coordinates. Use these known coords for common venues:
+         - Cain's Ballroom: 36.1563, -95.9929
+         - BOK Center: 36.1540, -95.9944
+         - Tulsa Theater: 36.1557, -95.9882
+         - Circle Cinema: 36.1393, -95.9792
+         - Philbrook Museum: 36.1182, -95.9717
+         - Gathering Place: 36.1282, -95.9559
+         - Hard Rock Tulsa: 36.1887, -95.7449
+         - Brady Arts District (general): 36.1547, -95.9850
+         - Blue Dome District (general): 36.1450, -95.9950
+       For other venues, estimate from the address or use the neighborhood center.
+    6. **Links**: ALWAYS link the **Event Title** to the `source_url` if available. 
+       If `source_url` is missing, use `venue_website`. Link the **Venue Name** to `venue_website` if available.
+       For places, link the place name to `website` or `google_maps` if available.
+    7. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
        The database stores times in UTC — convert by subtracting 6 hours (CST) or 5 hours (CDT).
        If a time seems wrong (e.g. midnight for a concert), note it may be estimated.
-    7. **Search Fallback Protocol (Strict)**: 
-       If a search returns 0 results, do NOT report failure until you have attempted these steps:
-       - **Step 1**: Remove specific category filters but keep keywords.
-       - **Step 2**: Remove keywords and search the Date Range globally.
-       - **Step 3**: Expand the date range by +/- 3 days.
-       - **Step 4**: If still 0 results, provide 2 "Evergreen" suggestions (e.g., Gathering Place, Philbrook Museum) based on the user's intent.
-    8. **Venue Proximity (The "Dinner & A Show" Rule)**: 
-       - When a user asks for restaurants near a venue, identify the venue's neighborhood first (e.g., "Since the Mabee Center is in South Tulsa...").
-       - Recommend at least 3 permanent restaurants in that specific area (e.g., near 71st/81st & Lewis for Mabee Center; near the Arts District for Cain's Ballroom). 
-       - DO NOT say "There are no restaurant events." Restaurants are businesses, not events.
-    9. **Links (Strict)**: You MUST ALWAYS link [Event Title](source_url) and [Venue Name](venue_website).
+    8. **Retry on Error**: If a search returns no results:
+       - **Do not give up immediately.**
+       - Try a broader search (remove categories, widen date range).
+       - Try a *different* keyword strategy (e.g. if "jazz" failed, try "music").
+       - Only say "I couldn't find anything" after trying at least 2 different search variations.
     
     RESPONSE FORMATTING (Markdown):
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
     - **Structure**:
       - Start with a warm, brief opening.
       - List events using this Markdown format:
-        * [Event Title](source_url)
-          * 📍 **Venue**: [Venue Name](venue_website)
-          * ⏰ **Time**: [Day], [Time CT]
-          * 💰 **Price**: [Price/Free]
-          * 📝 [One-sentence description]
+        *   [**Event Title**](source_url) (Use Markdown link syntax. Do NOT show raw URL.)
+            *   📍 **Venue**: [Venue Name](venue_website) (Use Markdown link syntax. Do NOT show raw URL.)
+            *   ⏰ **Time**: [Day of week], [Time in Central Time]
+            *   💰 **Price**: [Price range or "Free"]
+            *   📝 [One sentence punchy description]
       - Use emojis relevant to the event type (🎸, 🎨, 🍔, 🎭).
-      
-    - **Closing**: 
-      - Ask whether the user wants to explore other options (e.g., "Do you want to look for other events of this type?").
-      - End with a helpful follow-up question (e.g., "Need a dinner recommendation nearby?" or "Want to see what's happening tomorrow instead?").
+    
+    - **No Events Found**: If the search returns nothing, try a broader search before giving up.
+      If still nothing, suggest specific *evergreen* local activities relevant to their query 
+      (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
+    - **Closing**: End with a helpful follow-up question (e.g., "Want me to find bars nearby?", "Need a dinner spot close to the venue?", or "Want to see what's happening tomorrow instead?").
     """
 
     client = get_client()
     chat = client.aio.chats.create(
-        model='gemini-2.5-flash',
+        model='gemini-2.5-flash-lite',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
             system_instruction=system_instruction
@@ -212,16 +233,6 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             if tool_functions and func_name in tool_functions:
                 # Execute the tool
                 tool_result = await tool_functions[func_name](func_args)
-
-                # Add the result to the list of outputs
-                tool_outputs.append(
-                    types.Part.from_function_response(
-                        name=func_name,
-                        response={"result": tool_result}
-                    )
-                )
-                if not tool_result and func_name == "search_events":
-                    tool_result = "0 results found. CRITICAL: Do not report failure yet. Execute search_events again with broader dates and fewer category filters."
 
                 # Add the result to the list of outputs
                 tool_outputs.append(
@@ -308,21 +319,10 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
         except Exception:
             pass
 
-    if content_type.lower() == "html":
-        try:
-            soup = BeautifulSoup(raw_content, "html.parser")
-            # Remove high-noise, low-value tags
-            for tag in soup(["script", "style", "svg", "nav", "footer", "iframe", "noscript"]):
-                tag.decompose()
-            # Extract just the text, separated by spaces to maintain boundaries
-            raw_content = soup.get_text(separator=" ", strip=True)
-        except Exception as e:
-            print(f"DEBUG: HTML cleaning failed: {e}")
-
     if content_type.lower() == "json":
         instruction = "Map the following raw JSON data into the standardized event format below. Handle nested structures and different field names intelligently."
     else:
-        instruction = "Extract distinct events from the following text content. Ignore navigation, footers, and unrelated text."
+        instruction = "Extract distinct events from the following HTML content. Ignore navigation, footers, and unrelated text."
 
     base_prompt = f"""
     {instruction}
