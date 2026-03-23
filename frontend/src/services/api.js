@@ -123,8 +123,8 @@ export const fetchEvents = async () => {
     }
 
     try {
-        // Request up to 1000 events (backend max)
-        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events?limit=1000`);
+        // Request up to 2000 events (backend max)
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events?limit=2000`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }

@@ -12,7 +12,6 @@
 //!
 //! ## Owner
 //! Will (Coordinator/Backend Lead)
-//! v1.1 — venue_priority sort
 
 // =============================================================================
 // IMPORTS
@@ -128,7 +127,7 @@ async fn list_events(
     State(pool): State<PgPool>,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(100).min(1000);
+    let limit = params.limit.unwrap_or(2000).min(5000);
 
     let events = sqlx::query_as::<_, Event>(
         r#"
@@ -145,7 +144,7 @@ async fn list_events(
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.start_time >= NOW()
-        ORDER BY COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
+        ORDER BY DATE_TRUNC('day', e.start_time) ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
         "#
     )
@@ -386,7 +385,7 @@ async fn search_events(
     State(pool): State<PgPool>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(500).min(1000);
+    let limit = params.limit.unwrap_or(2000).min(5000);
     let offset = params.offset.unwrap_or(0);
 
     // Build dynamic WHERE clauses
@@ -477,7 +476,7 @@ async fn search_events(
     let query = format!(
         r#"
         SELECT * FROM ({}) AS deduped
-        ORDER BY COALESCE(venue_priority, 3) ASC, start_time ASC
+        ORDER BY DATE_TRUNC('day', start_time) ASC, COALESCE(venue_priority, 3) ASC, start_time ASC
         "#,
         query
     );
