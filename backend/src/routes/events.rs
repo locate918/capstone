@@ -62,6 +62,9 @@ pub struct Event {
     pub venue_website: Option<String>,
     pub venue_latitude: Option<f64>,
     pub venue_longitude: Option<f64>,
+    /// Display priority for this venue (1 = flagship, 2 = featured, 3 = standard).
+    /// Drives sort order: priority-1 venues surface first in the feed.
+    pub venue_priority: Option<i32>,
 }
 
 /// Payload for creating/updating events (no venue fields - those come from venues table)
@@ -134,13 +137,14 @@ async fn list_events(
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website      AS venue_website,
+            v.latitude     AS venue_latitude,
+            v.longitude    AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.start_time >= NOW()
-        ORDER BY e.start_time ASC
+        ORDER BY COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
         "#
     )
@@ -176,9 +180,10 @@ async fn get_event(
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website      AS venue_website,
+            v.latitude     AS venue_latitude,
+            v.longitude    AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.id = $1
@@ -307,9 +312,10 @@ async fn create_event(
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website        AS venue_website,
+            v.latitude       AS venue_latitude,
+            v.longitude      AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.source_url = $1
@@ -452,9 +458,10 @@ async fn search_events(
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
                 e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
                 e.created_at, e.updated_at,
-                v.website AS venue_website,
-                v.latitude AS venue_latitude,
-                v.longitude AS venue_longitude
+                v.website        AS venue_website,
+                v.latitude       AS venue_latitude,
+                v.longitude      AS venue_longitude,
+                v.venue_priority AS venue_priority
             FROM events e
             LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
             WHERE {}
@@ -462,6 +469,16 @@ async fn search_events(
         LIMIT ${} OFFSET ${}
         "#,
         where_clause, bind_index, bind_index + 1
+    );
+
+    // Wrap the dedup query so we can re-sort the deduplicated results
+    // by venue_priority first, then chronologically.
+    let query = format!(
+        r#"
+        SELECT * FROM ({}) AS deduped
+        ORDER BY COALESCE(venue_priority, 3) ASC, start_time ASC
+        "#,
+        query
     );
 
     // Build and execute query with bindings

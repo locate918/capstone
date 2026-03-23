@@ -68,6 +68,8 @@ from scraperExtractors import (
     extract_jenks_planetarium_events,
     extract_riverparks_events,
     extract_magic_city_books_events,
+    extract_spotlight_theater_events,
+    extract_tulsamayfest_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -1269,6 +1271,20 @@ def register_routes(app):
                     print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
 
             if not events:
+                spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, source_name, url, future_only))
+                if spt_detected and spt_ev:
+                    events = spt_ev
+                    methods.append(f"SpotlightTheater ({len(events)})")
+                    print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
+
+            if not events:
+                mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, source_name, url, future_only))
+                if mf_detected and mf_ev:
+                    events = mf_ev
+                    methods.append(f"TulsaMayfest ({len(events)})")
+                    print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
+
+            if not events:
                 events = extract_events_universal(html, url, source_name)
 
                 if events and '_extraction_methods' in events[0]:
@@ -1640,6 +1656,20 @@ def register_routes(app):
                             events = mcb_ev
                             methods.append(f"MagicCityBooks ({len(events)})")
                             print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, name, url, True))
+                        if spt_detected and spt_ev:
+                            events = spt_ev
+                            methods.append(f"SpotlightTheater ({len(events)})")
+                            print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, name, url, True))
+                        if mf_detected and mf_ev:
+                            events = mf_ev
+                            methods.append(f"TulsaMayfest ({len(events)})")
+                            print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
 
                     if not events:
                         events = extract_events_universal(html, url, name)

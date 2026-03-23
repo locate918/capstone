@@ -6823,3 +6823,320 @@ async def extract_magic_city_books_events(
 
     print(f"[MagicCityBooks] Total via HTML: {len(events)}")
     return events, True
+
+# ============================================================================
+# TULSA SPOTLIGHT THEATER — Wix Events (warmup-data JSON)
+# ============================================================================
+# Site: https://www.tulsaspotlighttheater.com/box-office
+# Method: httpx — the page is a Wix site that server-side renders all event
+#         data into a <script id="wix-warmup-data" type="application/json">
+#         tag. No separate API call needed — parse that tag directly.
+# Path:   warmupData.appsWarmupData[appKey][widgetKey].events.events[]
+# Fields: id, title, slug, scheduling.config.{startDate,endDate,timeZoneId},
+#         location.address, description, mainImage.url
+# URLs:   https://www.tulsaspotlighttheater.com/event-info/{slug}
+# ============================================================================
+
+_SPOTLIGHT_SOURCE_URL = 'https://www.tulsaspotlighttheater.com/box-office'
+_SPOTLIGHT_EVENT_BASE = 'https://www.tulsaspotlighttheater.com/event-info/'
+_SPOTLIGHT_VENUE      = 'Tulsa Spotlight Theater'
+_SPOTLIGHT_ADDR       = '1381 Riverside Dr, Tulsa, OK 74127'
+
+
+def _spotlight_categories(title: str, description: str = '') -> list[str]:
+    text = (title + ' ' + description).lower()
+    cats = ['Arts & Culture', 'Theater']
+    if any(w in text for w in ['children', 'kids', 'camp', 'youth', 'family']):
+        cats.append('Family Friendly')
+    if 'magic' in text or 'magician' in text:
+        cats.append('Magic')
+    if 'drunkard' in text or 'melodrama' in text:
+        cats.append('Comedy')
+    if 'showcase' in text or 'camp' in text:
+        cats.append('Education')
+    return cats
+
+
+async def extract_spotlight_theater_events(
+        html: str, source_name: str, url: str = '', future_only: bool = True
+) -> tuple[list, bool]:
+    """
+    Extract events from Tulsa Spotlight Theater's Wix-powered box office page.
+    Wix SSR embeds all event data in a JSON blob inside <script id="wix-warmup-data">.
+    """
+    if 'tulsaspotlighttheater.com' not in url.lower():
+        return [], False
+
+    print(f"[SpotlightTheater] Detected Tulsa Spotlight Theater, parsing Wix warmup data...")
+
+    from bs4 import BeautifulSoup
+    from dateutil import parser as date_parser
+
+    page_html = html
+    if not page_html:
+        try:
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+                resp = await client.get(_SPOTLIGHT_SOURCE_URL, headers=HEADERS)
+                resp.raise_for_status()
+                page_html = resp.text
+        except Exception as e:
+            print(f"[SpotlightTheater] Fetch error: {e}")
+            return [], True
+
+    soup = BeautifulSoup(page_html, 'html.parser')
+    warmup_tag = soup.find('script', {'id': 'wix-warmup-data'})
+    if not warmup_tag:
+        print(f"[SpotlightTheater] wix-warmup-data tag not found")
+        return [], True
+
+    try:
+        warmup = json.loads(warmup_tag.string)
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"[SpotlightTheater] JSON parse error: {e}")
+        return [], True
+
+    apps = warmup.get('appsWarmupData', {})
+    raw_events = []
+    for app_val in apps.values():
+        for widget_val in app_val.values():
+            candidate = widget_val.get('events', {}).get('events', [])
+            if candidate:
+                raw_events = candidate
+                break
+        if raw_events:
+            break
+
+    if not raw_events:
+        print(f"[SpotlightTheater] No events found in warmup data")
+        return [], True
+
+    print(f"[SpotlightTheater] Found {len(raw_events)} raw events")
+
+    cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    events = []
+    seen: set = set()
+
+    for ev in raw_events:
+        title = (ev.get('title') or '').strip()
+        if not title:
+            continue
+
+        scheduling = ev.get('scheduling', {}).get('config', {})
+        start_raw  = scheduling.get('startDate', '')
+        end_raw    = scheduling.get('endDate', '')
+
+        try:
+            start_dt = date_parser.parse(start_raw).replace(tzinfo=None)
+        except Exception:
+            print(f"[SpotlightTheater] Could not parse start date: {start_raw}")
+            continue
+
+        if future_only and start_dt < cutoff:
+            continue
+
+        dedup_key = f"{title.lower()}|{start_dt.date()}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        end_dt = None
+        if end_raw:
+            try:
+                end_dt = date_parser.parse(end_raw).replace(tzinfo=None)
+            except Exception:
+                pass
+
+        location    = ev.get('location', {})
+        address     = location.get('address') or _SPOTLIGHT_ADDR
+        description = (ev.get('description') or ev.get('about') or '').strip()
+        main_image  = ev.get('mainImage', {})
+        image_url   = main_image.get('url', '') if isinstance(main_image, dict) else ''
+        slug        = ev.get('slug', '')
+        event_url   = (_SPOTLIGHT_EVENT_BASE + slug) if slug else _SPOTLIGHT_SOURCE_URL
+        categories  = _spotlight_categories(title, description)
+        is_family   = 'Family Friendly' in categories
+
+        events.append({
+            'title':           title,
+            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S') if end_dt else '',
+            'venue':           _SPOTLIGHT_VENUE,
+            'venue_address':   address,
+            'description':     description[:500] if description else '',
+            'source_url':      event_url,
+            'image_url':       image_url,
+            'source_name':     source_name or _SPOTLIGHT_VENUE,
+            'categories':      categories,
+            'outdoor':         False,
+            'family_friendly': is_family,
+        })
+        print(f"[SpotlightTheater] Added: {title} on {start_dt.strftime('%Y-%m-%d')}")
+
+    print(f"[SpotlightTheater] Total events extracted: {len(events)}")
+    return events, True
+
+
+# ============================================================================
+# TULSA MAYFEST — Static/Hardcoded (Squarespace site under construction)
+# ============================================================================
+# Site: https://www.tulsamayfest.org/
+# Method: Static — as of 2026 the site is in rebuild ("WEBSITE UPDATES IN
+#         PROGRESS") with no events API or structured event pages.
+#         Known 2026 events are hardcoded from homepage content.
+#         Re-evaluate for live scraping once the site is rebuilt.
+#
+# 2026 Format: "Mayfest Road Trip" — multiple events on Route 66
+#   - Local Art Show @ Mother Road Market:     May 15–17 (Fri–Sun)
+#   - Student Art Display @ Renaissance Square: Every Saturday in May
+#     (May 2, 9, 16, 23, 30) — elementary, middle & high school art
+#   - Centennial Cruise (car cruise + music):   May 29–30 (Fri–Sat)
+# ============================================================================
+
+_MAYFEST_SOURCE_URL = 'https://www.tulsamayfest.org/'
+_MAYFEST_YEAR       = 2026
+
+_MAYFEST_EVENTS_STATIC = [
+    {
+        'title':         'Tulsa Mayfest — Local Art Show',
+        'start_time':    f'{_MAYFEST_YEAR}-05-15T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-17T18:00:00',
+        'venue':         'Mother Road Market',
+        'venue_address': '1036 E 11th St, Tulsa, OK 74120',
+        'description':   (
+            'Tulsa International Mayfest 2026 Local Art Show on Route 66 at Mother Road Market. '
+            'Featuring local artists as part of the Mayfest Road Trip. May 15–17.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Community', 'Free Event'],
+        'outdoor':       True,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Student Art Display (May 2)',
+        'start_time':    f'{_MAYFEST_YEAR}-05-02T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-02T17:00:00',
+        'venue':         'Renaissance Square Event Center',
+        'venue_address': '111 N Main St, Tulsa, OK 74103',
+        'description':   (
+            'Tulsa Mayfest 2026 Student Art Display — elementary, middle, and high school '
+            'student artwork on Route 66 at Renaissance Square Event Center. Every Saturday in May.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Family Friendly', 'Education', 'Free Event'],
+        'outdoor':       False,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Student Art Display (May 9)',
+        'start_time':    f'{_MAYFEST_YEAR}-05-09T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-09T17:00:00',
+        'venue':         'Renaissance Square Event Center',
+        'venue_address': '111 N Main St, Tulsa, OK 74103',
+        'description':   (
+            'Tulsa Mayfest 2026 Student Art Display — elementary, middle, and high school '
+            'student artwork on Route 66 at Renaissance Square Event Center. Every Saturday in May.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Family Friendly', 'Education', 'Free Event'],
+        'outdoor':       False,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Local Art Show & Student Art Display (May 16)',
+        'start_time':    f'{_MAYFEST_YEAR}-05-16T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-16T18:00:00',
+        'venue':         'Mother Road Market & Renaissance Square',
+        'venue_address': '1036 E 11th St, Tulsa, OK 74120',
+        'description':   (
+            'Tulsa Mayfest 2026 — Local Art Show at Mother Road Market (May 15–17) '
+            'and Student Art Display at Renaissance Square Event Center. Both on Route 66.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Family Friendly', 'Education', 'Free Event'],
+        'outdoor':       True,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Student Art Display (May 23)',
+        'start_time':    f'{_MAYFEST_YEAR}-05-23T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-23T17:00:00',
+        'venue':         'Renaissance Square Event Center',
+        'venue_address': '111 N Main St, Tulsa, OK 74103',
+        'description':   (
+            'Tulsa Mayfest 2026 Student Art Display — elementary, middle, and high school '
+            'student artwork on Route 66 at Renaissance Square Event Center. Every Saturday in May.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Family Friendly', 'Education', 'Free Event'],
+        'outdoor':       False,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Centennial Cruise',
+        'start_time':    f'{_MAYFEST_YEAR}-05-29T17:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-30T22:00:00',
+        'venue':         'Route 66, Tulsa',
+        'venue_address': 'Route 66, Tulsa, OK',
+        'description':   (
+            'Tulsa Mayfest 2026 Centennial Cruise — car cruise and local live music along '
+            'Route 66 in Tulsa. May 29–30 as part of the Mayfest Road Trip.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Music', 'Live Music', 'Community', 'Free Event'],
+        'outdoor':       True,
+        'family_friendly': True,
+    },
+    {
+        'title':         'Tulsa Mayfest — Student Art Display & Centennial Cruise (May 30)',
+        'start_time':    f'{_MAYFEST_YEAR}-05-30T10:00:00',
+        'end_time':      f'{_MAYFEST_YEAR}-05-30T22:00:00',
+        'venue':         'Renaissance Square & Route 66',
+        'venue_address': '111 N Main St, Tulsa, OK 74103',
+        'description':   (
+            'Tulsa Mayfest 2026 — Student Art Display at Renaissance Square Event Center '
+            'plus the Centennial Cruise along Route 66. Live local music throughout.'
+        ),
+        'image_url':     '',
+        'categories':    ['Arts & Culture', 'Festival', 'Music', 'Family Friendly', 'Free Event'],
+        'outdoor':       True,
+        'family_friendly': True,
+    },
+]
+
+
+async def extract_tulsamayfest_events(
+        html: str, source_name: str, url: str = '', future_only: bool = True
+) -> tuple[list, bool]:
+    """
+    Return hardcoded Tulsa Mayfest 2026 events.
+
+    The tulsamayfest.org site is under reconstruction as of early 2026 and
+    has no structured events API or event pages.  Known events are derived
+    from homepage text.  Re-evaluate for live scraping once the site is rebuilt.
+    """
+    if 'tulsamayfest.org' not in url.lower():
+        return [], False
+
+    print(f"[TulsaMayfest] Detected tulsamayfest.org — returning static 2026 events...")
+
+    cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    events = []
+
+    for ev in _MAYFEST_EVENTS_STATIC:
+        if future_only:
+            try:
+                start_dt = datetime.strptime(ev['start_time'], '%Y-%m-%dT%H:%M:%S')
+                if start_dt < cutoff:
+                    continue
+            except Exception:
+                pass
+
+        events.append({
+            **ev,
+            'source_url':  _MAYFEST_SOURCE_URL,
+            'source_name': source_name or 'Tulsa International Mayfest',
+            'location':    'Tulsa',
+        })
+
+    print(f"[TulsaMayfest] Returning {len(events)} static events")
+    return events, True

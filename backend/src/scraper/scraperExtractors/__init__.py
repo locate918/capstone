@@ -51,6 +51,8 @@ from .cmsExtractors import (
     extract_jenks_planetarium_events,
     extract_riverparks_events,
     extract_magic_city_books_events,
+    extract_spotlight_theater_events,
+    extract_tulsamayfest_events,
 )
 
 # ── Universal fallback ────────────────────────────────────────────────────────
@@ -98,6 +100,8 @@ __all__ = [
     'extract_jenks_planetarium_events',
     'extract_riverparks_events',
     'extract_magic_city_books_events',
+    'extract_spotlight_theater_events',
+    'extract_tulsamayfest_events',
     'extract_events_universal',
     'fetch_with_httpx',
     'fetch_with_playwright',

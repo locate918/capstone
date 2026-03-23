@@ -50,6 +50,171 @@ TICKETING_DOMAINS = [
 ]
 
 
+# ============================================================================
+# VENUE DISPLAY PRIORITY
+# ============================================================================
+# Controls sort order on the event feed — lower number surfaces first.
+#   1 = Flagship  — major capacity music/concert venues, large performing arts
+#                   centers, established comedy clubs, major casino entertainment,
+#                   large festival/convention grounds
+#   2 = Featured  — smaller clubs, black-box theaters, arts spaces, museums
+#                   with regular events, mid-tier event centers
+#   3 = Standard  — everything else (default)
+#
+# Mirrors the IN-lists in 002_venue_priority.sql exactly — keep in sync.
+
+VENUE_PRIORITY_1 = {
+    # Concert / music
+    "bok center",
+    "cain's ballroom", "cains",
+    "tulsa theater", "tulsa theatre",
+    "the vanguard",
+    "brady theater",
+    # Hard Rock sub-rooms
+    "hard rock casino tulsa",
+    "hard rock hotel & casino tulsa",
+    "amp at hard rock casino tulsa",
+    "riffs at hard rock casino tulsa",
+    "track at hard rock casino tulsa",
+    "hard at hard rock casino tulsa",
+    # Performing arts
+    "tulsa performing arts center",
+    "chapman music hall - tpac",
+    "john h. williams theatre",
+    "liddy doenges theatre",
+    "broken arrow performing arts center",
+    "vantrease pace",
+    # Comedy
+    "bricktown comedy club",
+    "loony bin", "loony bin comedy club",
+    # Casinos / large entertainment
+    "river spirit casino resort",
+    "the cove at river spirit casino resort", "the cove",
+    "the shrine", "shrine",
+    # Festival / convention / fairground
+    "gathering place", "the gathering place",
+    "guthrie green",
+    "expo square",
+    "sagenet center", "sagenet center at expo square",
+    "central park hall", "central park hall at expo square",
+    "arvest convention center",
+    "arvest convention center – acc",
+    "arvest convention center – grand hall",
+    "arvest convention center – legacy hall",
+    "arvest convention center – pepsi exhibit hall a+b",
+    "arvest convention center – tulsa ballroom",
+    "arvest convention center, legacy hall",
+    "river west festival park",
+    "oneok field",
+}
+
+VENUE_PRIORITY_2 = {
+    # Music clubs / bars with live music
+    "chimera ballroom",
+    "belafonte",
+    "sound pony", "soundpony",
+    "low down", "lowdown",
+    "mercury lounge",
+    "whittier", "whittier bar",
+    "church studio", "the church studio",
+    "cain's ballroom / the church studio",
+    "starlite", "the starlite",
+    "hunt club", "the hunt club",
+    "bad ass renee's",
+    "soul city gastropub and music house",
+    "maggie's music box",
+    "club majestic",
+    "big 10 ballroom",
+    "st. vitus",
+    "fly loft", "flyloft downtown tulsa",
+    "flywheel",
+    # Performing arts / cinema
+    "circle cinema",
+    "tulsa ballet",
+    "tulsa opera",
+    "tulsa symphony orchestra",
+    "bob dylan center",
+    "american theatre company",
+    "waterworks art center", "waterworks large studio", "waterworks weaving gallery",
+    "crosstown arts",
+    "tulsa spotlight theater",
+    "spotlight theater / riverside studios",
+    "tulsa artists' coalition",
+    "tulsa artist fellowship project space",
+    "living arts", "living arts of tulsa",
+    "charles e. norman theatre",
+    "linbury theatre",
+    "liggett studio",
+    "hardesty center for dance education",
+    "lorton performance center",
+    "lynn riggs theater",
+    "sky gallery",
+    "zarrow studio",
+    "108 contemporary",
+    # Museums / attractions
+    "philbrook", "philbrook museum of art",
+    "gilcrease",
+    "discovery lab",
+    "tulsa air and space museum & planetarium", "tasm",
+    "the castle of muskogee",
+    "woolaroc museum & wildlife preserve",
+    "tulsa zoo",
+    "oklahoma aquarium",
+    "will rogers memorial museum",
+    "jenks planetarium",
+    "greenwood rising",
+    "woody guthrie center",
+    # Arts districts / community arts
+    "tulsa arts district", "arts district",
+    "magic city books", "magic city book club",
+    # Event centers / markets / mid-tier casinos
+    "mother road market", "mother road market & renaissance square",
+    "skyline event center",
+    "osage casino hotel tulsa skyline event center",
+    "osage casino hotel tulsa",
+    "mabee center",
+    "renaissance square event center",
+    "imperio event center",
+    "gateway event center", "gateway tulsa event center",
+    "claremore expo",
+    # Gathering Place sub-venues
+    "quiktrip great lawn",
+    "quiktrip great lawn and oneok boathouse",
+    "oneok boathouse",
+    "redbud festival park",
+    "blue dome district & riverside",
+    "tunes at tul stage",
+    "jenks riverwalk",
+    # Bars / restaurants with notable live music
+    "the colony",
+    "kilkenny's irish pub",
+    "american solera",
+    "cabin boy brewery", "cabin boys brewery",
+    "duet jazz restaurant", "duet restaurant",
+    "route 66 village", "route 66 historical village",
+}
+
+
+def get_venue_display_priority(venue_name: str) -> int:
+    """
+    Return the display priority (1, 2, or 3) for a venue name.
+
+    Priority 1 venues surface at the top of the event feed.
+    Priority 2 venues sort before generic/community events.
+    Priority 3 is the default for everything else.
+
+    Mirrors the IN-lists in 002_venue_priority.sql — keep in sync.
+    """
+    if not venue_name:
+        return 3
+    key = venue_name.strip().lower()
+    if key in VENUE_PRIORITY_1:
+        return 1
+    if key in VENUE_PRIORITY_2:
+        return 2
+    return 3
+
+
 def is_aggregator_url(url: str) -> bool:
     """Return True if the URL belongs to a known aggregator domain."""
     if not url:
