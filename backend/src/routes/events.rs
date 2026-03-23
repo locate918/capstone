@@ -144,7 +144,7 @@ async fn list_events(
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.start_time >= NOW()
-        ORDER BY DATE_TRUNC('day', e.start_time) ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
+        ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
         "#
     )
@@ -476,7 +476,7 @@ async fn search_events(
     let query = format!(
         r#"
         SELECT * FROM ({}) AS deduped
-        ORDER BY DATE_TRUNC('day', start_time) ASC, COALESCE(venue_priority, 3) ASC, start_time ASC
+        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(venue_priority, 3) ASC, start_time ASC
         "#,
         query
     );
