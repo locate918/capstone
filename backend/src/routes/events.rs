@@ -12,6 +12,7 @@
 //!
 //! ## Owner
 //! Will (Coordinator/Backend Lead)
+//! v1.1 — venue_priority sort
 
 // =============================================================================
 // IMPORTS
