@@ -2,27 +2,13 @@
  * TulsaMap Component
  * ==================
  * Interactive Leaflet map showing event locations with custom markers.
- * 
- * PROPS:
- * - events: Array of events with coordinates
- * - onMarkerClick: Function called when marker/popup is clicked
- * - hoveredEventId: ID of event being hovered in list (for highlighting)
- * - className: Additional CSS classes for container
- * 
- * FEATURES:
- * - Custom styled markers by event category
- * - Marker clustering for overlapping events
- * - Glassmorphism tooltips with event details on hover
- * - Floating legend
- * - Centers map on hovered event card
  */
 
-import React, { useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Tooltip, ZoomControl, useMap } from 'react-leaflet';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-//import { THEME } from '../styles/theme';
+import { X, ChevronRight, MapPin, Calendar } from 'lucide-react';
 
 // =============================================================================
 // CATEGORY COLORS
@@ -84,7 +70,6 @@ const injectMapStyles = () => {
     .leaflet-container {
       font-family: inherit;
     }
-    /* Cluster styles */
     .marker-cluster {
       background: rgba(212, 175, 55, 0.3);
       border: 2px solid #d4af37;
@@ -105,15 +90,9 @@ const injectMapStyles = () => {
       font-size: 12px;
       color: #1a1a2e;
     }
-    .marker-cluster-small {
-      background: rgba(212, 175, 55, 0.4);
-    }
-    .marker-cluster-medium {
-      background: rgba(212, 175, 55, 0.5);
-    }
-    .marker-cluster-large {
-      background: rgba(212, 175, 55, 0.6);
-    }
+    .marker-cluster-small { background: rgba(212, 175, 55, 0.4); }
+    .marker-cluster-medium { background: rgba(212, 175, 55, 0.5); }
+    .marker-cluster-large { background: rgba(212, 175, 55, 0.6); }
   `;
     document.head.appendChild(style);
 };
@@ -201,51 +180,45 @@ const getCategoryIcon = (tags, isHovered = false) => {
 };
 
 // =============================================================================
-// MAP CONTROLLER (handles pan/zoom and resize)
+// MAP CONTROLLER
 // =============================================================================
 
-const MapController = ({ hoveredEventId, events }) => {
+const MapController = ({ hoveredEventId, events, onMapReady }) => {
     const map = useMap();
-    const animationRef = React.useRef(null);
+    const animationRef = useRef(null);
 
-    // Handle resize when container becomes visible
     useEffect(() => {
-        // Invalidate size on mount and after a short delay
-        // This handles the case when map container was hidden and becomes visible
-        const timeoutId = setTimeout(() => {
-            map.invalidateSize();
-        }, 100);
+        // Notify parent that map is ready
+        if (onMapReady) {
+            onMapReady(map);
+        }
 
-        // Also listen for window resize
-        const handleResize = () => {
-            map.invalidateSize();
-        };
+        // Force invalidate size multiple times to ensure proper rendering
+        const timers = [100, 300, 500].map(delay =>
+            setTimeout(() => map.invalidateSize(), delay)
+        );
+
+        const handleResize = () => map.invalidateSize();
         window.addEventListener('resize', handleResize);
 
         return () => {
-            clearTimeout(timeoutId);
+            timers.forEach(clearTimeout);
             window.removeEventListener('resize', handleResize);
         };
-    }, [map]);
+    }, [map, onMapReady]);
 
     useEffect(() => {
-        // Cancel any pending animation frame
         if (animationRef.current) {
             cancelAnimationFrame(animationRef.current);
             animationRef.current = null;
         }
 
-        // Early return if no hovered event
-        if (!hoveredEventId) {
-            return;
-        }
+        if (!hoveredEventId) return;
 
         const hoveredEvent = events.find(e => e.id === hoveredEventId);
 
-        // Only fly if event exists AND has valid coordinates
         if (
-            hoveredEvent &&
-            hoveredEvent.coordinates &&
+            hoveredEvent?.coordinates &&
             typeof hoveredEvent.coordinates.lat === 'number' &&
             typeof hoveredEvent.coordinates.lng === 'number' &&
             !isNaN(hoveredEvent.coordinates.lat) &&
@@ -253,27 +226,22 @@ const MapController = ({ hoveredEventId, events }) => {
             hoveredEvent.coordinates.lat !== 0 &&
             hoveredEvent.coordinates.lng !== 0
         ) {
-            // Use requestAnimationFrame to defer the pan and avoid race conditions
             animationRef.current = requestAnimationFrame(() => {
                 try {
-                    // Use setView with animate:false for instant, safe transitions
-                    // Or panTo which is less prone to NaN issues than flyTo
                     map.setView(
                         [hoveredEvent.coordinates.lat, hoveredEvent.coordinates.lng],
                         15,
                         { animate: true, duration: 0.3 }
                     );
                 } catch (error) {
-                    // Silently ignore map errors
+                    // Silently ignore
                 }
             });
         }
 
-        // Cleanup
         return () => {
             if (animationRef.current) {
                 cancelAnimationFrame(animationRef.current);
-                animationRef.current = null;
             }
         };
     }, [hoveredEventId, events, map]);
@@ -282,7 +250,7 @@ const MapController = ({ hoveredEventId, events }) => {
 };
 
 // =============================================================================
-// HELPER: Format date for tooltip
+// HELPERS
 // =============================================================================
 
 const formatEventDate = (dateIso) => {
@@ -296,10 +264,6 @@ const formatEventDate = (dateIso) => {
         minute: '2-digit'
     });
 };
-
-// =============================================================================
-// SVG ICONS for tooltip
-// =============================================================================
 
 const CalendarIcon = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -316,10 +280,6 @@ const MapPinIcon = () => (
         <circle cx="12" cy="10" r="3"></circle>
     </svg>
 );
-
-// =============================================================================
-// HELPER: Validate coordinates
-// =============================================================================
 
 const isValidCoordinates = (coords) => {
     return (
@@ -340,41 +300,68 @@ const isValidCoordinates = (coords) => {
 const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px]" }) => {
     const center = [36.1540, -95.9928];
     const containerRef = useRef(null);
-    const mapRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const [clusterEvents, setClusterEvents] = useState(null);
     const normalizedEvents = Array.isArray(events) ? events : [];
 
     useEffect(() => {
         injectMapStyles();
     }, []);
 
-    // Observe container visibility changes to trigger map resize
-    useEffect(() => {
-        if (!containerRef.current) return;
+    // Create a lookup map for events by coordinates
+    const eventsByPosition = useMemo(() => {
+        const lookup = new Map();
+        normalizedEvents.forEach(event => {
+            if (isValidCoordinates(event.coordinates)) {
+                const key = `${event.coordinates.lat},${event.coordinates.lng}`;
+                if (!lookup.has(key)) {
+                    lookup.set(key, []);
+                }
+                lookup.get(key).push(event);
+            }
+        });
+        return lookup;
+    }, [normalizedEvents]);
 
-        const observer = new ResizeObserver(() => {
-            // When container size changes (including becoming visible), invalidate map size
-            if (mapRef.current) {
-                setTimeout(() => {
-                    mapRef.current.invalidateSize();
-                }, 50);
+    const eventsWithValidCoords = useMemo(() =>
+        normalizedEvents.filter(event => isValidCoordinates(event.coordinates)),
+        [normalizedEvents]
+    );
+
+    const handleMapReady = (map) => {
+        mapInstanceRef.current = map;
+    };
+
+    // Handle cluster click - find events by their positions
+    const handleClusterClick = (e) => {
+        const cluster = e.layer;
+        const childMarkers = cluster.getAllChildMarkers();
+
+        // Get events from the lookup based on marker positions
+        const eventsInCluster = [];
+        childMarkers.forEach(marker => {
+            const latlng = marker.getLatLng();
+            const key = `${latlng.lat},${latlng.lng}`;
+            const eventsAtPosition = eventsByPosition.get(key);
+            if (eventsAtPosition) {
+                eventsAtPosition.forEach(evt => {
+                    if (!eventsInCluster.find(e => e.id === evt.id)) {
+                        eventsInCluster.push(evt);
+                    }
+                });
             }
         });
 
-        observer.observe(containerRef.current);
-
-        return () => observer.disconnect();
-    }, []);
-
-    // Filter events to only those with valid coordinates
-    const eventsWithValidCoords = normalizedEvents.filter(event => isValidCoordinates(event.coordinates));
+        if (eventsInCluster.length > 0) {
+            setClusterEvents(eventsInCluster);
+        }
+    };
 
     return (
         <div
             ref={containerRef}
-            className={`w-full rounded-2xl overflow-hidden border border-white/20 shadow-2xl relative z-0 ${className}`}
+            className={`relative rounded-2xl overflow-hidden ${className}`}
         >
-            <div className="absolute inset-0 z-[400] pointer-events-none shadow-[inset_0_0_60px_rgba(0,0,0,0.1)] rounded-2xl" />
-
             <MapContainer
                 center={center}
                 zoom={13}
@@ -382,111 +369,108 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                 style={{ height: '100%', width: '100%' }}
                 scrollWheelZoom={true}
                 zoomControl={false}
-                ref={mapRef}
             >
-                <MapController hoveredEventId={hoveredEventId} events={eventsWithValidCoords} />
+                <MapController
+                    hoveredEventId={hoveredEventId}
+                    events={eventsWithValidCoords}
+                    onMapReady={handleMapReady}
+                />
 
                 <TileLayer
                     attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}@2x.png"
                 />
 
-                <ZoomControl position="bottomright" />
-
-                {/* Marker Cluster Group */}
                 <MarkerClusterGroup
                     chunkedLoading
                     iconCreateFunction={createClusterIcon}
                     maxClusterRadius={50}
-                    spiderfyOnMaxZoom={true}
+                    spiderfyOnMaxZoom={false}
+                    zoomToBoundsOnClick={false}
+                    disableClusteringAtZoom={18}
                     showCoverageOnHover={false}
-                    zoomToBoundsOnClick={true}
-                    disableClusteringAtZoom={16}
+                    eventHandlers={{
+                        clusterclick: handleClusterClick
+                    }}
                 >
-                    {eventsWithValidCoords.map((event) => {
-                        return (
-                            <Marker
-                                key={event.id}
-                                position={[event.coordinates.lat, event.coordinates.lng]}
-                                icon={getCategoryIcon(event.vibe_tags, event.id === hoveredEventId)}
-                                eventHandlers={{
-                                    click: () => onMarkerClick(event),
-                                }}
-                            >
-                                <Tooltip
-                                    direction="top"
-                                    offset={[0, -42]}
-                                    opacity={1}
-                                >
-                                    <div style={{ width: '240px', padding: '16px' }}>
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <span style={{
-                                                fontSize: '10px',
-                                                fontWeight: 'bold',
-                                                letterSpacing: '0.05em',
-                                                color: '#9ca3af',
-                                                textTransform: 'uppercase'
-                                            }}>
-                                                {event.vibe_tags?.[0] || 'Local'}
-                                            </span>
-                                        </div>
-                                        <h3 style={{
+                    {eventsWithValidCoords.map((event) => (
+                        <Marker
+                            key={event.id}
+                            position={[event.coordinates.lat, event.coordinates.lng]}
+                            icon={getCategoryIcon(event.vibe_tags, event.id === hoveredEventId)}
+                            eventHandlers={{
+                                click: () => onMarkerClick(event),
+                            }}
+                        >
+                            <Tooltip direction="top" offset={[0, -42]} opacity={1}>
+                                <div style={{ width: '240px', padding: '16px' }}>
+                                    <div style={{ marginBottom: '8px' }}>
+                                        <span style={{
+                                            fontSize: '10px',
                                             fontWeight: 'bold',
-                                            fontSize: '14px',
-                                            marginBottom: '8px',
-                                            color: '#0f172a',
-                                            lineHeight: '1.4',
+                                            letterSpacing: '0.05em',
+                                            color: '#9ca3af',
+                                            textTransform: 'uppercase'
+                                        }}>
+                                            {event.vibe_tags?.[0] || 'Local'}
+                                        </span>
+                                    </div>
+                                    <h3 style={{
+                                        fontWeight: 'bold',
+                                        fontSize: '14px',
+                                        marginBottom: '8px',
+                                        color: '#0f172a',
+                                        lineHeight: '1.4',
+                                        wordWrap: 'break-word',
+                                        overflowWrap: 'break-word',
+                                        whiteSpace: 'normal'
+                                    }}>
+                                        {event.title}
+                                    </h3>
+                                    <p style={{
+                                        fontSize: '12px',
+                                        color: '#475569',
+                                        marginBottom: '4px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <CalendarIcon /> {formatEventDate(event.date_iso)}
+                                    </p>
+                                    <p style={{
+                                        fontSize: '12px',
+                                        color: '#64748b',
+                                        marginBottom: '12px',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '6px'
+                                    }}>
+                                        <MapPinIcon />
+                                        <span style={{
                                             wordWrap: 'break-word',
                                             overflowWrap: 'break-word',
                                             whiteSpace: 'normal'
                                         }}>
-                                            {event.title}
-                                        </h3>
-                                        <p style={{
-                                            fontSize: '12px',
-                                            color: '#475569',
-                                            marginBottom: '4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '6px'
-                                        }}>
-                                            <CalendarIcon /> {formatEventDate(event.date_iso)}
-                                        </p>
-                                        <p style={{
-                                            fontSize: '12px',
-                                            color: '#64748b',
-                                            marginBottom: '12px',
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            gap: '6px'
-                                        }}>
-                                            <MapPinIcon />
-                                            <span style={{
-                                                wordWrap: 'break-word',
-                                                overflowWrap: 'break-word',
-                                                whiteSpace: 'normal'
-                                            }}>
-                                                {event.location}
-                                            </span>
-                                        </p>
-                                        <p style={{
-                                            fontSize: '10px',
-                                            textAlign: 'center',
-                                            color: '#9ca3af',
-                                            paddingTop: '8px',
-                                            borderTop: '1px solid #e2e8f0'
-                                        }}>
-                                            Click for details
-                                        </p>
-                                    </div>
-                                </Tooltip>
-                            </Marker>
-                        );
-                    })}
+                                            {event.location}
+                                        </span>
+                                    </p>
+                                    <p style={{
+                                        fontSize: '10px',
+                                        textAlign: 'center',
+                                        color: '#9ca3af',
+                                        paddingTop: '8px',
+                                        borderTop: '1px solid #e2e8f0'
+                                    }}>
+                                        Click for details
+                                    </p>
+                                </div>
+                            </Tooltip>
+                        </Marker>
+                    ))}
                 </MarkerClusterGroup>
             </MapContainer>
 
-            {/* ===== FLOATING LEGEND (Mobile Optimized) ===== */}
+            {/* Floating Legend */}
             <div className="absolute bottom-4 left-4 z-[1000] bg-white/80 backdrop-blur-md p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/50 shadow-lg max-w-[140px] sm:max-w-none">
                 <h4 className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 sm:mb-3 pb-1.5 sm:pb-2 border-b border-gray-100/50">
                     Categories
@@ -518,6 +502,86 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                     ))}
                 </div>
             </div>
+
+            {/* Bottom Sheet for Clustered Events */}
+            {clusterEvents && (
+                <div className="absolute bottom-0 left-0 right-0 z-[1000] animate-slide-up">
+                    <div
+                        className="fixed inset-0 bg-black/40 -z-10"
+                        onClick={() => setClusterEvents(null)}
+                    />
+
+                    <div className="bg-white rounded-t-2xl shadow-2xl max-h-[60vh] flex flex-col">
+                        <div className="flex justify-center pt-3 pb-2">
+                            <div className="w-10 h-1 bg-slate-300 rounded-full" />
+                        </div>
+
+                        <div className="flex items-center justify-between px-4 pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <MapPin size={18} className="text-[#D4AF37]" />
+                                <span className="font-semibold text-slate-900">
+                                    {clusterEvents.length} Events nearby
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setClusterEvents(null)}
+                                className="p-1.5 hover:bg-slate-100 rounded-full transition-colors"
+                            >
+                                <X size={18} className="text-slate-500" />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto flex-1 overscroll-contain">
+                            {clusterEvents.map((event) => (
+                                <button
+                                    key={event.id}
+                                    onClick={() => {
+                                        onMarkerClick(event);
+                                        setClusterEvents(null);
+                                    }}
+                                    className="w-full flex items-center gap-3 p-4 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left border-b border-slate-100 last:border-b-0"
+                                >
+                                    <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-slate-100">
+                                        {event.imageUrl ? (
+                                            <img
+                                                src={event.imageUrl}
+                                                alt={event.title}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = '/assets/Logo.png';
+                                                    e.target.className = 'w-full h-full object-contain p-2 opacity-50';
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <img src="/assets/Logo.png" alt="" className="w-8 h-8 opacity-40" />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="font-medium text-slate-900 text-sm line-clamp-1">
+                                            {event.title}
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                                            <Calendar size={12} />
+                                            {event.date || 'Date TBD'}
+                                        </p>
+                                        {event.location && (
+                                            <p className="text-xs text-[#D4AF37] mt-0.5 line-clamp-1">
+                                                {event.location}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <ChevronRight size={18} className="text-slate-400 flex-shrink-0" />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

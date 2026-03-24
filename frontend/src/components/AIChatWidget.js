@@ -17,7 +17,7 @@ import ReactMarkdown from 'react-markdown';
 import { Send, X } from 'lucide-react';
 import { chatWithTully } from '../services/api';
 
-const TULLY_AVATAR = '/assets/Tully.png';
+const TULLY_AVATAR = '/assets/Tully.png?v=2';
 const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100&q=80';
 
 const INITIAL_MESSAGE = {

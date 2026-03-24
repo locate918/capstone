@@ -7,11 +7,12 @@
  * 2. Hero Section (slideshow, shown when no search query)
  * 3. Main Content
  *    - AI Chat Widget (Tully)
- *    - Tab Selection (This Week / All Events)
+ *    - Tab Selection (This Week / All Events / By Venue)
  *    - Date Filter (From / To)
  *    - Events List + Map (two-column layout)
  *    - Pagination
  * 4. Event Modal (overlay for event details)
+ * 5. Venue Selector Modal (when "By Venue" is clicked)
  * 
  * STATE:
  * - events: Array of event objects from API
@@ -21,14 +22,16 @@
  * - hoveredEventId: For map marker highlighting
  * - viewMode: 'list' | 'map' (mobile toggle)
  * - currentSlide: Index for hero slideshow
- * - activeTab: 'thisWeek' | 'allEvents'
+ * - activeTab: 'thisWeek' | 'allEvents' | 'byVenue'
  * - currentPage: Current pagination page (1-indexed)
  * - dateFrom: Start date filter (YYYY-MM-DD string or '')
  * - dateTo: End date filter (YYYY-MM-DD string or '')
+ * - selectedVenue: Selected venue name for filtering (null = show venue selector)
+ * - showVenueModal: Boolean to control venue selector modal visibility
  */
 
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
-import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle } from 'lucide-react';
+import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock } from 'lucide-react';
 import { fetchEvents, smartSearch } from './services/api';
 import { useAuth } from './context/AuthContext';
 
@@ -127,9 +130,57 @@ const filterByDateRange = (events, fromDate, toDate) => {
     });
 };
 
-// =============================================================================
-// BETA DISCLAIMER MODAL
-// =============================================================================
+/**
+ * Get unique venues with event counts and details
+ */
+const getVenuesWithDetails = (events) => {
+    if (!Array.isArray(events)) return [];
+
+    const venueMap = new Map();
+
+    events.forEach(event => {
+        const venueName = event.location || 'Unknown Venue';
+        if (!venueMap.has(venueName)) {
+            venueMap.set(venueName, {
+                name: venueName,
+                address: event.venue_address || '',
+                eventCount: 0,
+                upcomingEvent: null,
+                imageUrl: null,
+            });
+        }
+
+        const venue = venueMap.get(venueName);
+        venue.eventCount++;
+
+        // Get the first event's image as venue image
+        if (!venue.imageUrl && event.imageUrl) {
+            venue.imageUrl = event.imageUrl;
+        }
+
+        // Track the next upcoming event
+        if (event.date_iso) {
+            const eventDate = new Date(event.date_iso);
+            if (!venue.upcomingEvent || eventDate < new Date(venue.upcomingEvent.date_iso)) {
+                venue.upcomingEvent = event;
+            }
+        }
+    });
+
+    // Convert to array and sort by event count (most events first)
+    return Array.from(venueMap.values())
+        .filter(v => v.name !== 'Unknown Venue')
+        .sort((a, b) => b.eventCount - a.eventCount);
+};
+
+/**
+ * Get unique venue count
+ */
+const getUniqueVenueCount = (events) => {
+    if (!Array.isArray(events)) return 0;
+    const venues = new Set(events.map(e => e.location).filter(Boolean));
+    return venues.size;
+};
 
 // =============================================================================
 // BETA DISCLAIMER MODAL
@@ -207,6 +258,138 @@ const BetaDisclaimer = ({ isOpen, onClose }) => {
 };
 
 // =============================================================================
+// VENUE SELECTOR MODAL
+// =============================================================================
+
+const VenueSelectorModal = ({ isOpen, onClose, venues, onSelectVenue }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    if (!isOpen) return null;
+
+    const filteredVenues = venues.filter(venue =>
+        venue.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        venue.address?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[150] p-4"
+            onClick={onClose}
+        >
+            <div
+                className="bg-[#f8f1e0] border border-[#D4AF37]/30 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="p-4 sm:p-6 border-b border-slate-200 flex-shrink-0">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-[#D4AF37]/20 p-2.5 rounded-xl">
+                                <Building2 size={24} className="text-[#D4AF37]" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl sm:text-2xl font-serif text-slate-900">
+                                    Select a Venue
+                                </h2>
+                                <p className="text-xs sm:text-sm text-slate-500">
+                                    {venues.length} venues with upcoming events
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                            <X size={20} className="text-slate-500" />
+                        </button>
+                    </div>
+
+                    {/* Search */}
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search venues..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full px-4 py-3 pl-10 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/50 focus:border-[#D4AF37] bg-white"
+                        />
+                        <MapPin size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                </div>
+
+                {/* Venue Grid */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                    {filteredVenues.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {filteredVenues.map((venue, index) => (
+                                <button
+                                    key={venue.name}
+                                    onClick={() => onSelectVenue(venue.name)}
+                                    className="group bg-white rounded-xl border border-slate-200 overflow-hidden hover:border-[#D4AF37] hover:shadow-lg transition-all duration-300 text-left"
+                                >
+                                    {/* Venue Image */}
+                                    <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#162b4a] to-[#1f3a60]">
+                                        {venue.imageUrl && (
+                                            <img
+                                                src={venue.imageUrl}
+                                                alt={venue.name}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.style.display = 'none';
+                                                }}
+                                            />
+                                        )}
+                                        {/* Fallback - Logo centered on gradient background */}
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <img
+                                                src="/assets/Logo.png"
+                                                alt="Locate918"
+                                                className="w-16 h-16 object-contain opacity-50"
+                                            />
+                                        </div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+                                        {/* Event Count Badge */}
+                                        <div className="absolute top-2 right-2 bg-[#D4AF37] text-black text-xs font-bold px-2 py-1 rounded-full">
+                                            {venue.eventCount} {venue.eventCount === 1 ? 'event' : 'events'}
+                                        </div>
+                                    </div>
+
+                                    {/* Venue Info */}
+                                    <div className="p-3">
+                                        <h3 className="font-semibold text-slate-900 text-sm sm:text-base line-clamp-1 group-hover:text-[#D4AF37] transition-colors">
+                                            {venue.name}
+                                        </h3>
+                                        {venue.address && (
+                                            <p className="text-xs text-slate-500 mt-1 line-clamp-1 flex items-center gap-1">
+                                                <MapPin size={12} className="flex-shrink-0" />
+                                                {venue.address}
+                                            </p>
+                                        )}
+                                        {venue.upcomingEvent && (
+                                            <p className="text-xs text-[#D4AF37] mt-2 flex items-center gap-1">
+                                                <Clock size={12} className="flex-shrink-0" />
+                                                Next: {new Date(venue.upcomingEvent.date_iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                            </p>
+                                        )}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <Building2 size={48} className="text-slate-300 mb-4" />
+                            <p className="text-slate-500">No venues found matching "{searchTerm}"</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// =============================================================================
 // MAIN APP COMPONENT
 // =============================================================================
 
@@ -228,6 +411,8 @@ export default function App() {
     const [dateTo, setDateTo] = useState('');
     const [showDateFilter, setShowDateFilter] = useState(false);
     const [showBetaDisclaimer, setShowBetaDisclaimer] = useState(false);
+    const [showVenueModal, setShowVenueModal] = useState(false);
+    const [selectedVenue, setSelectedVenue] = useState(null);
 
     const handleSignOut = async () => {
         const { error } = await signOut();
@@ -267,7 +452,7 @@ export default function App() {
     // Reset to page 1 when tab changes, query changes, or date filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, query, dateFrom, dateTo]);
+    }, [activeTab, query, dateFrom, dateTo, selectedVenue]);
 
     // Clear date filter when switching to "This Week" tab
     useEffect(() => {
@@ -275,6 +460,13 @@ export default function App() {
             setDateFrom('');
             setDateTo('');
             setShowDateFilter(false);
+        }
+    }, [activeTab]);
+
+    // Clear selected venue when switching away from byVenue tab
+    useEffect(() => {
+        if (activeTab !== 'byVenue') {
+            setSelectedVenue(null);
         }
     }, [activeTab]);
 
@@ -305,6 +497,9 @@ export default function App() {
 
     // --- DERIVED STATE ---
 
+    // Get venues with details for the modal
+    const venuesWithDetails = useMemo(() => getVenuesWithDetails(events), [events]);
+
     // Client-side filtering (backup for API search)
     const filteredEvents = useMemo(() => {
         let filtered = Array.isArray(events) ? events : [];
@@ -323,7 +518,7 @@ export default function App() {
         return filtered;
     }, [events, query]);
 
-    // Apply tab filter (This Week vs All Events) and date range filter
+    // Apply tab filter (This Week vs All Events vs By Venue) and date range filter
     const tabFilteredEvents = useMemo(() => {
         if (query) {
             // During search, apply date filter if set
@@ -336,11 +531,21 @@ export default function App() {
             return filterThisWeekEvents(filteredEvents);
         }
 
+        if (activeTab === 'byVenue' && selectedVenue) {
+            // Filter events by selected venue
+            let venueEvents = filteredEvents.filter(e => e.location === selectedVenue);
+            // Apply date filter if set
+            if (dateFrom || dateTo) {
+                venueEvents = filterByDateRange(venueEvents, dateFrom, dateTo);
+            }
+            return venueEvents;
+        }
+
         // "All Events" tab - apply date filter if set
         return (dateFrom || dateTo)
             ? filterByDateRange(filteredEvents, dateFrom, dateTo)
             : filteredEvents;
-    }, [filteredEvents, activeTab, query, dateFrom, dateTo]);
+    }, [filteredEvents, activeTab, query, dateFrom, dateTo, selectedVenue]);
 
     // Pagination calculations
     const totalPages = Math.ceil(tabFilteredEvents.length / EVENTS_PER_PAGE);
@@ -351,6 +556,9 @@ export default function App() {
 
     // Count for "This Week" tab badge
     const thisWeekCount = useMemo(() => filterThisWeekEvents(events).length, [events]);
+
+    // Count for unique venues
+    const venueCount = useMemo(() => getUniqueVenueCount(events), [events]);
 
     // Check if date filter is active
     const hasDateFilter = dateFrom || dateTo;
@@ -367,12 +575,41 @@ export default function App() {
         setDateTo('');
     };
 
+    const handleByVenueClick = () => {
+        setActiveTab('byVenue');
+        setShowVenueModal(true);
+    };
+
+    const handleSelectVenue = (venueName) => {
+        setSelectedVenue(venueName);
+        setShowVenueModal(false);
+        setCurrentPage(1);
+    };
+
+    const handleClearVenue = () => {
+        setSelectedVenue(null);
+        setShowVenueModal(true);
+    };
+
     // --- RENDER ---
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
 
             {/* ===== BETA DISCLAIMER MODAL ===== */}
             <BetaDisclaimer isOpen={showBetaDisclaimer} onClose={handleCloseBetaDisclaimer} />
+
+            {/* ===== VENUE SELECTOR MODAL ===== */}
+            <VenueSelectorModal
+                isOpen={showVenueModal}
+                onClose={() => {
+                    setShowVenueModal(false);
+                    if (!selectedVenue) {
+                        setActiveTab('allEvents');
+                    }
+                }}
+                venues={venuesWithDetails}
+                onSelectVenue={handleSelectVenue}
+            />
 
             {/* ===== FIXED HEADER ===== */}
             <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
@@ -494,6 +731,26 @@ export default function App() {
                                     </button>
                                 </div>
                             </>
+                        ) : activeTab === 'byVenue' && selectedVenue ? (
+                            /* Venue-filtered view header */
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
+                                        Events at {selectedVenue}
+                                    </h2>
+                                    <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
+                                        {tabFilteredEvents.length} {tabFilteredEvents.length === 1 ? 'Event' : 'Events'} Found
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={handleClearVenue}
+                                    className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all shadow-sm"
+                                >
+                                    <Building2 size={14} className="sm:w-4 sm:h-4" />
+                                    <span className="hidden sm:inline">Change Venue</span>
+                                    <span className="sm:hidden">Change</span>
+                                </button>
+                            </div>
                         ) : (
                             /* Tab Buttons - scrollable on mobile */
                             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-hide">
@@ -530,6 +787,23 @@ export default function App() {
                                         {events.length}
                                     </span>
                                 </button>
+                                <button
+                                    onClick={handleByVenueClick}
+                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'byVenue'
+                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                        }`}
+                                >
+                                    <Building2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                    <span className="hidden sm:inline">By Venue</span>
+                                    <span className="sm:hidden">Venues</span>
+                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'byVenue'
+                                        ? 'bg-white/20 text-white'
+                                        : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                        {venueCount}
+                                    </span>
+                                </button>
                             </div>
                         )}
                     </div>
@@ -556,7 +830,7 @@ export default function App() {
                 </div>
 
                 {/* ===== DATE FILTER ===== */}
-                {(activeTab === 'allEvents' || query) && (
+                {(activeTab === 'allEvents' || (activeTab === 'byVenue' && selectedVenue) || query) && (
                     <div className="mb-4 sm:mb-6 animate-fade-up">
                         {/* Filter Toggle Button */}
                         <button
@@ -738,14 +1012,18 @@ export default function App() {
                                             ? 'No events in this date range'
                                             : activeTab === 'thisWeek' && !query
                                                 ? 'No events this week'
-                                                : 'No experiences found'}
+                                                : activeTab === 'byVenue' && selectedVenue
+                                                    ? `No upcoming events at ${selectedVenue}`
+                                                    : 'No experiences found'}
                                     </h3>
                                     <p className="text-slate-500 mb-4 sm:mb-6 text-sm sm:text-base">
                                         {hasDateFilter
                                             ? 'Try adjusting your date range.'
                                             : activeTab === 'thisWeek' && !query
                                                 ? 'Check out all upcoming events instead.'
-                                                : 'Try adjusting your search criteria.'}
+                                                : activeTab === 'byVenue' && selectedVenue
+                                                    ? 'Try selecting a different venue.'
+                                                    : 'Try adjusting your search criteria.'}
                                     </p>
                                     <button
                                         onClick={() => {
@@ -753,6 +1031,8 @@ export default function App() {
                                                 clearDateFilter();
                                             } else if (query) {
                                                 setQuery('');
+                                            } else if (activeTab === 'byVenue' && selectedVenue) {
+                                                handleClearVenue();
                                             } else {
                                                 setActiveTab('allEvents');
                                             }
@@ -763,7 +1043,9 @@ export default function App() {
                                             ? 'Clear Date Filter'
                                             : activeTab === 'thisWeek' && !query
                                                 ? 'View All Events'
-                                                : 'Clear Filters'}
+                                                : activeTab === 'byVenue' && selectedVenue
+                                                    ? 'Choose Different Venue'
+                                                    : 'Clear Filters'}
                                     </button>
                                 </div>
                             )}

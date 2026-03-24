@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* CRITICAL: Leaflet CSS for map tiles */
+@import 'leaflet/dist/leaflet.css';
+
 /* =============================================================================
    FONTS
    ============================================================================= */
@@ -87,6 +90,22 @@ h1, h2, h3, h4, .font-serif {
 .delay-100 { animation-delay: 100ms; }
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
+
+/* Bottom sheet slide-up animation */
+@keyframes slide-up {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+}
 
 /* =============================================================================
    SCROLLBAR STYLES
