@@ -2,10 +2,38 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import SearchRequest, SearchResponse
-from app.services import gemini
+from app.services import gemini, ranking
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
+
+async def get_user_profile(user_id: str):
+    """
+    Fetches user profile from backend.
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{BACKEND_URL}/api/users/{user_id}/profile")
+            if response.status_code == 200:
+                profile_data = response.json()
+                print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
+                return profile_data
+        except Exception as e:
+            print(f"DEBUG: Failed to load profile for {user_id}: {e}")
+            pass
+
+    # Fallback default profile
+    print(f"DEBUG: Using fallback profile for user {user_id}")
+    return {
+        "user": {
+            "id": user_id,
+            "location_preference": "Tulsa",
+            "family_friendly_only": False,
+            "email": "guest@locate918.com"
+        },
+        "preferences": [],
+        "recent_interactions": []
+    }
 
 @router.post("/search", response_model=SearchResponse)
 async def search_intent(request: SearchRequest):
@@ -44,6 +72,11 @@ async def search_intent(request: SearchRequest):
                 response = await client.get(f"{BACKEND_URL}/api/events/search", params=fallback_params)
                 if response.status_code == 200:
                     events = response.json()
+
+        # 4. Rank events if user_id is provided
+        if request.user_id:
+            profile = await get_user_profile(request.user_id)
+            events = ranking.rank_events(events, profile)
 
         return SearchResponse(parsed_params=params, events=events)
     except Exception as e:
