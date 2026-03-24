@@ -361,12 +361,34 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - Always resolve relative dates to actual ISO 8601 dates.
     
     CATEGORIZATION RULES:
-    - Assign AS MANY categories as possible based on the title, description, and venue.
-    - Use specific tags (e.g., "Rock", "Jazz", "Stand-up Comedy", "Yoga") AND broad categories (e.g., "Music", "Arts", "Health", "Nightlife").
-    - If an event is a concert, include "Music", the genre (e.g. "Country"), and "Concert".
-    - If an event is at a bar/brewery, include "Nightlife", "Drinks", "Social".
-    - If family friendly, include "Family", "Kids".
-    - Common categories to use: Music, Arts, Nightlife, Food, Drink, Family, Sports, Education, Business, Community, Festival, Market, Health, Comedy, Theatre.
+    You MUST only use categories from this exact canonical list. Do not invent new categories or use variations.
+
+    CANONICAL CATEGORIES (use these exact strings):
+      "Music"             — concerts, live bands, DJ sets, open mics, any live musical performance
+      "Comedy"            — stand-up comedy, improv, comedy shows, comedians performing live
+      "Arts & Theater"    — theater, ballet, dance, opera, symphony, orchestra, art exhibits, visual art, drag, circus
+      "Festival"          — multi-day festivals, street festivals, cultural celebrations, fairs with multiple activities (Rocklahoma, Oktoberfest, Mayfest, etc.)
+      "Film"              — movie screenings, film festivals, cinema events, documentaries
+      "Food & Drink"      — food tastings, cooking classes, brewery events, wine/beer/cocktail events, brunch series, food trucks, farmers markets
+      "Nightlife"         — bar events, club nights, DJ nights, 21+ events, late-night parties, happy hours, trivia nights
+      "Sports & Fitness"  — athletic events, races, cycling, yoga, fitness classes, spectator sports, recreational leagues
+      "Family"            — events explicitly for kids or families, all-ages events, storytime, children's programming
+      "Educational"       — lectures, workshops, library programs, museum programs, classes, seminars, book events
+      "Nature & Outdoors" — hiking, nature walks, outdoor recreation, park events (only if primarily outdoors)
+      "Community"         — nonprofit events, fundraisers, volunteer events, neighborhood gatherings, markets, vendor fairs, tradeshows
+
+    ASSIGNMENT RULES — these are non-negotiable:
+    - A comedian performing live → ["Comedy"] NEVER "Music" or "Arts & Theater"
+    - A concert or live band → ["Music"]
+    - A symphony, ballet, or opera → ["Arts & Theater"] NEVER "Music"
+    - A bar hosting live music → ["Music", "Nightlife"]
+    - A multi-day outdoor festival → ["Festival"]
+    - A food festival → ["Festival", "Food & Drink"]
+    - A library storytime → ["Family", "Educational"]
+    - A brewery trivia night → ["Nightlife", "Food & Drink"]
+    - An outdoor yoga class → ["Sports & Fitness", "Nature & Outdoors"]
+    - A farmers market → ["Community", "Food & Drink"]
+    - Assign 1-3 categories maximum. Do not pile on categories.
     
     OUTDOOR / FAMILY FRIENDLY RULES:
     - Set outdoor=true if the venue is a Park, Garden, Green, Amphitheater, Zoo, or if the description mentions "open air", "patio", "lawn".

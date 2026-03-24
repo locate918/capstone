@@ -56,41 +56,41 @@ const isAggregatorUrl = (url) => {
  * Each category has related terms that will map to it.
  */
 const CATEGORY_KEYWORDS = {
-    // Music / Live Music
-    music: ['music', 'concert', 'live music', 'band', 'singer', 'dj', 'jazz', 'rock', 'country', 'hip hop', 'rap', 'classical', 'orchestra', 'symphony', 'choir', 'karaoke', 'open mic', 'acoustic', 'blues', 'folk', 'indie', 'metal', 'punk', 'edm', 'electronic', 'r&b', 'soul', 'gospel', 'reggae'],
+    // Music — live performances, concerts, bands, DJ sets
+    music: ['music', 'concert', 'live music', 'band', 'singer', 'dj', 'jazz', 'rock', 'country', 'hip hop', 'rap', 'classical', 'orchestra', 'choir', 'karaoke', 'open mic', 'acoustic', 'blues', 'folk', 'indie', 'metal', 'punk', 'edm', 'electronic', 'r&b', 'soul', 'gospel', 'reggae', 'bluegrass', 'tribute'],
 
-    // Nature / Outdoors
-    nature: ['nature', 'outdoor', 'outdoors', 'park', 'garden', 'hiking', 'trail', 'camping', 'wildlife', 'bird', 'fishing', 'lake', 'river', 'kayak', 'canoe', 'botanical', 'zoo', 'aquarium', 'farm', 'ranch', 'picnic', 'bbq', 'barbecue'],
+    // Comedy — stand-up, improv, sketch, comedy shows
+    comedy: ['comedy', 'comedian', 'stand-up', 'standup', 'improv', 'sketch', 'funny', 'humor', 'laugh', 'comic', 'roast'],
 
-    // Educational / History
-    educational: ['educational', 'education', 'history', 'historical', 'museum', 'lecture', 'workshop', 'class', 'seminar', 'tour', 'exhibit', 'exhibition', 'science', 'library', 'book', 'reading', 'author', 'learning', 'school', 'university', 'college', 'heritage', 'culture', 'cultural'],
+    // Arts & Theater — theater, ballet, opera, symphony, visual arts, galleries
+    art: ['theater', 'theatre', 'ballet', 'opera', 'symphony', 'orchestra', 'dance', 'musical', 'play', 'gallery', 'exhibit', 'exhibition', 'painting', 'sculpture', 'photography', 'art show', 'performing arts', 'drag', 'burlesque', 'circus', 'magic'],
 
-    // Film / Movie
-    film: ['film', 'movie', 'cinema', 'screening', 'documentary', 'indie film', 'short film', 'film festival', 'drive-in', 'premiere', 'director', 'animation', 'animated'],
+    // Festival — multi-day or large outdoor celebrations
+    festival: ['festival', 'fest', 'oktoberfest', 'mayfest', 'rocklahoma', 'carnival', 'celebration', 'street festival', 'culture fest', 'block party', 'heritage', 'irish fest', 'tulsa tough'],
 
-    // Art / Performing Arts
-    art: ['art', 'arts', 'theater', 'theatre', 'dance', 'ballet', 'opera', 'musical', 'play', 'performance', 'performing', 'gallery', 'painting', 'sculpture', 'photography', 'craft', 'pottery', 'drawing', 'illustration', 'design', 'fashion', 'drag', 'burlesque', 'circus', 'magic', 'improv', 'sketch'],
+    // Film — movies, screenings, cinema events
+    film: ['film', 'movie', 'cinema', 'screening', 'documentary', 'indie film', 'film festival', 'drive-in', 'premiere'],
 
-    // Food
-    food: ['food', 'dining', 'restaurant', 'culinary', 'chef', 'cooking', 'tasting', 'wine', 'beer', 'brewery', 'distillery', 'cocktail', 'brunch', 'dinner', 'lunch', 'breakfast', 'foodie', 'food truck', 'farmers market', 'baking', 'dessert', 'chocolate', 'coffee', 'tea'],
+    // Food & Drink — food events, tastings, dining, brewery, wine, cocktails
+    food: ['food', 'dining', 'restaurant', 'culinary', 'chef', 'cooking', 'tasting', 'wine', 'beer', 'brewery', 'distillery', 'cocktail', 'brunch', 'dinner', 'food truck', 'farmers market', 'baking', 'dessert', 'coffee', 'whiskey', 'spirits'],
 
-    // Shopping / Tradeshows
-    shopping: ['shopping', 'market', 'tradeshow', 'trade show', 'expo', 'fair', 'bazaar', 'flea market', 'antique', 'vintage', 'craft fair', 'artisan', 'vendor', 'sale', 'auction', 'collectible', 'handmade', 'boutique', 'pop-up', 'popup'],
+    // Nightlife — bar events, club nights, late-night, 21+
+    nightlife: ['nightlife', 'bar', 'club night', 'dj set', 'dance party', 'late night', '21+', 'lounge', 'happy hour', 'trivia night', 'pub crawl', 'karaoke night'],
 
-    // Pets
-    pets: ['pet', 'pets', 'dog', 'cat', 'animal', 'adoption', 'rescue', 'veterinary', 'grooming', 'training', 'kennel', 'shelter', 'puppy', 'kitten', 'horse', 'equestrian', 'bird', 'reptile'],
+    // Sports & Fitness — athletic events, fitness classes, races, games
+    sports: ['sport', 'sports', 'game', 'match', 'tournament', 'league', 'football', 'basketball', 'baseball', 'soccer', 'hockey', 'wrestling', 'boxing', 'mma', 'racing', 'cycling', 'bike', 'run', 'marathon', '5k', '10k', 'yoga', 'fitness', 'workout', 'gym', 'pilates', 'wellness', 'meditation', 'swim', 'tennis', 'golf', 'rodeo', 'esports'],
 
-    // Fitness
-    fitness: ['fitness', 'workout', 'exercise', 'gym', 'yoga', 'pilates', 'crossfit', 'running', 'marathon', '5k', '10k', 'cycling', 'bike', 'swim', 'swimming', 'tennis', 'golf', 'wellness', 'health', 'meditation', 'mindfulness', 'spin', 'aerobics', 'zumba', 'bootcamp'],
+    // Family — kids/all-ages events, storytime, children's programming
+    family: ['family', 'kid', 'kids', 'children', 'child', 'all ages', 'youth', 'teen', 'toddler', 'baby', 'storytime', 'puppet', 'playground', 'family-friendly'],
 
-    // Comedy
-    comedy: ['comedy', 'comedian', 'stand-up', 'standup', 'improv', 'sketch', 'funny', 'humor', 'laugh', 'comic', 'roast', 'open mic comedy'],
+    // Educational — lectures, workshops, library programs, museums
+    educational: ['educational', 'education', 'history', 'historical', 'museum', 'lecture', 'workshop', 'class', 'seminar', 'tour', 'exhibit', 'science', 'library', 'book', 'reading', 'author', 'learning', 'school', 'university', 'heritage'],
 
-    // Family
-    family: ['family', 'kid', 'kids', 'children', 'child', 'family-friendly', 'all ages', 'youth', 'teen', 'toddler', 'baby', 'parent', 'carnival', 'festival', 'fair', 'playground', 'storytime', 'puppet', 'magic show'],
+    // Nature & Outdoors — parks, hiking, wildlife, outdoor recreation
+    nature: ['nature', 'outdoor', 'outdoors', 'park', 'garden', 'hiking', 'trail', 'camping', 'wildlife', 'bird', 'fishing', 'lake', 'river', 'kayak', 'botanical', 'zoo', 'aquarium', 'farm', 'ranch', 'picnic'],
 
-    // Sports
-    sports: ['sport', 'sports', 'game', 'match', 'tournament', 'league', 'football', 'basketball', 'baseball', 'soccer', 'hockey', 'wrestling', 'boxing', 'mma', 'ufc', 'racing', 'nascar', 'rodeo', 'bull riding', 'esports', 'gaming', 'poker', 'volleyball', 'softball', 'lacrosse']
+    // Community — markets, nonprofits, fundraisers, neighborhood events
+    community: ['community', 'market', 'vendor', 'nonprofit', 'fundraiser', 'charity', 'volunteer', 'neighborhood', 'tradeshow', 'expo', 'bazaar', 'flea market', 'antique', 'artisan', 'craft fair', 'pop-up', 'handmade', 'auction'],
 };
 
 // Attach Supabase access token when available so backend can verify identity.
@@ -373,18 +373,18 @@ const mapCategoriesToVibes = (categories, title = '', description = '') => {
  */
 const formatCategoryLabel = (category) => {
     const labels = {
-        music: "Music",
-        nature: "Nature & Outdoors",
+        music:       "Music",
+        comedy:      "Comedy",
+        art:         "Arts & Theater",
+        festival:    "Festival",
+        film:        "Film",
+        food:        "Food & Drink",
+        nightlife:   "Nightlife",
+        sports:      "Sports & Fitness",
+        family:      "Family",
         educational: "Educational",
-        film: "Film",
-        art: "Arts & Culture",
-        food: "Food & Drink",
-        shopping: "Shopping & Markets",
-        pets: "Pets",
-        fitness: "Fitness & Wellness",
-        comedy: "Comedy",
-        family: "Family",
-        sports: "Sports"
+        nature:      "Nature & Outdoors",
+        community:   "Community",
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
 };

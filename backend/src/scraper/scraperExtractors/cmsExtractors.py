@@ -7140,3 +7140,225 @@ async def extract_tulsamayfest_events(
 
     print(f"[TulsaMayfest] Returning {len(events)} static events")
     return events, True
+
+# ============================================================================
+# TULSA OKTOBERFEST — Annual German Festival, Tulsa OK
+# ============================================================================
+# Site: https://tulsaoktoberfest.org/
+# CMS:  WordPress static
+# Method: httpx — scrapes the festival-guide page for dates.
+#         Falls back to known/projected dates.
+#
+# 2026: October 22–25, 2100 S. Jackson Ave (River West Festival Park), Tulsa OK
+# Historical pattern: Thursday–Sunday in mid-to-late October.
+# ============================================================================
+
+_OKTOBERFEST_HOME        = 'https://tulsaoktoberfest.org/'
+_OKTOBERFEST_GUIDE_URL   = 'https://tulsaoktoberfest.org/festival-guide/'
+_OKTOBERFEST_SOURCE_URL  = 'https://tulsaoktoberfest.org/festival-guide/'
+_OKTOBERFEST_VENUE       = 'River West Festival Park'
+_OKTOBERFEST_ADDR        = '2100 S. Jackson Ave., Tulsa, OK 74107'
+_OKTOBERFEST_IMAGE       = ''
+
+# Confirmed future dates — update each year when announced.
+# Format: { year: (month, start_day, end_day) }
+_OKTOBERFEST_KNOWN_DATES = {
+    2026: (10, 22, 25),   # Oct 22–25 2026 (confirmed from festival-guide page)
+}
+
+
+def _oktoberfest_dates_from_text(text: str, year: int):
+    """Try to parse Oktoberfest dates from page text. Returns (start_dt, end_dt) or (None, None)."""
+    import re
+    # Look for patterns like "OCT 22-25, 2026" or "October 22-25, 2026"
+    pattern = re.compile(
+        r'(?:oct(?:ober)?)[^\d]*(\d{1,2})[-–](\d{1,2})[,\s]*(\d{4})',
+        re.IGNORECASE
+    )
+    m = pattern.search(text)
+    if m:
+        try:
+            start_day = int(m.group(1))
+            end_day   = int(m.group(2))
+            yr        = int(m.group(3))
+            start_dt  = datetime(yr, 10, start_day, 17, 0)
+            end_dt    = datetime(yr, 10, end_day, 23, 0)
+            return start_dt, end_dt
+        except Exception:
+            pass
+    return None, None
+
+
+async def extract_tulsa_oktoberfest_events(html: str, source_name: str,
+                                           url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    """
+    Extract the Tulsa Oktoberfest festival event.
+    Returns a single multi-day event entry for the full festival.
+    Scrapes festival-guide page for dates; falls back to known/projected dates.
+    """
+    if 'tulsaoktoberfest.org' not in url.lower():
+        return [], False
+
+    print(f"[TulsaOktoberfest] Detected Tulsa Oktoberfest URL, building festival event...")
+
+    from bs4 import BeautifulSoup as _BS
+    soup = _BS(html, 'html.parser')
+    page_text = soup.get_text(separator=' ')
+
+    now = datetime.now()
+    target_year = now.year if now.month <= 10 else now.year + 1
+
+    # 1. Try scraping dates from page text
+    start_dt, end_dt = _oktoberfest_dates_from_text(page_text, target_year)
+
+    # 2. Fall back to known dates
+    if not start_dt or start_dt.year < target_year:
+        if target_year in _OKTOBERFEST_KNOWN_DATES:
+            month, start_day, end_day = _OKTOBERFEST_KNOWN_DATES[target_year]
+            start_dt = datetime(target_year, month, start_day, 17, 0)
+            end_dt   = datetime(target_year, month, end_day, 23, 0)
+            print(f"[TulsaOktoberfest] Using known {target_year} dates: {start_dt.date()}")
+        else:
+            # Project: third Thursday of October
+            from datetime import date, timedelta
+            oct_1 = date(target_year, 10, 1)
+            days_to_thursday = (3 - oct_1.weekday()) % 7
+            first_thursday = oct_1 + timedelta(days=days_to_thursday)
+            third_thursday = first_thursday + timedelta(weeks=2)
+            start_dt = datetime(third_thursday.year, third_thursday.month, third_thursday.day, 17, 0)
+            end_dt   = datetime(third_thursday.year, third_thursday.month, third_thursday.day + 3, 23, 0)
+            print(f"[TulsaOktoberfest] Projecting {target_year} dates: {start_dt.date()}")
+
+    # 3. Future filter
+    if future_only and end_dt and end_dt < now:
+        print(f"[TulsaOktoberfest] Festival is in the past, skipping")
+        return [], True
+
+    year = start_dt.year
+    event = {
+        'title':           f'Zeeco Tulsa Oktoberfest {year}',
+        'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+        'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S') if end_dt else '',
+        'venue':           _OKTOBERFEST_VENUE,
+        'venue_address':   _OKTOBERFEST_ADDR,
+        'description': (
+            f'Zeeco Tulsa Oktoberfest is a four-day outdoor German festival held annually '
+            f'at River West Festival Park in Tulsa. Voted the #1 Oktoberfest in the USA, '
+            f'this 45+ year tradition features authentic German music, 200+ taps of beer, '
+            f'Bavarian food, massive Zelte tents, and views of the Tulsa skyline. '
+            f'All ages welcome.'
+        ),
+        'source_url':      _OKTOBERFEST_SOURCE_URL,
+        'image_url':       _OKTOBERFEST_IMAGE,
+        'source_name':     source_name or 'Tulsa Oktoberfest',
+        'categories':      ['Festival', 'Food', 'Drinks', 'Outdoor', 'Community', 'Music'],
+        'outdoor':         True,
+        'family_friendly': True,
+    }
+
+    print(f"[TulsaOktoberfest] Added: {event['title']} ({start_dt.date()} → {end_dt.date() if end_dt else 'N/A'})")
+    return [event], True
+
+# ============================================================================
+# ROCKLAHOMA — Annual Rock Music Festival, Pryor OK
+# ============================================================================
+_ROCKLAHOMA_SOURCE_URL = 'https://www.rocklahoma.com/'
+_ROCKLAHOMA_VENUE      = "Rockin' Red Dirt Ranch"
+_ROCKLAHOMA_ADDR       = '1421 West 450 Road, Pryor, OK 74361'
+_ROCKLAHOMA_IMAGE      = 'https://lirp.cdn-website.com/7db810c9/dms3rep/multi/opt/words+only-1920w.png'
+
+_ROCKLAHOMA_KNOWN_DATES = {
+    2026: (9, 4),   # Sept 4-6 2026 (confirmed from lineup poster)
+}
+
+_ROCKLAHOMA_HEADLINERS = {
+    2026: 'Godsmack, Papa Roach, and Slayer',
+}
+
+
+def _rocklahoma_project_dates(year: int):
+    from datetime import date, timedelta
+    sept_1 = date(year, 9, 1)
+    days_to_friday = (4 - sept_1.weekday()) % 7
+    first_friday = sept_1 + timedelta(days=days_to_friday)
+    return (
+        datetime(first_friday.year, first_friday.month, first_friday.day, 16, 0),
+        datetime(first_friday.year, first_friday.month, first_friday.day + 2, 23, 0),
+    )
+
+
+def _rocklahoma_dates_from_jsonld(soup):
+    import json as _j
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = _j.loads(script.string or '')
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get('@type') == 'MusicEvent' and item.get('startDate'):
+                    start = datetime.fromisoformat(item['startDate'])
+                    end_raw = item.get('endDate')
+                    end = datetime.fromisoformat(end_raw).replace(hour=23, minute=0) if end_raw else None
+                    return start, end
+        except Exception:
+            continue
+    return None, None
+
+
+async def extract_rocklahoma_events(html: str, source_name: str,
+                                    url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    if 'rocklahoma.com' not in url.lower():
+        return [], False
+
+    print(f"[Rocklahoma] Detected Rocklahoma URL, building festival event...")
+
+    from bs4 import BeautifulSoup as _BS
+    soup = _BS(html, 'html.parser')
+
+    start_dt, end_dt = _rocklahoma_dates_from_jsonld(soup)
+
+    now = datetime.now()
+    if now.month < 9 or (now.month == 9 and now.day <= 6):
+        target_year = now.year
+    else:
+        target_year = now.year + 1
+
+    if not start_dt or start_dt.year < target_year:
+        if target_year in _ROCKLAHOMA_KNOWN_DATES:
+            month, day = _ROCKLAHOMA_KNOWN_DATES[target_year]
+            start_dt = datetime(target_year, month, day, 16, 0)
+            end_dt   = datetime(target_year, month, day + 2, 23, 0)
+            print(f"[Rocklahoma] Using known {target_year} dates: {start_dt.date()}")
+        else:
+            start_dt, end_dt = _rocklahoma_project_dates(target_year)
+            print(f"[Rocklahoma] Projecting {target_year} dates: {start_dt.date()}")
+
+    if future_only and end_dt and end_dt < now:
+        print(f"[Rocklahoma] Festival is in the past, skipping")
+        return [], True
+
+    year = start_dt.year
+    headliners = _ROCKLAHOMA_HEADLINERS.get(year, '')
+    headliner_note = f' Headliners include {headliners}.' if headliners else ''
+
+    event = {
+        'title':           f'Rocklahoma {year}',
+        'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+        'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S') if end_dt else '',
+        'venue':           _ROCKLAHOMA_VENUE,
+        'venue_address':   _ROCKLAHOMA_ADDR,
+        'description': (
+            f'Rocklahoma is a three-day outdoor rock and metal music festival held annually in Pryor, '
+            f'Oklahoma - about 45 minutes from Tulsa.{headliner_note} '
+            f'Featuring 50+ bands across multiple stages, plus camping, VIP packages, '
+            f'and a Thursday Night Throwdown pre-party.'
+        ),
+        'source_url':      _ROCKLAHOMA_SOURCE_URL,
+        'image_url':       _ROCKLAHOMA_IMAGE,
+        'source_name':     source_name or 'Rocklahoma',
+        'categories':      ['Music', 'Rock', 'Metal', 'Festival', 'Outdoor', 'Concert'],
+        'outdoor':         True,
+        'family_friendly': False,
+    }
+
+    print(f"[Rocklahoma] Added: {event['title']} ({start_dt.date()} -> {end_dt.date() if end_dt else 'N/A'})")
+    return [event], True

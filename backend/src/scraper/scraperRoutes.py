@@ -57,6 +57,8 @@ from scraperExtractors import (
     extract_hardrock_tulsa_events,
     extract_gypsy_events,
     extract_badass_renees_events,
+    extract_rocklahoma_events,
+    extract_tulsa_oktoberfest_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -1375,6 +1377,20 @@ def register_routes(app):
                     print(f"[BadAssRenees] SUCCESS: {len(events)} events")
 
             if not events:
+                rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, source_name, url, future_only))
+                if rl_detected and rl_ev:
+                    events = rl_ev
+                    methods.append(f"Rocklahoma ({len(events)})")
+                    print(f"[Rocklahoma] SUCCESS: {len(events)} events")
+
+            if not events:
+                ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, source_name, url, future_only))
+                if ok_detected and ok_ev:
+                    events = ok_ev
+                    methods.append(f"TulsaOktoberfest ({len(events)})")
+                    print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
+
+            if not events:
                 events = extract_events_universal(html, url, source_name)
 
                 if events and '_extraction_methods' in events[0]:
@@ -1669,6 +1685,20 @@ def register_routes(app):
                             events = bar_ev
                             methods.append(f"BadAssRenees ({len(events)})")
                             print(f"[BadAssRenees] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, name, url, True))
+                        if rl_detected and rl_ev:
+                            events = rl_ev
+                            methods.append(f"Rocklahoma ({len(events)})")
+                            print(f"[Rocklahoma] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, name, url, True))
+                        if ok_detected and ok_ev:
+                            events = ok_ev
+                            methods.append(f"TulsaOktoberfest ({len(events)})")
+                            print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
 
                     if not events:
                         events = extract_events_universal(html, url, name)

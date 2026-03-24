@@ -2,13 +2,13 @@
  * TulsaMap Component
  * ==================
  * Interactive Leaflet map showing event locations with custom markers.
- * 
+ *
  * PROPS:
  * - events: Array of events with coordinates
  * - onMarkerClick: Function called when marker/popup is clicked
  * - hoveredEventId: ID of event being hovered in list (for highlighting)
  * - className: Additional CSS classes for container
- * 
+ *
  * FEATURES:
  * - Custom styled markers by event category
  * - Marker clustering for overlapping events
@@ -29,19 +29,19 @@ import L from 'leaflet';
 // =============================================================================
 
 const CATEGORY_COLORS = {
-    music: '#7c3aed',
-    art: '#ec4899',
-    nature: '#059669',
-    food: '#f59e0b',
-    sports: '#ef4444',
-    family: '#06b6d4',
-    comedy: '#8b5cf6',
+    music:       '#7c3aed',
+    comedy:      '#8b5cf6',
+    art:         '#ec4899',
+    festival:    '#f59e0b',
+    film:        '#6366f1',
+    food:        '#f97316',
+    nightlife:   '#be185d',
+    sports:      '#ef4444',
+    family:      '#06b6d4',
     educational: '#3b82f6',
-    fitness: '#10b981',
-    film: '#6366f1',
-    shopping: '#f97316',
-    pets: '#84cc16',
-    default: '#64748b'
+    nature:      '#059669',
+    community:   '#10b981',
+    default:     '#64748b'
 };
 
 // =============================================================================
@@ -160,41 +160,41 @@ const getCategoryIcon = (tags, isHovered = false) => {
     const lowerTags = (tags || []).map(t => t.toLowerCase());
     const tagString = lowerTags.join(' ');
 
-    if (tagString.includes('music') || tagString.includes('concert') || tagString.includes('live') || tagString.includes('band') || tagString.includes('jazz') || tagString.includes('rock')) {
-        return createPinIcon(CATEGORY_COLORS.music, isHovered);
-    }
-    if (tagString.includes('art') || tagString.includes('theater') || tagString.includes('theatre') || tagString.includes('dance') || tagString.includes('culture') || tagString.includes('gallery') || tagString.includes('performance')) {
-        return createPinIcon(CATEGORY_COLORS.art, isHovered);
-    }
-    if (tagString.includes('nature') || tagString.includes('outdoor') || tagString.includes('park') || tagString.includes('garden') || tagString.includes('hiking') || tagString.includes('trail')) {
-        return createPinIcon(CATEGORY_COLORS.nature, isHovered);
-    }
-    if (tagString.includes('food') || tagString.includes('drink') || tagString.includes('dining') || tagString.includes('culinary') || tagString.includes('restaurant') || tagString.includes('wine') || tagString.includes('beer') || tagString.includes('brewery')) {
-        return createPinIcon(CATEGORY_COLORS.food, isHovered);
-    }
-    if (tagString.includes('sport') || tagString.includes('game') || tagString.includes('tournament') || tagString.includes('football') || tagString.includes('basketball') || tagString.includes('baseball')) {
-        return createPinIcon(CATEGORY_COLORS.sports, isHovered);
-    }
-    if (tagString.includes('family') || tagString.includes('kid') || tagString.includes('children') || tagString.includes('child')) {
-        return createPinIcon(CATEGORY_COLORS.family, isHovered);
-    }
     if (tagString.includes('comedy') || tagString.includes('comedian') || tagString.includes('funny') || tagString.includes('standup') || tagString.includes('stand-up')) {
         return createPinIcon(CATEGORY_COLORS.comedy, isHovered);
     }
-    if (tagString.includes('education') || tagString.includes('museum') || tagString.includes('history') || tagString.includes('lecture') || tagString.includes('workshop') || tagString.includes('class')) {
-        return createPinIcon(CATEGORY_COLORS.educational, isHovered);
+    if (tagString.includes('festival') || tagString.includes('fest') || tagString.includes('oktoberfest') || tagString.includes('rocklahoma') || tagString.includes('mayfest')) {
+        return createPinIcon(CATEGORY_COLORS.festival, isHovered);
     }
-    if (tagString.includes('fitness') || tagString.includes('wellness') || tagString.includes('yoga') || tagString.includes('workout') || tagString.includes('gym') || tagString.includes('run')) {
-        return createPinIcon(CATEGORY_COLORS.fitness, isHovered);
+    if (tagString.includes('nightlife') || tagString.includes('club night') || tagString.includes('21+') || tagString.includes('bar night') || tagString.includes('dj set')) {
+        return createPinIcon(CATEGORY_COLORS.nightlife, isHovered);
+    }
+    if (tagString.includes('music') || tagString.includes('concert') || tagString.includes('live music') || tagString.includes('band') || tagString.includes('jazz') || tagString.includes('rock') || tagString.includes('singer')) {
+        return createPinIcon(CATEGORY_COLORS.music, isHovered);
     }
     if (tagString.includes('film') || tagString.includes('movie') || tagString.includes('cinema') || tagString.includes('screening')) {
         return createPinIcon(CATEGORY_COLORS.film, isHovered);
     }
-    if (tagString.includes('shopping') || tagString.includes('market') || tagString.includes('fair') || tagString.includes('expo') || tagString.includes('trade')) {
-        return createPinIcon(CATEGORY_COLORS.shopping, isHovered);
+    if (tagString.includes('theater') || tagString.includes('theatre') || tagString.includes('ballet') || tagString.includes('opera') || tagString.includes('symphony') || tagString.includes('dance') || tagString.includes('gallery') || tagString.includes('art')) {
+        return createPinIcon(CATEGORY_COLORS.art, isHovered);
     }
-    if (tagString.includes('pet') || tagString.includes('dog') || tagString.includes('cat') || tagString.includes('animal')) {
-        return createPinIcon(CATEGORY_COLORS.pets, isHovered);
+    if (tagString.includes('food') || tagString.includes('drink') || tagString.includes('dining') || tagString.includes('restaurant') || tagString.includes('wine') || tagString.includes('beer') || tagString.includes('brewery') || tagString.includes('brunch')) {
+        return createPinIcon(CATEGORY_COLORS.food, isHovered);
+    }
+    if (tagString.includes('sport') || tagString.includes('fitness') || tagString.includes('yoga') || tagString.includes('workout') || tagString.includes('game') || tagString.includes('tournament') || tagString.includes('run') || tagString.includes('cycling')) {
+        return createPinIcon(CATEGORY_COLORS.sports, isHovered);
+    }
+    if (tagString.includes('family') || tagString.includes('kid') || tagString.includes('children') || tagString.includes('all ages') || tagString.includes('storytime')) {
+        return createPinIcon(CATEGORY_COLORS.family, isHovered);
+    }
+    if (tagString.includes('education') || tagString.includes('museum') || tagString.includes('history') || tagString.includes('lecture') || tagString.includes('workshop') || tagString.includes('library')) {
+        return createPinIcon(CATEGORY_COLORS.educational, isHovered);
+    }
+    if (tagString.includes('nature') || tagString.includes('outdoor') || tagString.includes('park') || tagString.includes('garden') || tagString.includes('hiking') || tagString.includes('trail')) {
+        return createPinIcon(CATEGORY_COLORS.nature, isHovered);
+    }
+    if (tagString.includes('community') || tagString.includes('market') || tagString.includes('vendor') || tagString.includes('nonprofit') || tagString.includes('fundraiser')) {
+        return createPinIcon(CATEGORY_COLORS.community, isHovered);
     }
 
     return createPinIcon(CATEGORY_COLORS.default, isHovered);
@@ -341,7 +341,6 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
     const center = [36.1540, -95.9928];
     const containerRef = useRef(null);
     const mapRef = useRef(null);
-    const normalizedEvents = Array.isArray(events) ? events : [];
 
     useEffect(() => {
         injectMapStyles();
@@ -366,7 +365,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
     }, []);
 
     // Filter events to only those with valid coordinates
-    const eventsWithValidCoords = normalizedEvents.filter(event => isValidCoordinates(event.coordinates));
+    const eventsWithValidCoords = events.filter(event => isValidCoordinates(event.coordinates));
 
     return (
         <div
@@ -384,7 +383,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                 zoomControl={false}
                 ref={mapRef}
             >
-                <MapController hoveredEventId={hoveredEventId} events={eventsWithValidCoords} />
+                <MapController hoveredEventId={hoveredEventId} events={events} />
 
                 <TileLayer
                     attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -403,7 +402,17 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                     zoomToBoundsOnClick={true}
                     disableClusteringAtZoom={16}
                 >
-                    {eventsWithValidCoords.map((event) => {
+                    {events.map((event) => {
+                        // Skip events without valid coordinates
+                        if (
+                            !event.coordinates?.lat ||
+                            !event.coordinates?.lng ||
+                            isNaN(event.coordinates.lat) ||
+                            isNaN(event.coordinates.lng)
+                        ) {
+                            return null;
+                        }
+
                         return (
                             <Marker
                                 key={event.id}
@@ -493,18 +502,18 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 sm:gap-y-2">
                     {[
-                        { label: 'Music', color: CATEGORY_COLORS.music },
-                        { label: 'Arts', color: CATEGORY_COLORS.art },
-                        { label: 'Nature', color: CATEGORY_COLORS.nature },
-                        { label: 'Food', color: CATEGORY_COLORS.food },
-                        { label: 'Sports', color: CATEGORY_COLORS.sports },
-                        { label: 'Family', color: CATEGORY_COLORS.family },
-                        { label: 'Comedy', color: CATEGORY_COLORS.comedy },
-                        { label: 'Education', color: CATEGORY_COLORS.educational },
-                        { label: 'Fitness', color: CATEGORY_COLORS.fitness },
-                        { label: 'Film', color: CATEGORY_COLORS.film },
-                        { label: 'Shopping', color: CATEGORY_COLORS.shopping },
-                        { label: 'Pets', color: CATEGORY_COLORS.pets },
+                        { label: 'Music',            color: CATEGORY_COLORS.music },
+                        { label: 'Comedy',           color: CATEGORY_COLORS.comedy },
+                        { label: 'Arts & Theater',   color: CATEGORY_COLORS.art },
+                        { label: 'Festival',         color: CATEGORY_COLORS.festival },
+                        { label: 'Film',             color: CATEGORY_COLORS.film },
+                        { label: 'Food & Drink',     color: CATEGORY_COLORS.food },
+                        { label: 'Nightlife',        color: CATEGORY_COLORS.nightlife },
+                        { label: 'Sports & Fitness', color: CATEGORY_COLORS.sports },
+                        { label: 'Family',           color: CATEGORY_COLORS.family },
+                        { label: 'Educational',      color: CATEGORY_COLORS.educational },
+                        { label: 'Nature & Outdoors',color: CATEGORY_COLORS.nature },
+                        { label: 'Community',        color: CATEGORY_COLORS.community },
                     ].map((item) => (
                         <div key={item.label} className="flex items-center gap-1.5 sm:gap-2 group cursor-default">
                             <span
