@@ -53,12 +53,18 @@ pub struct Event {
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
     pub time_estimated: Option<bool>,
+    pub content_hash: Option<String>,
+    pub source_priority: Option<i32>,
+    pub canonical_url: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     // Venue data from venues table via LEFT JOIN
     pub venue_website: Option<String>,
     pub venue_latitude: Option<f64>,
     pub venue_longitude: Option<f64>,
+    /// Display priority for this venue (1 = flagship, 2 = featured, 3 = standard).
+    /// Drives sort order: priority-1 venues surface first in the feed.
+    pub venue_priority: Option<i32>,
 }
 
 /// Payload for creating/updating events (no venue fields - those come from venues table)
@@ -80,6 +86,9 @@ pub struct CreateEvent {
     pub family_friendly: Option<bool>,
     pub image_url: Option<String>,
     pub time_estimated: Option<bool>,
+    pub content_hash: Option<String>,
+    pub source_priority: Option<i32>,
+    pub canonical_url: Option<String>,
 }
 
 // =============================================================================
@@ -118,7 +127,7 @@ async fn list_events(
     State(pool): State<PgPool>,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(100).min(1000);
+    let limit = params.limit.unwrap_or(2000).min(5000);
 
     let events = sqlx::query_as::<_, Event>(
         r#"
@@ -126,15 +135,16 @@ async fn list_events(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website      AS venue_website,
+            v.latitude     AS venue_latitude,
+            v.longitude    AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.start_time >= NOW()
-        ORDER BY e.start_time ASC
+        ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
         "#
     )
@@ -168,11 +178,12 @@ async fn get_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website      AS venue_website,
+            v.latitude     AS venue_latitude,
+            v.longitude    AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.id = $1
@@ -210,34 +221,57 @@ async fn create_event(
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
+    // Determine effective priority — default 3 (aggregator) if not provided
+    let priority = payload.source_priority.unwrap_or(3);
+
     // First, do the UPSERT
+    // Conflict resolution strategy:
+    //   - content_hash collision = same real-world event from a different source
+    //   - source_url / source_name always reflect the most recent scrape (audit trail)
+    //   - canonical_url only upgrades to a better (lower priority) source, never downgrades
+    //   - image_url / description use COALESCE so a richer source fills gaps without clobbering
     let _result = sqlx::query(
         r#"
         INSERT INTO events (
             id, title, description, venue, venue_address, location,
             source_url, source_name, start_time, end_time, categories,
             price_min, price_max, outdoor, family_friendly, image_url,
-            time_estimated,
+            time_estimated, content_hash, source_priority, canonical_url,
             created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        )
         ON CONFLICT (source_url) DO UPDATE SET
-            title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            venue = EXCLUDED.venue,
-            venue_address = EXCLUDED.venue_address,
-            location = EXCLUDED.location,
-            source_name = EXCLUDED.source_name,
-            start_time = EXCLUDED.start_time,
-            end_time = EXCLUDED.end_time,
-            categories = EXCLUDED.categories,
-            price_min = EXCLUDED.price_min,
-            price_max = EXCLUDED.price_max,
-            outdoor = EXCLUDED.outdoor,
+            title          = EXCLUDED.title,
+            description    = CASE
+                               WHEN LENGTH(EXCLUDED.description) > LENGTH(events.description)
+                               THEN EXCLUDED.description
+                               ELSE COALESCE(events.description, EXCLUDED.description)
+                             END,
+            venue          = EXCLUDED.venue,
+            venue_address  = EXCLUDED.venue_address,
+            location       = EXCLUDED.location,
+            source_name    = EXCLUDED.source_name,
+            start_time     = EXCLUDED.start_time,
+            end_time       = EXCLUDED.end_time,
+            categories     = EXCLUDED.categories,
+            price_min      = EXCLUDED.price_min,
+            price_max      = EXCLUDED.price_max,
+            outdoor        = EXCLUDED.outdoor,
             family_friendly = EXCLUDED.family_friendly,
-            image_url = EXCLUDED.image_url,
+            image_url      = COALESCE(events.image_url, EXCLUDED.image_url),
             time_estimated = EXCLUDED.time_estimated,
-            updated_at = NOW()
+            content_hash   = COALESCE(events.content_hash, EXCLUDED.content_hash),
+            source_priority = EXCLUDED.source_priority,
+            canonical_url  = CASE
+                               WHEN EXCLUDED.source_priority < COALESCE(events.source_priority, 99)
+                                    AND EXCLUDED.canonical_url IS NOT NULL
+                               THEN EXCLUDED.canonical_url
+                               ELSE COALESCE(events.canonical_url, EXCLUDED.canonical_url)
+                             END,
+            updated_at     = NOW()
         "#
     )
         .bind(&id)
@@ -257,6 +291,9 @@ async fn create_event(
         .bind(&payload.family_friendly)
         .bind(&payload.image_url)
         .bind(&payload.time_estimated)
+        .bind(&payload.content_hash)
+        .bind(&priority)
+        .bind(&payload.canonical_url)
         .bind(&now)
         .bind(&now)
         .execute(&pool)
@@ -273,11 +310,12 @@ async fn create_event(
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
-            v.website AS venue_website,
-            v.latitude AS venue_latitude,
-            v.longitude AS venue_longitude
+            v.website        AS venue_website,
+            v.latitude       AS venue_latitude,
+            v.longitude      AS venue_longitude,
+            v.venue_priority AS venue_priority
         FROM events e
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE e.source_url = $1
@@ -347,20 +385,20 @@ async fn search_events(
     State(pool): State<PgPool>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
-    let limit = params.limit.unwrap_or(50).min(100);
+    let limit = params.limit.unwrap_or(2000).min(5000);
     let offset = params.offset.unwrap_or(0);
 
     // Build dynamic WHERE clauses
     let mut conditions = vec!["e.start_time >= NOW()".to_string()];
     let mut bind_index = 1;
 
-    // Text search
+    // Text search — matches title, description, venue name, or source_name
     if let Some(ref _q) = params.q {
         conditions.push(format!(
-            "(e.title ILIKE ${} OR e.description ILIKE ${})",
-            bind_index, bind_index + 1
+            "(e.title ILIKE ${} OR e.description ILIKE ${} OR e.venue ILIKE ${} OR e.source_name ILIKE ${})",
+            bind_index, bind_index + 1, bind_index + 2, bind_index + 3
         ));
-        bind_index += 2;
+        bind_index += 4;
     }
 
     // Category filter (using array overlap)
@@ -414,25 +452,33 @@ async fn search_events(
 
     let query = format!(
         r#"
-        SELECT * FROM (
-            SELECT DISTINCT ON (LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date)
+        SELECT DISTINCT ON (e.source_url)
                 e.id, e.title, e.description, e.venue, e.venue_address, e.location,
                 e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-                e.time_estimated,
+                e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
                 e.created_at, e.updated_at,
-                v.website AS venue_website,
-                v.latitude AS venue_latitude,
-                v.longitude AS venue_longitude
+                v.website        AS venue_website,
+                v.latitude       AS venue_latitude,
+                v.longitude      AS venue_longitude,
+                v.venue_priority AS venue_priority
             FROM events e
             LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
             WHERE {}
-            ORDER BY LOWER(TRIM(e.venue)), (e.start_time AT TIME ZONE 'America/Chicago')::date, e.time_estimated ASC, e.updated_at DESC
-        ) deduped
-        ORDER BY start_time ASC
+            ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}
         "#,
         where_clause, bind_index, bind_index + 1
+    );
+
+    // Wrap the dedup query so we can re-sort the deduplicated results
+    // by venue_priority first, then chronologically.
+    let query = format!(
+        r#"
+        SELECT * FROM ({}) AS deduped
+        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(venue_priority, 3) ASC, start_time ASC
+        "#,
+        query
     );
 
     // Build and execute query with bindings
@@ -440,7 +486,11 @@ async fn search_events(
 
     if let Some(ref q) = params.q {
         let pattern = format!("%{}%", q);
-        query_builder = query_builder.bind(pattern.clone()).bind(pattern);
+        query_builder = query_builder
+            .bind(pattern.clone())  // title
+            .bind(pattern.clone())  // description
+            .bind(pattern.clone())  // venue
+            .bind(pattern);         // source_name
     }
 
     if let Some(ref category) = params.category {

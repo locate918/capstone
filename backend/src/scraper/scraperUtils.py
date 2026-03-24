@@ -16,6 +16,272 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ============================================================================
+# AGGREGATOR / SOURCE PRIORITY
+# ============================================================================
+
+# Domains we treat as low-trust aggregators (priority 3).
+# Events whose source_url comes from one of these will never win a canonical_url
+# slot over a direct venue or ticketing source.
+AGGREGATOR_DOMAINS = [
+    'visittulsa.com',
+    'bit918.com',
+    'do918.com',
+    'eventbrite.com',
+    'eventbrite.co.uk',
+    'evbuc.com',          # Eventbrite short links
+    'allevents.in',
+    'events.com',
+    'eventful.com',
+    'meetup.com',
+    'facebook.com',       # FB event pages are aggregator-level for our purposes
+]
+
+# Ticketing platforms — better than pure aggregators but still not the venue
+TICKETING_DOMAINS = [
+    'ticketmaster.com',
+    'livenation.com',
+    'axs.com',
+    'etix.com',
+    'tickettailor.com',
+    'ticketleap.com',
+    'dice.fm',
+    'seetickets.us',
+]
+
+
+# ============================================================================
+# VENUE DISPLAY PRIORITY
+# ============================================================================
+# Controls sort order on the event feed — lower number surfaces first.
+#   1 = Flagship  — major capacity music/concert venues, large performing arts
+#                   centers, established comedy clubs, major casino entertainment,
+#                   large festival/convention grounds
+#   2 = Featured  — smaller clubs, black-box theaters, arts spaces, museums
+#                   with regular events, mid-tier event centers
+#   3 = Standard  — everything else (default)
+#
+# Mirrors the IN-lists in 002_venue_priority.sql exactly — keep in sync.
+
+VENUE_PRIORITY_1 = {
+    # Concert / music
+    "bok center",
+    "cain's ballroom", "cains",
+    "tulsa theater", "tulsa theatre",
+    "the vanguard",
+    "brady theater",
+    # Hard Rock sub-rooms
+    "hard rock casino tulsa",
+    "hard rock hotel & casino tulsa",
+    "amp at hard rock casino tulsa",
+    "riffs at hard rock casino tulsa",
+    "track at hard rock casino tulsa",
+    "hard at hard rock casino tulsa",
+    # Performing arts
+    "tulsa performing arts center",
+    "chapman music hall - tpac",
+    "john h. williams theatre",
+    "liddy doenges theatre",
+    "broken arrow performing arts center",
+    "vantrease pace",
+    # Comedy
+    "bricktown comedy club",
+    "loony bin", "loony bin comedy club",
+    # Casinos / large entertainment
+    "river spirit casino resort",
+    "the cove at river spirit casino resort", "the cove",
+    "the shrine", "shrine",
+    # Festival / convention / fairground
+    "gathering place", "the gathering place",
+    "guthrie green",
+    "expo square",
+    "sagenet center", "sagenet center at expo square",
+    "central park hall", "central park hall at expo square",
+    "arvest convention center",
+    "arvest convention center – acc",
+    "arvest convention center – grand hall",
+    "arvest convention center – legacy hall",
+    "arvest convention center – pepsi exhibit hall a+b",
+    "arvest convention center – tulsa ballroom",
+    "arvest convention center, legacy hall",
+    "river west festival park",
+    "oneok field",
+}
+
+VENUE_PRIORITY_2 = {
+    # Music clubs / bars with live music
+    "chimera ballroom",
+    "belafonte",
+    "sound pony", "soundpony",
+    "low down", "lowdown",
+    "mercury lounge",
+    "whittier", "whittier bar",
+    "church studio", "the church studio",
+    "cain's ballroom / the church studio",
+    "starlite", "the starlite",
+    "hunt club", "the hunt club",
+    "bad ass renee's",
+    "soul city gastropub and music house",
+    "maggie's music box",
+    "club majestic",
+    "big 10 ballroom",
+    "st. vitus",
+    "fly loft", "flyloft downtown tulsa",
+    "flywheel",
+    # Performing arts / cinema
+    "circle cinema",
+    "tulsa ballet",
+    "tulsa opera",
+    "tulsa symphony orchestra",
+    "bob dylan center",
+    "american theatre company",
+    "waterworks art center", "waterworks large studio", "waterworks weaving gallery",
+    "crosstown arts",
+    "tulsa spotlight theater",
+    "spotlight theater / riverside studios",
+    "tulsa artists' coalition",
+    "tulsa artist fellowship project space",
+    "living arts", "living arts of tulsa",
+    "charles e. norman theatre",
+    "linbury theatre",
+    "liggett studio",
+    "hardesty center for dance education",
+    "lorton performance center",
+    "lynn riggs theater",
+    "sky gallery",
+    "zarrow studio",
+    "108 contemporary",
+    # Museums / attractions
+    "philbrook", "philbrook museum of art",
+    "gilcrease",
+    "discovery lab",
+    "tulsa air and space museum & planetarium", "tasm",
+    "the castle of muskogee",
+    "woolaroc museum & wildlife preserve",
+    "tulsa zoo",
+    "oklahoma aquarium",
+    "will rogers memorial museum",
+    "jenks planetarium",
+    "greenwood rising",
+    "woody guthrie center",
+    # Arts districts / community arts
+    "tulsa arts district", "arts district",
+    "magic city books", "magic city book club",
+    # Event centers / markets / mid-tier casinos
+    "mother road market", "mother road market & renaissance square",
+    "skyline event center",
+    "osage casino hotel tulsa skyline event center",
+    "osage casino hotel tulsa",
+    "mabee center",
+    "renaissance square event center",
+    "imperio event center",
+    "gateway event center", "gateway tulsa event center",
+    "claremore expo",
+    # Gathering Place sub-venues
+    "quiktrip great lawn",
+    "quiktrip great lawn and oneok boathouse",
+    "oneok boathouse",
+    "redbud festival park",
+    "blue dome district & riverside",
+    "tunes at tul stage",
+    "jenks riverwalk",
+    # Bars / restaurants with notable live music
+    "the colony",
+    "kilkenny's irish pub",
+    "american solera",
+    "cabin boy brewery", "cabin boys brewery",
+    "duet jazz restaurant", "duet restaurant",
+    "route 66 village", "route 66 historical village",
+}
+
+
+def get_venue_display_priority(venue_name: str) -> int:
+    """
+    Return the display priority (1, 2, or 3) for a venue name.
+
+    Priority 1 venues surface at the top of the event feed.
+    Priority 2 venues sort before generic/community events.
+    Priority 3 is the default for everything else.
+
+    Mirrors the IN-lists in 002_venue_priority.sql — keep in sync.
+    """
+    if not venue_name:
+        return 3
+    key = venue_name.strip().lower()
+    if key in VENUE_PRIORITY_1:
+        return 1
+    if key in VENUE_PRIORITY_2:
+        return 2
+    return 3
+
+
+def is_aggregator_url(url: str) -> bool:
+    """Return True if the URL belongs to a known aggregator domain."""
+    if not url:
+        return False
+    try:
+        hostname = urlparse(url).netloc.lower().lstrip('www.')
+        return any(hostname == d or hostname.endswith('.' + d) for d in AGGREGATOR_DOMAINS)
+    except Exception:
+        return False
+
+
+def get_source_priority(url: str, explicit_priority: int = None) -> int:
+    """
+    Derive a source priority from the URL domain.
+      1 = direct venue website  (best)
+      2 = ticketing platform    (good)
+      3 = aggregator / unknown  (worst)
+    An explicit_priority from saved_urls.json always wins.
+    """
+    if explicit_priority is not None:
+        return explicit_priority
+    if not url:
+        return 3
+    try:
+        hostname = urlparse(url).netloc.lower().lstrip('www.')
+        if any(hostname == d or hostname.endswith('.' + d) for d in AGGREGATOR_DOMAINS):
+            return 3
+        if any(hostname == d or hostname.endswith('.' + d) for d in TICKETING_DOMAINS):
+            return 2
+        # Recognise known venue domains as priority 1
+        if hostname in KNOWN_VENUE_URLS or hostname.lstrip('www.') in {
+            k.lstrip('www.') for k in KNOWN_VENUE_URLS
+        }:
+            return 1
+        # Unknown external URL — treat as mid-tier until classified
+        return 2
+    except Exception:
+        return 3
+
+
+def make_content_hash(title: str, start_time: str, venue: str = '') -> str:
+    """
+    Generate a stable fingerprint for an event based on title + date/hour + venue.
+    Two events from different sources that represent the same real-world event
+    will produce the same hash and be deduplicated by the UPSERT.
+    """
+    import hashlib
+    from dateutil import parser as date_parser
+
+    def _norm(s: str) -> str:
+        s = (s or '').lower().strip()
+        s = re.sub(r'[^a-z0-9 ]', '', s)   # strip punctuation / special chars
+        s = re.sub(r'\band\b', '&', s)      # normalise "and" → "&"
+        s = re.sub(r'\s+', ' ', s)          # collapse whitespace
+        return s.strip()
+
+    # Round to date + hour only — absorbs minor time discrepancies between sources
+    try:
+        dt = date_parser.parse(str(start_time), fuzzy=True)
+        time_part = dt.strftime('%Y-%m-%d-%H')
+    except Exception:
+        time_part = str(start_time or '')[:10]  # fallback: just YYYY-MM-DD
+
+    key = f"{_norm(title)}|{time_part}|{_norm(venue)}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
 # Check if Playwright is available
 try:
     from playwright.async_api import async_playwright
@@ -200,18 +466,22 @@ def load_saved_urls() -> list:
     return []
 
 
-def save_url(url: str, name: str, use_playwright: bool = True) -> list:
-    """Add a URL to saved list."""
+def save_url(url: str, name: str, use_playwright: bool = True, priority: int = None) -> list:
+    """Add a URL to saved list. priority: 1=venue, 2=ticketing, 3=aggregator (auto-detected if omitted)."""
     urls = load_saved_urls()
-    # Update if exists, otherwise add
+    resolved_priority = priority if priority is not None else get_source_priority(url)
     for u in urls:
         if u['url'] == url:
             u['name'] = name
             u['playwright'] = use_playwright
+            if priority is not None:
+                u['priority'] = resolved_priority
+            elif 'priority' not in u:
+                u['priority'] = resolved_priority
             SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
             return urls
 
-    urls.append({'url': url, 'name': name, 'playwright': use_playwright})
+    urls.append({'url': url, 'name': name, 'playwright': use_playwright, 'priority': resolved_priority})
     SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
     return urls
 

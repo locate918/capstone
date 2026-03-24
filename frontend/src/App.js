@@ -1,7 +1,7 @@
 /**
  * App.js - Main Application Component
  * ====================================
- * 
+ *
  * STRUCTURE:
  * 1. Fixed Header (search + navigation)
  * 2. Hero Section (slideshow, shown when no search query)
@@ -12,7 +12,7 @@
  *    - Events List + Map (two-column layout)
  *    - Pagination
  * 4. Event Modal (overlay for event details)
- * 
+ *
  * STATE:
  * - events: Array of event objects from API
  * - loading: Boolean for loading state
@@ -326,6 +326,10 @@ export default function App() {
             const searchStr = debouncedQuery.toLowerCase();
             filtered = filtered.filter(e =>
                 e.title?.toLowerCase().includes(searchStr) ||
+                e.description?.toLowerCase().includes(searchStr) ||
+                e.venue?.toLowerCase().includes(searchStr) ||
+                e.source_name?.toLowerCase().includes(searchStr) ||
+                e.categories?.some(c => c.toLowerCase().includes(searchStr)) ||
                 e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
                 e.summary?.toLowerCase().includes(searchStr) ||
                 e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
@@ -468,7 +472,7 @@ export default function App() {
                                 className={`slide-indicator rounded-full transition-all duration-300 !min-h-0 ${index === currentSlide
                                     ? 'bg-[#D4AF37] w-5 h-1.5 sm:w-6 sm:h-2'
                                     : 'bg-white/50 hover:bg-white/80 w-1.5 h-1.5 sm:w-2 sm:h-2'
-                                    }`}
+                                }`}
                                 aria-label={`Go to slide ${index + 1}`}
                             />
                         ))}
@@ -514,7 +518,7 @@ export default function App() {
                                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'thisWeek'
                                         ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
                                         : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
-                                        }`}
+                                    }`}
                                 >
                                     <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
                                     <span className="hidden sm:inline">This Week in Tulsa</span>
@@ -522,7 +526,7 @@ export default function App() {
                                     <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'thisWeek'
                                         ? 'bg-white/20 text-white'
                                         : 'bg-slate-100 text-slate-500'
-                                        }`}>
+                                    }`}>
                                         {thisWeekCount}
                                     </span>
                                 </button>
@@ -531,14 +535,14 @@ export default function App() {
                                     className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'allEvents'
                                         ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
                                         : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
-                                        }`}
+                                    }`}
                                 >
                                     <LayoutGrid size={16} className="sm:w-[18px] sm:h-[18px]" />
                                     All Events
                                     <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'allEvents'
                                         ? 'bg-white/20 text-white'
                                         : 'bg-slate-100 text-slate-500'
-                                        }`}>
+                                    }`}>
                                         {events.length}
                                     </span>
                                 </button>
@@ -551,7 +555,7 @@ export default function App() {
                         <button
                             onClick={() => setViewMode('list')}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-                                }`}
+                            }`}
                         >
                             <List size={14} />
                             List
@@ -559,7 +563,7 @@ export default function App() {
                         <button
                             onClick={() => setViewMode('map')}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-                                }`}
+                            }`}
                         >
                             <MapIcon size={14} />
                             Map
@@ -576,7 +580,7 @@ export default function App() {
                             className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all mb-3 ${hasDateFilter
                                 ? 'bg-[#D4AF37] text-white'
                                 : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50'
-                                }`}
+                            }`}
                         >
                             <Filter size={14} className="sm:w-4 sm:h-4" />
                             {hasDateFilter ? 'Date Filter Active' : 'Filter by Date'}
@@ -685,7 +689,7 @@ export default function App() {
                                                 className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === 1
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                    }`}
+                                                }`}
                                             >
                                                 <ChevronLeft size={16} className="sm:w-[18px] sm:h-[18px]" />
                                                 <span className="hidden sm:inline">Prev</span>
@@ -716,7 +720,7 @@ export default function App() {
                                                             className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === page
                                                                 ? 'bg-[#D4AF37] text-white shadow-lg'
                                                                 : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                                }`}
+                                                            }`}
                                                         >
                                                             {page}
                                                         </button>
@@ -731,7 +735,7 @@ export default function App() {
                                                 className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === totalPages
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                    }`}
+                                                }`}
                                             >
                                                 <span className="hidden sm:inline">Next</span>
                                                 <ChevronRight size={16} className="sm:w-[18px] sm:h-[18px]" />

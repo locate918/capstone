@@ -2,6 +2,41 @@ import enum
 
 from google.genai import types
 
+search_places_func = types.FunctionDeclaration(
+    name="search_places",
+    description=(
+        "Find bars, restaurants, nightclubs, breweries, and other places to eat or drink "
+        "near a Tulsa venue or address. Use this when the user asks about where to grab "
+        "drinks, dinner, or a nightcap near an event."
+    ),
+    parameters=types.Schema(
+        type="OBJECT",
+        properties={
+            "lat": types.Schema(
+                type="NUMBER",
+                description="Latitude of the event venue or location"
+            ),
+            "lng": types.Schema(
+                type="NUMBER",
+                description="Longitude of the event venue or location"
+            ),
+            "place_type": types.Schema(
+                type="STRING",
+                description=(
+                    "Type of place to find. One of: bar, tavern, nightclub, cocktail_bar, "
+                    "brewery, wine_bar, sports_bar, karaoke_bar, restaurant, cafe. "
+                    "Omit to return all types."
+                )
+            ),
+            "radius_miles": types.Schema(
+                type="NUMBER",
+                description="Search radius in miles. Default 0.5. Max 2.0."
+            ),
+        },
+        required=["lat", "lng"]
+    )
+)
+
 search_events_func = types.FunctionDeclaration(
     name="search_events",
     description="Search for events in the Tulsa database based on criteria like category, date, price, venue, etc.",

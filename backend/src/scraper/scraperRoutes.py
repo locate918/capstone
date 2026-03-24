@@ -24,18 +24,52 @@ from scraperUtils import (
     save_url,
     delete_saved_url,
     resolve_source_name,
+    is_aggregator_url,
+    get_source_priority,
+    make_content_hash,
 )
 
 from scraperExtractors import (
     extract_eventcalendarapp,
     extract_timely,
     extract_bok_center,
+    extract_circle_cinema_events,
     extract_expo_square_events,
     extract_eventbrite_api_events,
     extract_simpleview_events,
     extract_sitewrench_events,
     extract_recdesk_events,
     extract_ticketleap_events,
+    extract_libnet_events,
+    extract_philbrook_events,
+    extract_tulsapac_events,
+    extract_roosterdays_events,
+    extract_tulsabrunchfest_events,
+    extract_okeq_events,
+    extract_flywheel_events,
+    extract_arvest_events,
+    extract_tulsatough_events,
+    extract_gradient_events,
+    extract_tulsafarmersmarket_events,
+    extract_okcastle_events,
+    extract_broken_arrow_events,
+    extract_tulsazoo_events,
+    extract_hardrock_tulsa_events,
+    extract_gypsy_events,
+    extract_badass_renees_events,
+    extract_bricktown_comedy_events,
+    extract_loonybin_events,
+    extract_rhp_events,
+    extract_church_studio_events,
+    extract_carneyfest_events,
+    extract_maggies_events,
+    extract_route66_village_events,
+    extract_living_arts_events,
+    extract_jenks_planetarium_events,
+    extract_riverparks_events,
+    extract_magic_city_books_events,
+    extract_spotlight_theater_events,
+    extract_tulsamayfest_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -493,7 +527,7 @@ loadSaved();
 # EVENT TRANSFORMATION
 # ============================================================================
 
-def transform_event_for_backend(event: dict) -> dict:
+def transform_event_for_backend(event: dict, source_priority: int = None) -> dict:
     """
     Transform scraped event to match Rust backend's CreateEvent schema.
     Used as primary transform after normalization, or as fallback if LLM is down.
@@ -514,6 +548,19 @@ def transform_event_for_backend(event: dict) -> dict:
     )
     transformed['source_url'] = source_url
 
+    # --- Priority and canonical URL ---
+    # Use explicitly passed priority, then check event dict, then auto-detect from URL
+    priority = (
+            source_priority
+            or event.get('source_priority')
+            or get_source_priority(source_url)
+    )
+    transformed['source_priority'] = priority
+
+    # canonical_url only gets set when the source is a direct venue or ticketing site
+    if source_url and not is_aggregator_url(source_url):
+        transformed['canonical_url'] = source_url
+
     date_str = (
             event.get('start_time') or
             event.get('startDate') or
@@ -523,14 +570,29 @@ def transform_event_for_backend(event: dict) -> dict:
     )
     if date_str:
         try:
+            import pytz as _pytz
+            tulsa_tz = _pytz.timezone('America/Chicago')
             parsed_date = date_parser.parse(str(date_str), fuzzy=True)
             if parsed_date.tzinfo is None:
-                parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                # Naive datetime — assume Tulsa local time (CDT/CST) and convert to UTC
+                parsed_date = tulsa_tz.localize(parsed_date).astimezone(_pytz.utc)
+            else:
+                # Already has timezone info — just convert to UTC
+                parsed_date = parsed_date.astimezone(_pytz.utc)
             transformed['start_time'] = parsed_date.isoformat()
-        except:
-            fallback = datetime.now(timezone.utc) + timedelta(days=1)
-            transformed['start_time'] = fallback.isoformat()
-            print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
+        except Exception as e:
+            print(f"[DB] Timezone parse error for '{date_str}': {e}")
+            # Fallback: try basic parse and stamp as UTC
+            try:
+                parsed_date = date_parser.parse(str(date_str), fuzzy=True)
+                from datetime import timezone as _tz
+                if parsed_date.tzinfo is None:
+                    parsed_date = parsed_date.replace(tzinfo=_tz.utc)
+                transformed['start_time'] = parsed_date.isoformat()
+            except:
+                fallback = datetime.now(timezone.utc) + timedelta(days=1)
+                transformed['start_time'] = fallback.isoformat()
+                print(f"[DB] Warning: Could not parse start date '{date_str}', using fallback")
     else:
         fallback = datetime.now(timezone.utc) + timedelta(days=1)
         transformed['start_time'] = fallback.isoformat()
@@ -543,12 +605,23 @@ def transform_event_for_backend(event: dict) -> dict:
     )
     if end_str:
         try:
+            import pytz as _pytz
+            tulsa_tz = _pytz.timezone('America/Chicago')
             parsed_end = date_parser.parse(str(end_str), fuzzy=True)
             if parsed_end.tzinfo is None:
-                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+                parsed_end = tulsa_tz.localize(parsed_end).astimezone(_pytz.utc)
+            else:
+                parsed_end = parsed_end.astimezone(_pytz.utc)
             transformed['end_time'] = parsed_end.isoformat()
-        except:
-            pass
+        except Exception as e:
+            try:
+                parsed_end = date_parser.parse(str(end_str), fuzzy=True)
+                from datetime import timezone as _tz
+                if parsed_end.tzinfo is None:
+                    parsed_end = parsed_end.replace(tzinfo=_tz.utc)
+                transformed['end_time'] = parsed_end.isoformat()
+            except:
+                pass
 
     source_name = event.get('source_name') or event.get('source') or ''
     if source_name:
@@ -635,6 +708,13 @@ def transform_event_for_backend(event: dict) -> dict:
     else:
         transformed['family_friendly'] = False
 
+    # --- Content hash for cross-source deduplication ---
+    transformed['content_hash'] = make_content_hash(
+        transformed.get('title', ''),
+        transformed.get('start_time', ''),
+        transformed.get('venue', ''),
+    )
+
     return transformed
 
 
@@ -655,13 +735,23 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
     """
     all_normalized = []
     chunk_size = 10
+    failed_chunks = 0
 
     for i in range(0, len(events), chunk_size):
         chunk = events[i:i + chunk_size]
 
+        # Strip blank start_time so Gemini infers from title/description
+        # rather than receiving an empty string that fails Pydantic validation
+        clean_chunk = []
+        for ev in chunk:
+            ev_copy = dict(ev)
+            if not ev_copy.get('start_time'):
+                ev_copy.pop('start_time', None)
+            clean_chunk.append(ev_copy)
+
         try:
             payload = {
-                "raw_content": json.dumps(chunk),
+                "raw_content": json.dumps(clean_chunk),
                 "source_url": source_url,
                 "content_type": "json"
             }
@@ -680,18 +770,21 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
                     print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
                     all_normalized.extend(normalized)
                 else:
-                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, falling back")
-                    return []
+                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
+                    failed_chunks += 1
             else:
                 print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
-                return []
+                failed_chunks += 1
 
         except httpx.ConnectError:
             print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
             return []
         except Exception as e:
             print(f"[Normalize] Error: {e}")
-            return []
+            failed_chunks += 1
+
+    if failed_chunks:
+        print(f"[Normalize] {failed_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")
 
     return all_normalized
 
@@ -860,7 +953,12 @@ def register_routes(app):
     @app.route('/saved-urls', methods=['POST'])
     def add_saved_url():
         data = request.json
-        urls = save_url(data.get('url', ''), data.get('name', ''), data.get('playwright', True))
+        urls = save_url(
+            data.get('url', ''),
+            data.get('name', ''),
+            data.get('playwright', True),
+            data.get('priority'),  # None → auto-detected from domain
+        )
         return jsonify(urls)
 
     @app.route('/saved-urls', methods=['DELETE'])
@@ -928,6 +1026,13 @@ def register_routes(app):
                     print(f"[BOK Center] SUCCESS: {len(events)} events via API")
 
             if not events:
+                cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, source_name, url, future_only))
+                if cc_detected and cc_events:
+                    events = cc_events
+                    methods.append(f"Circle Cinema ({len(events)})")
+                    print(f"[CircleCinema] SUCCESS: {len(events)} events")
+
+            if not events:
                 expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
                 if expo_detected and expo_events:
                     events = expo_events
@@ -970,6 +1075,216 @@ def register_routes(app):
                     print(f"[TicketLeap] SUCCESS: {len(events)} events")
 
             if not events:
+                ln_events, ln_detected = asyncio.run(extract_libnet_events(html, source_name, url, future_only))
+                if ln_detected and ln_events:
+                    events = ln_events
+                    methods.append(f"LibNet API ({len(events)})")
+                    print(f"[LibNet] SUCCESS: {len(events)} events via API")
+
+            if not events:
+                pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, source_name, url, future_only))
+                if pb_detected and pb_events:
+                    events = pb_events
+                    methods.append(f"Philbrook AJAX ({len(events)})")
+                    print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
+
+            if not events:
+                tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, source_name, url, future_only))
+                if tpac_detected and tpac_events:
+                    events = tpac_events
+                    methods.append(f"TulsaPAC API ({len(events)})")
+                    print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
+
+            if not events:
+                rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, source_name, url, future_only))
+                if rd_detected and rd_ev:
+                    events = rd_ev
+                    methods.append(f"RoosterDays ({len(events)})")
+                    print(f"[RoosterDays] SUCCESS: {len(events)} event")
+
+            if not events:
+                tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, source_name, url, future_only))
+                if tbf_detected and tbf_ev:
+                    events = tbf_ev
+                    methods.append(f"TulsaBrunchFest ({len(events)})")
+                    print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
+
+            if not events:
+                okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, source_name, url, future_only))
+                if okeq_detected and okeq_ev:
+                    events = okeq_ev
+                    methods.append(f"OKEQ ({len(events)})")
+                    print(f"[OKEQ] SUCCESS: {len(events)} events")
+
+            if not events:
+                flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, source_name, url, future_only))
+                if flywheel_detected and flywheel_ev:
+                    events = flywheel_ev
+                    methods.append(f"Flywheel ({len(events)})")
+                    print(f"[Flywheel] SUCCESS: {len(events)} events")
+
+            if not events:
+                arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, source_name, url, future_only))
+                if arvest_detected and arvest_ev:
+                    events = arvest_ev
+                    methods.append(f"Arvest ({len(events)})")
+                    print(f"[Arvest] SUCCESS: {len(events)} events")
+
+            if not events:
+                tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, source_name, url, future_only))
+                if tt_detected and tt_ev:
+                    events = tt_ev
+                    methods.append(f"TulsaTough ({len(events)})")
+                    print(f"[TulsaTough] SUCCESS: {len(events)} events")
+
+            if not events:
+                gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, source_name, url, future_only))
+                if gradient_detected and gradient_ev:
+                    events = gradient_ev
+                    methods.append(f"Gradient ({len(events)})")
+                    print(f"[Gradient] SUCCESS: {len(events)} events")
+
+            if not events:
+                tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, source_name, url, future_only))
+                if tfm_detected and tfm_ev:
+                    events = tfm_ev
+                    methods.append(f"TFM ({len(events)})")
+                    print(f"[TFM] SUCCESS: {len(events)} events")
+
+            if not events:
+                okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, source_name, url, future_only))
+                if okcastle_detected and okcastle_ev:
+                    events = okcastle_ev
+                    methods.append(f"OKCastle ({len(events)})")
+                    print(f"[OKCastle] SUCCESS: {len(events)} events")
+
+            if not events:
+                ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, source_name, url, future_only))
+                if ba_detected and ba_ev:
+                    events = ba_ev
+                    methods.append(f"BrokenArrow ({len(events)})")
+                    print(f"[BrokenArrow] SUCCESS: {len(events)} events")
+
+            if not events:
+                zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, source_name, url, future_only))
+                if zoo_detected and zoo_ev:
+                    events = zoo_ev
+                    methods.append(f"TulsaZoo ({len(events)})")
+                    print(f"[TulsaZoo] SUCCESS: {len(events)} events")
+
+            if not events:
+                hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, source_name, url, future_only))
+                if hr_detected and hr_ev:
+                    events = hr_ev
+                    methods.append(f"HardRockTulsa ({len(events)})")
+                    print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
+
+            if not events:
+                gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, source_name, url, future_only))
+                if gypsy_detected and gypsy_ev:
+                    events = gypsy_ev
+                    methods.append(f"Gypsy ({len(events)})")
+                    print(f"[Gypsy] SUCCESS: {len(events)} events")
+
+            if not events:
+                bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, source_name, url, future_only))
+                if bar_detected and bar_ev:
+                    events = bar_ev
+                    methods.append(f"BadAssRenees ({len(events)})")
+                    print(f"[BadAssRenees] SUCCESS: {len(events)} events")
+
+            if not events:
+                bcc_ev, bcc_detected = asyncio.run(extract_bricktown_comedy_events(html, source_name, url, future_only))
+                if bcc_detected and bcc_ev:
+                    events = bcc_ev
+                    methods.append(f"BricktownComedy ({len(events)})")
+                    print(f"[BricktownComedy] SUCCESS: {len(events)} events")
+
+            if not events:
+                lb_ev, lb_detected = asyncio.run(extract_loonybin_events(html, source_name, url, future_only))
+                if lb_detected and lb_ev:
+                    events = lb_ev
+                    methods.append(f"LoonybinTulsa ({len(events)})")
+                    print(f"[LoonybinTulsa] SUCCESS: {len(events)} events")
+
+            if not events:
+                rhp_ev, rhp_detected = asyncio.run(extract_rhp_events(html, source_name, url, future_only))
+                if rhp_detected and rhp_ev:
+                    events = rhp_ev
+                    methods.append(f"RHPEvents ({len(events)})")
+                    print(f"[RHPEvents] SUCCESS: {len(events)} events")
+
+            if not events:
+                cs_ev, cs_detected = asyncio.run(extract_church_studio_events(html, source_name, url, future_only))
+                if cs_detected and cs_ev:
+                    events = cs_ev
+                    methods.append(f"ChurchStudio ({len(events)})")
+                    print(f"[ChurchStudio] SUCCESS: {len(events)} events")
+
+            if not events:
+                cf_ev, cf_detected = asyncio.run(extract_carneyfest_events(html, source_name, url, future_only))
+                if cf_detected and cf_ev:
+                    events = cf_ev
+                    methods.append(f"CarneyFest ({len(events)})")
+                    print(f"[CarneyFest] SUCCESS: {len(events)} events")
+
+            if not events:
+                mg_ev, mg_detected = asyncio.run(extract_maggies_events(html, source_name, url, future_only))
+                if mg_detected and mg_ev:
+                    events = mg_ev
+                    methods.append(f"MaggiesOK ({len(events)})")
+                    print(f"[MaggiesOK] SUCCESS: {len(events)} events")
+
+            if not events:
+                r66_ev, r66_detected = asyncio.run(extract_route66_village_events(html, source_name, url, future_only))
+                if r66_detected and r66_ev:
+                    events = r66_ev
+                    methods.append(f"Route66Village ({len(events)})")
+                    print(f"[Route66Village] SUCCESS: {len(events)} events")
+
+            if not events:
+                la_ev, la_detected = asyncio.run(extract_living_arts_events(html, source_name, url, future_only))
+                if la_detected and la_ev:
+                    events = la_ev
+                    methods.append(f"LivingArts ({len(events)})")
+                    print(f"[LivingArts] SUCCESS: {len(events)} events")
+
+            if not events:
+                jp_ev, jp_detected = asyncio.run(extract_jenks_planetarium_events(html, source_name, url, future_only))
+                if jp_detected and jp_ev:
+                    events = jp_ev
+                    methods.append(f"JenksPlanetarium ({len(events)})")
+                    print(f"[JenksPlanetarium] SUCCESS: {len(events)} events")
+
+            if not events:
+                rp_ev, rp_detected = asyncio.run(extract_riverparks_events(html, source_name, url, future_only))
+                if rp_detected and rp_ev:
+                    events = rp_ev
+                    methods.append(f"RiverParks ({len(events)})")
+                    print(f"[RiverParks] SUCCESS: {len(events)} events")
+
+            if not events:
+                mcb_ev, mcb_detected = asyncio.run(extract_magic_city_books_events(html, source_name, url, future_only))
+                if mcb_detected and mcb_ev:
+                    events = mcb_ev
+                    methods.append(f"MagicCityBooks ({len(events)})")
+                    print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
+
+            if not events:
+                spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, source_name, url, future_only))
+                if spt_detected and spt_ev:
+                    events = spt_ev
+                    methods.append(f"SpotlightTheater ({len(events)})")
+                    print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
+
+            if not events:
+                mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, source_name, url, future_only))
+                if mf_detected and mf_ev:
+                    events = mf_ev
+                    methods.append(f"TulsaMayfest ({len(events)})")
+                    print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
+
+            if not events:
                 events = extract_events_universal(html, url, source_name)
 
                 if events and '_extraction_methods' in events[0]:
@@ -1004,7 +1319,20 @@ def register_routes(app):
                                 ev['date'] = dt.strftime('%b %d, %Y')
                                 if dt >= cutoff:
                                     filtered.append(ev)
-                            # else: genuinely past, drop it
+                            else:
+                                # Start is in the past — check end_date before dropping.
+                                # Multi-day events (e.g. started Mar 16, ends Mar 22) should
+                                # be kept if the end date is still in the future.
+                                end_str = ev.get('end_date', '') or ev.get('end_time', '') or ev.get('date_end', '')
+                                if end_str:
+                                    try:
+                                        end_dt = date_parser.parse(str(end_str), fuzzy=True).replace(tzinfo=None)
+                                        if end_dt >= cutoff:
+                                            filtered.append(ev)
+                                            continue
+                                    except:
+                                        pass
+                                # genuinely past with no future end — drop it
                         else:
                             filtered.append(ev)
                     except:
@@ -1092,6 +1420,12 @@ def register_routes(app):
                             methods.append(f"BOK Center API ({len(events)})")
 
                     if not events:
+                        cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, name, url, True))
+                        if cc_detected and cc_events:
+                            events = cc_events
+                            methods.append(f"Circle Cinema ({len(events)})")
+
+                    if not events:
                         expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
                         if expo_detected and expo_events:
                             events = expo_events
@@ -1126,6 +1460,216 @@ def register_routes(app):
                         if tl_detected and tl_events:
                             events = tl_events
                             methods.append(f"TicketLeap ({len(events)})")
+
+                    if not events:
+                        ln_events, ln_detected = asyncio.run(extract_libnet_events(html, name, url, True))
+                        if ln_detected and ln_events:
+                            events = ln_events
+                            methods.append(f"LibNet API ({len(events)})")
+                            print(f"[LibNet] SUCCESS: {len(events)} events via API")
+
+                    if not events:
+                        pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, name, url, True))
+                        if pb_detected and pb_events:
+                            events = pb_events
+                            methods.append(f"Philbrook AJAX ({len(events)})")
+                            print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
+
+                    if not events:
+                        tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, name, url, True))
+                        if tpac_detected and tpac_events:
+                            events = tpac_events
+                            methods.append(f"TulsaPAC API ({len(events)})")
+                            print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
+
+                    if not events:
+                        rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, name, url, True))
+                        if rd_detected and rd_ev:
+                            events = rd_ev
+                            methods.append(f"RoosterDays ({len(events)})")
+                            print(f"[RoosterDays] SUCCESS: {len(events)} event")
+
+                    if not events:
+                        tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, name, url, True))
+                        if tbf_detected and tbf_ev:
+                            events = tbf_ev
+                            methods.append(f"TulsaBrunchFest ({len(events)})")
+                            print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
+
+                    if not events:
+                        okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, name, url, True))
+                        if okeq_detected and okeq_ev:
+                            events = okeq_ev
+                            methods.append(f"OKEQ ({len(events)})")
+                            print(f"[OKEQ] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, name, url, True))
+                        if flywheel_detected and flywheel_ev:
+                            events = flywheel_ev
+                            methods.append(f"Flywheel ({len(events)})")
+                            print(f"[Flywheel] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, name, url, True))
+                        if arvest_detected and arvest_ev:
+                            events = arvest_ev
+                            methods.append(f"Arvest ({len(events)})")
+                            print(f"[Arvest] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, name, url, True))
+                        if tt_detected and tt_ev:
+                            events = tt_ev
+                            methods.append(f"TulsaTough ({len(events)})")
+                            print(f"[TulsaTough] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, name, url, True))
+                        if gradient_detected and gradient_ev:
+                            events = gradient_ev
+                            methods.append(f"Gradient ({len(events)})")
+                            print(f"[Gradient] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, name, url, True))
+                        if tfm_detected and tfm_ev:
+                            events = tfm_ev
+                            methods.append(f"TFM ({len(events)})")
+                            print(f"[TFM] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, name, url, True))
+                        if okcastle_detected and okcastle_ev:
+                            events = okcastle_ev
+                            methods.append(f"OKCastle ({len(events)})")
+                            print(f"[OKCastle] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, name, url, True))
+                        if ba_detected and ba_ev:
+                            events = ba_ev
+                            methods.append(f"BrokenArrow ({len(events)})")
+                            print(f"[BrokenArrow] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, name, url, True))
+                        if zoo_detected and zoo_ev:
+                            events = zoo_ev
+                            methods.append(f"TulsaZoo ({len(events)})")
+                            print(f"[TulsaZoo] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, name, url, True))
+                        if hr_detected and hr_ev:
+                            events = hr_ev
+                            methods.append(f"HardRockTulsa ({len(events)})")
+                            print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, name, url, True))
+                        if gypsy_detected and gypsy_ev:
+                            events = gypsy_ev
+                            methods.append(f"Gypsy ({len(events)})")
+                            print(f"[Gypsy] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, name, url, True))
+                        if bar_detected and bar_ev:
+                            events = bar_ev
+                            methods.append(f"BadAssRenees ({len(events)})")
+                            print(f"[BadAssRenees] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        bcc_ev, bcc_detected = asyncio.run(extract_bricktown_comedy_events(html, name, url, True))
+                        if bcc_detected and bcc_ev:
+                            events = bcc_ev
+                            methods.append(f"BricktownComedy ({len(events)})")
+                            print(f"[BricktownComedy] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        lb_ev, lb_detected = asyncio.run(extract_loonybin_events(html, name, url, True))
+                        if lb_detected and lb_ev:
+                            events = lb_ev
+                            methods.append(f"LoonybinTulsa ({len(events)})")
+                            print(f"[LoonybinTulsa] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        rhp_ev, rhp_detected = asyncio.run(extract_rhp_events(html, name, url, True))
+                        if rhp_detected and rhp_ev:
+                            events = rhp_ev
+                            methods.append(f"RHPEvents ({len(events)})")
+                            print(f"[RHPEvents] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        cs_ev, cs_detected = asyncio.run(extract_church_studio_events(html, name, url, True))
+                        if cs_detected and cs_ev:
+                            events = cs_ev
+                            methods.append(f"ChurchStudio ({len(events)})")
+                            print(f"[ChurchStudio] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        cf_ev, cf_detected = asyncio.run(extract_carneyfest_events(html, name, url, True))
+                        if cf_detected and cf_ev:
+                            events = cf_ev
+                            methods.append(f"CarneyFest ({len(events)})")
+                            print(f"[CarneyFest] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        mg_ev, mg_detected = asyncio.run(extract_maggies_events(html, name, url, True))
+                        if mg_detected and mg_ev:
+                            events = mg_ev
+                            methods.append(f"MaggiesOK ({len(events)})")
+                            print(f"[MaggiesOK] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        r66_ev, r66_detected = asyncio.run(extract_route66_village_events(html, name, url, True))
+                        if r66_detected and r66_ev:
+                            events = r66_ev
+                            methods.append(f"Route66Village ({len(events)})")
+                            print(f"[Route66Village] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        la_ev, la_detected = asyncio.run(extract_living_arts_events(html, name, url, True))
+                        if la_detected and la_ev:
+                            events = la_ev
+                            methods.append(f"LivingArts ({len(events)})")
+                            print(f"[LivingArts] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        jp_ev, jp_detected = asyncio.run(extract_jenks_planetarium_events(html, name, url, True))
+                        if jp_detected and jp_ev:
+                            events = jp_ev
+                            methods.append(f"JenksPlanetarium ({len(events)})")
+                            print(f"[JenksPlanetarium] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        rp_ev, rp_detected = asyncio.run(extract_riverparks_events(html, name, url, True))
+                        if rp_detected and rp_ev:
+                            events = rp_ev
+                            methods.append(f"RiverParks ({len(events)})")
+                            print(f"[RiverParks] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        mcb_ev, mcb_detected = asyncio.run(extract_magic_city_books_events(html, name, url, True))
+                        if mcb_detected and mcb_ev:
+                            events = mcb_ev
+                            methods.append(f"MagicCityBooks ({len(events)})")
+                            print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, name, url, True))
+                        if spt_detected and spt_ev:
+                            events = spt_ev
+                            methods.append(f"SpotlightTheater ({len(events)})")
+                            print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
+
+                    if not events:
+                        mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, name, url, True))
+                        if mf_detected and mf_ev:
+                            events = mf_ev
+                            methods.append(f"TulsaMayfest ({len(events)})")
+                            print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
 
                     if not events:
                         events = extract_events_universal(html, url, name)
@@ -1178,7 +1722,7 @@ def register_routes(app):
                         db_saved = 0
                         for ev in events_to_post:
                             try:
-                                transformed = transform_event_for_backend(ev)
+                                transformed = transform_event_for_backend(ev, source_priority=source.get('priority'))
                                 # Ensure source fields are set
                                 if not transformed.get('source_url'):
                                     transformed['source_url'] = url

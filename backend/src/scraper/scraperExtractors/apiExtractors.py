@@ -70,28 +70,54 @@ def detect_eventcalendarapp(html: str, url: str = '') -> dict | None:
 
 
 async def fetch_eventcalendarapp_api(calendar_id: str, widget_uuid: str = None, max_pages: int = 50) -> list:
+    """
+    Fetch events from EventCalendarApp API.
+
+    The API stores events oldest-first. Passing inAdminPanel=true causes the
+    API to return the *current* page (events around today) instead of page 1
+    (which may be years in the past). We use this to find the start page, then
+    paginate forward to the last page to capture all upcoming events.
+    """
     all_events = []
-    page = 1
+
+    base_url = f"https://api.eventcalendarapp.com/events?id={calendar_id}"
+    if widget_uuid:
+        base_url += f"&widgetUuid={widget_uuid}"
+
     async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
-        while page <= max_pages:
-            url = f"https://api.eventcalendarapp.com/events?id={calendar_id}&page={page}"
-            if widget_uuid:
-                url += f"&widgetUuid={widget_uuid}"
+        # Step 1: hit inAdminPanel=true to get the current page number
+        try:
+            resp = await client.get(base_url + "&inAdminPanel=true")
+            resp.raise_for_status()
+            data = resp.json()
+            start_page = data.get('pages', {}).get('current', 1)
+            total_pages = data.get('pages', {}).get('total', 1)
+            # Collect events from this response too
+            all_events.extend(data.get('events', []))
+            print(f"[EventCalendarApp] Starting at page {start_page} of {total_pages}")
+        except Exception as e:
+            print(f"[EventCalendarApp] Failed to get start page: {e}")
+            start_page = 1
+            total_pages = max_pages
+
+        # Step 2: paginate forward from start_page+1 to end
+        page = start_page + 1
+        pages_fetched = 1
+        while page <= total_pages and pages_fetched < max_pages:
             try:
-                resp = await client.get(url)
+                resp = await client.get(base_url + f"&page={page}")
                 resp.raise_for_status()
                 data = resp.json()
                 events = data.get('events', [])
                 if not events:
                     break
                 all_events.extend(events)
-                pages = data.get('pages', {})
-                if page >= pages.get('total', 1):
-                    break
                 page += 1
+                pages_fetched += 1
             except Exception as e:
                 print(f"EventCalendarApp API error page {page}: {e}")
                 break
+
     return all_events
 
 
@@ -102,10 +128,8 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
 
     for raw in raw_events:
         title = raw.get('summary', '').strip()
-        if not title or title in seen:
+        if not title:
             continue
-        seen.add(title)
-
         start = raw.get('timezoneStart', '')
         end = raw.get('timezoneEnd', '')
 
@@ -118,9 +142,11 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
                 pass
 
         date_str = ''
+        date_key = start[:10] if start else ''
         if start:
             try:
                 dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                date_key = dt.strftime('%Y-%m-%d')
                 date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
                 if end:
                     end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
@@ -128,6 +154,11 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
                         date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
             except:
                 date_str = start
+
+        dedup_key = f"{title.lower()[:60]}|{date_key}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
 
         location = raw.get('location', {})
         venue = location.get('description', '') if isinstance(location, dict) else ''

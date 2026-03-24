@@ -414,29 +414,45 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
             if isinstance(api_data, list):
                 items = api_data
             elif isinstance(api_data, dict):
-                items = api_data.get('results', []) or api_data.get('performances', []) or api_data.get('events', [])
+                # /ticket/api/online/venues/{id} returns {performances: [...]} or
+                # {results: [...]} or top-level list under various keys
+                items = (api_data.get('performances') or
+                         api_data.get('results') or
+                         api_data.get('events') or
+                         api_data.get('performanceList') or
+                         api_data.get('data') or
+                         [])
+                # Some venue responses nest under a venue object
+                if not items and 'venue' in api_data:
+                    venue_obj = api_data['venue']
+                    if isinstance(venue_obj, dict):
+                        items = (venue_obj.get('performances') or
+                                 venue_obj.get('events') or [])
             else:
                 continue
 
             for perf in items:
                 if isinstance(perf, dict) and 'performance' in perf:
                     perf = perf['performance']
-                title = perf.get('name', '') or perf.get('title', '') or perf.get('performanceName', '')
+                title = (perf.get('name') or perf.get('title') or
+                         perf.get('performanceName') or perf.get('eventName') or '')
                 if not title:
                     continue
-                date_str = perf.get('performanceDate', '') or perf.get('date', '') or perf.get('startDate', '')
-                time_str = perf.get('performanceTime', '') or perf.get('time', '') or perf.get('startTime', '')
+                date_str = (perf.get('performanceDate') or perf.get('date') or
+                            perf.get('startDate') or perf.get('eventDate') or '')
+                time_str = (perf.get('performanceTime') or perf.get('time') or
+                            perf.get('startTime') or perf.get('eventTime') or '')
                 if date_str and time_str:
                     date_str = f"{date_str} {time_str}"
-                perf_id = perf.get('performanceID', '') or perf.get('id', '')
+                perf_id = perf.get('performanceID') or perf.get('id') or perf.get('performanceId') or ''
                 event_url = f"https://www.etix.com/ticket/p/{perf_id}" if perf_id else base_url
                 if event_url not in seen:
                     seen.add(event_url)
                     events.append({
                         'title': title, 'date': date_str, 'source_url': event_url,
                         'tickets_url': event_url, 'source': source_name,
-                        'venue': perf.get('venueName', '') or source_name,
-                        'image_url': perf.get('imageUrl', '') or perf.get('image', ''),
+                        'venue': (perf.get('venueName') or perf.get('venue') or source_name),
+                        'image_url': perf.get('imageUrl') or perf.get('image') or perf.get('imageURL') or '',
                     })
 
             if events:

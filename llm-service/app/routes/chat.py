@@ -42,7 +42,82 @@ async def get_user_profile(user_id: str):
         "recent_interactions": []
     }
 
-async def execute_search_events(args: dict, user_profile: dict = None):
+async def execute_search_places(args: dict):
+    """
+    Executes the search_places tool by calling places_nearby() in Supabase.
+    Returns bars, restaurants, etc. near a given lat/lng.
+    """
+    lat          = args.get("lat")
+    lng          = args.get("lng")
+    place_type   = args.get("place_type")
+    radius_miles = args.get("radius_miles", 0.5)
+
+    if not lat or not lng:
+        return {"error": "lat and lng are required"}
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_KEY", "")
+
+    if not supabase_url or not supabase_key:
+        return {"error": "Supabase not configured"}
+
+    # Build the PostgREST RPC call to places_nearby()
+    params = {
+        "lat":          lat,
+        "lng":          lng,
+        "radius_miles": min(float(radius_miles), 2.0),  # cap at 2 miles
+    }
+
+    headers = {
+        "apikey":        supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type":  "application/json",
+    }
+
+    print(f"DEBUG: Calling places_nearby({lat}, {lng}, {radius_miles}mi) type={place_type}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{supabase_url}/rest/v1/rpc/places_nearby",
+                json=params,
+                headers=headers,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            places = resp.json()
+
+        # Filter by place_type if specified
+        if place_type:
+            places = [p for p in places if p.get("place_type") == place_type]
+
+        # Simplify for Gemini context (keep it lean)
+        simplified = []
+        for p in places[:8]:
+            price = p.get("price_level")
+            price_str = "$" * price if price else None
+            simplified.append({
+                "name":          p.get("name"),
+                "type":          p.get("place_type"),
+                "address":       p.get("address"),
+                "neighborhood":  p.get("neighborhood"),
+                "distance":      f"{p.get('distance_miles')} miles",
+                "price":         price_str,
+                "rating":        p.get("rating"),
+                "tags":          p.get("tags", []),
+                "description":   p.get("description"),
+                "website":       p.get("website"),
+                "google_maps":   p.get("google_maps_url"),
+            })
+
+        return {"places": simplified, "count": len(simplified)}
+
+    except Exception as e:
+        print(f"DEBUG: places_nearby error: {e}")
+        return {"error": str(e)}
+
+
+async def execute_search_events(args: dict):
     """Executes the search_events tool by calling the backend API."""
     # Pad bare dates (YYYY-MM-DD) to full ISO 8601 with Central Time offset.
     # Tulsa is UTC-6 (CST), so "Feb 27" in Central = Feb 27 06:00 UTC to Feb 28 06:00 UTC.
@@ -144,7 +219,8 @@ async def chat_with_tully(request: ChatRequest):
             return await execute_search_events(args, user_profile)
 
         tool_functions = {
-            "search_events": search_with_profile
+            "search_events":  execute_search_events,
+            "search_places":  execute_search_places,
         }
 
         # Limit history to last 15 turns to prevent context exhaustion
