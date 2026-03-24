@@ -279,6 +279,7 @@ const transformBackendEvents = (events) => {
         venue_address: event.venue_address,
         venue_website: event.venue_website,
         venue_priority: event.venue_priority ?? 3,
+        categories: event.categories || [],
         imageUrl: event.image_url || getDefaultImage(event.categories, event.title, event.description),
         vibe_tags: mapCategoriesToVibes(event.categories, event.title, event.description),
         original_url: (() => {
