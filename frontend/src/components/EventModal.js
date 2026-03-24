@@ -8,11 +8,25 @@
  * - onClose: Function called when modal should close
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
+import { recordInteraction } from '../services/api';
 
 const EventModal = ({ event, onClose }) => {
+    // Record 'viewed' interaction when modal opens
+    useEffect(() => {
+        if (event && event.id) {
+            console.log(`[DEBUG] EventModal viewed: ${event.id}`);
+            recordInteraction(
+                event.id, 
+                'clicked', 
+                event.categories?.[0] || event.category, 
+                event.venue || event.location
+            );
+        }
+    }, [event]);
+
     // Don't render if no event selected
     if (!event) return null;
 

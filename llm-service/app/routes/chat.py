@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services import gemini
+from app.services import gemini, ranking
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
@@ -20,14 +20,26 @@ async def get_user_profile(user_id: str):
         try:
             response = await client.get(f"{BACKEND_URL}/api/users/{user_id}/profile")
             if response.status_code == 200:
-                return response.json()
-        except Exception:
+                profile_data = response.json()
+                print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
+                return profile_data
+            else:
+                print(f"DEBUG: Backend returned {response.status_code} for user {user_id} profile")
+        except Exception as e:
+            print(f"DEBUG: Failed to load profile for {user_id}: {e}")
             pass
+
     # Fallback default profile
+    print(f"DEBUG: Using fallback profile for user {user_id}")
     return {
-        "id": user_id,
-        "location_preference": "Tulsa",
-        "family_friendly_only": False
+        "user": {
+            "id": user_id,
+            "location_preference": "Tulsa",
+            "family_friendly_only": False,
+            "email": "guest@locate918.com"
+        },
+        "preferences": [],
+        "recent_interactions": []
     }
 
 async def execute_search_places(args: dict):
@@ -134,6 +146,10 @@ async def execute_search_events(args: dict):
             if response.status_code == 200:
                 events = response.json()
 
+                # Rank events based on user profile if available
+                if user_profile:
+                    events = ranking.rank_events(events, user_profile)
+
                 # Simplify event data to save tokens and avoid 429 errors
                 simplified_events = []
                 for e in events[:8]:  # Limit to 8 events
@@ -198,7 +214,10 @@ async def chat_with_tully(request: ChatRequest):
     try:
         user_profile = await get_user_profile(request.user_id)
 
-        # Define tools available to Gemini
+        # Define tools available to Gemini with user profile context for ranking
+        async def search_with_profile(args: dict):
+            return await execute_search_events(args, user_profile)
+
         tool_functions = {
             "search_events":  execute_search_events,
             "search_places":  execute_search_places,

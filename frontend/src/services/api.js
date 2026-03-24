@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabaseClient";
 // Backend URLs - adjust based on environment
 // CRA uses process.env.REACT_APP_*
 const RUST_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
+const BACKEND_URL = RUST_BACKEND_URL;
 const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localhost:8001";
 
 // Set to false to use real APIs
@@ -114,8 +115,41 @@ const authedFetch = async (url, options = {}) => {
 // =============================================================================
 
 /**
+ * Record a user interaction with an event.
+ * Types: 'clicked', 'saved', 'attended', 'dismissed'
+ */
+export const recordInteraction = async (eventId, interactionType, eventCategory = null, eventVenue = null) => {
+    if (USE_MOCKS) {
+        console.log("[MOCK] Interaction recorded:", { eventId, interactionType, eventCategory, eventVenue });
+        return true;
+    }
+
+    try {
+        console.log(`[DEBUG] Recording interaction: ${interactionType} on ${eventId}`);
+        const response = await authedFetch(`${BACKEND_URL}/api/users/me/interactions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event_id: eventId,
+                interaction_type: interactionType,
+                event_category: eventCategory,
+                event_venue: eventVenue
+            }),
+        });
+        
+        if (!response.ok) {
+            console.error(`[DEBUG] Failed to record interaction. Status: ${response.status}`);
+        }
+        
+        return response.ok;
+    } catch (err) {
+        console.error("Failed to record interaction:", err);
+        return false;
+    }
+};
+
+/**
  * Fetch all upcoming events from the backend.
- * Called on initial page load.
  */
 export const fetchEvents = async () => {
     if (USE_MOCKS) {
@@ -170,7 +204,7 @@ export const searchEvents = async (params = {}) => {
  * Smart search using natural language.
  * Parses query like "jazz concerts under $30" and returns matching events.
  */
-export const smartSearch = async (query) => {
+export const smartSearch = async (query, userId = null) => {
     if (USE_MOCKS) {
         return { events: getMockEvents(), parsed: { query } };
     }
@@ -179,7 +213,10 @@ export const smartSearch = async (query) => {
         const response = await authedFetch(`${LLM_SERVICE_URL}/api/search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query }),
+            body: JSON.stringify({ 
+                query,
+                userId: userId
+            }),
         });
 
         if (!response.ok) {
