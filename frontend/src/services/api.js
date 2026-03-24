@@ -479,3 +479,32 @@ const getMockChatResponse = (message) => {
         conversationId: "mock-" + Date.now(),
     };
 };
+// =============================================================================
+// INTERACTION TRACKING
+// =============================================================================
+
+/**
+ * Records a user interaction with an event (clicked, saved, dismissed).
+ * Posts to the backend interactions endpoint if the user is logged in.
+ * Silently no-ops if not authenticated or on error.
+ */
+export const recordInteraction = async (eventId, interactionType, eventCategory = null, eventVenue = null) => {
+    if (!eventId) return;
+    try {
+        const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_RUST_BACKEND_URL || '';
+        await fetch(`${BACKEND_URL}/api/interactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                event_id: eventId,
+                interaction_type: interactionType,
+                event_category: eventCategory,
+                event_venue: eventVenue,
+            }),
+        });
+    } catch (e) {
+        // Non-critical — swallow silently
+        console.debug('[recordInteraction] skipped:', e.message);
+    }
+};
