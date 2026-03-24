@@ -16,6 +16,7 @@
 import React from 'react';
 import { MapPin, Calendar, ExternalLink, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
+import { recordInteraction } from '../services/api';
 
 const EventCard = ({ event, onClick, index = 0 }) => {
     // Format date for display
@@ -27,9 +28,25 @@ const EventCard = ({ event, onClick, index = 0 }) => {
         })
         : 'Date TBA';
 
+    // Helper for recording interactions
+    const logClick = (type) => {
+        if (event.id) {
+            console.log(`[DEBUG] logClick called: ${type} for event ${event.id}`);
+            recordInteraction(
+                event.id, 
+                type, 
+                event.categories?.[0] || event.category, 
+                event.venue || event.location
+            );
+        } else {
+            console.warn("[DEBUG] logClick called but event.id is missing", event);
+        }
+    };
+
     // Handle "Info" click - open source URL in new tab
     const handleViewEvent = (e) => {
         e.stopPropagation(); // Don't trigger card onClick
+        logClick('clicked');
         if (event.original_url) {
             window.open(event.original_url, '_blank', 'noopener,noreferrer');
         }
@@ -38,6 +55,7 @@ const EventCard = ({ event, onClick, index = 0 }) => {
     // Handle "Venue" click - open venue website in new tab
     const handleVenueClick = (e) => {
         e.stopPropagation(); // Don't trigger card onClick
+        logClick('clicked');
         if (event.venue_website) {
             window.open(event.venue_website, '_blank', 'noopener,noreferrer');
         }
@@ -50,7 +68,11 @@ const EventCard = ({ event, onClick, index = 0 }) => {
 
     return (
         <div
-            onClick={() => onClick(event)}
+            onClick={() => {
+                // recordInteraction is now handled by EventModal when it opens
+                // logClick('clicked'); 
+                onClick(event);
+            }}
             className="group rounded-xl border border-white/5 hover:border-[#d4af37]/30 transition-all duration-500 cursor-pointer overflow-hidden flex flex-col h-full relative hover:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-2 animate-fade-up"
             style={{
                 backgroundColor: THEME.bgCard,

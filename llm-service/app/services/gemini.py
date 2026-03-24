@@ -110,7 +110,7 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.5-flash-lite',
+        model='gemini-3-flash-preview',
         contents=[base_prompt, message],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
@@ -146,6 +146,11 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     backend API on port 3000. You are NOT making things up — you are returning real scraped data.
     Never tell users you "can't access databases" or "don't have access to Supabase" — you DO 
     query the actual production database through your search_events tool.
+
+    You also have access to a `search_places` tool containing 500+ real bars, restaurants,
+    nightclubs, breweries, and cafes across the Tulsa metro — seeded from Google Places.
+    Use this whenever a user asks about drinks, dinner, nightlife, or anywhere to go before/after
+    an event. You MUST provide the venue's lat/lng coordinates to use it.
     
     GUIDELINES:
     1. **Search First**: Always use `search_events` to find real data before answering.
@@ -159,16 +164,39 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
        - "Family Fun" -> `family_friendly=True` is good, but also try `q="festival"`, `q="market"`, `q="zoo"`.
        - "Nightlife" -> `q="concert"`, `q="dj"`, `q="party"`, `q="cocktail"`.
        - "Chill" -> `q="acoustic"`, `q="poetry"`, `q="yoga"`.
-    5. **Links**: ALWAYS link the **Event Title** to the `source_url` if available. 
+    5. **Places (Bars & Restaurants)**: Use `search_places` whenever a user asks about:
+       - Where to get drinks, dinner, or food near an event
+       - Bars, restaurants, breweries, or nightlife near a venue
+       - A "date night" or "night out" that combines an event + food/drinks
+       - Anything to do before or after a show
+       To use it you need the venue's coordinates. Use these known coords for common venues:
+         - Cain's Ballroom: 36.1563, -95.9929
+         - BOK Center: 36.1540, -95.9944
+         - Tulsa Theater: 36.1557, -95.9882
+         - Circle Cinema: 36.1393, -95.9792
+         - Philbrook Museum: 36.1182, -95.9717
+         - Gathering Place: 36.1282, -95.9559
+         - Hard Rock Tulsa: 36.1887, -95.7449
+         - Brady Arts District (general): 36.1547, -95.9850
+         - Blue Dome District (general): 36.1450, -95.9950
+       For other venues, estimate from the address or use the neighborhood center.
+    6. **Links**: ALWAYS link the **Event Title** to the `source_url` if available. 
        If `source_url` is missing, use `venue_website`. Link the **Venue Name** to `venue_website` if available.
-    6. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
+       For places, link the place name to `website` or `google_maps` if available.
+    7. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
        The database stores times in UTC — convert by subtracting 6 hours (CST) or 5 hours (CDT).
        If a time seems wrong (e.g. midnight for a concert), note it may be estimated.
-    7. **Retry on Error**: If a search returns no results:
-       - **Do not give up immediately.**
-       - Try a broader search (remove categories, widen date range).
-       - Try a *different* keyword strategy (e.g. if "jazz" failed, try "music").
-       - Only say "I couldn't find anything" after trying at least 2 different search variations.
+    7. **Search Fallback Protocol (Strict)**: 
+       If a search returns 0 results, do NOT report failure until you have attempted these steps:
+       - **Step 1**: Remove specific category filters but keep keywords.
+       - **Step 2**: Remove keywords and search the Date Range globally.
+       - **Step 3**: Expand the date range by +/- 3 days.
+       - **Step 4**: If still 0 results, provide 2 "Evergreen" suggestions (e.g., Gathering Place, Philbrook Museum) based on the user's intent.
+    8. **Venue Proximity (The "Dinner & A Show" Rule)**: 
+       - When a user asks for restaurants near a venue, identify the venue's neighborhood first (e.g., "Since the Mabee Center is in South Tulsa...").
+       - Recommend at least 3 permanent restaurants in that specific area (e.g., near 71st/81st & Lewis for Mabee Center; near the Arts District for Cain's Ballroom). 
+       - DO NOT say "There are no restaurant events." Restaurants are businesses, not events.
+    9. **Links (Strict)**: You MUST ALWAYS link [Event Title](source_url) and [Venue Name](venue_website) without fail.
     
     RESPONSE FORMATTING (Markdown):
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
@@ -185,12 +213,12 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     - **No Events Found**: If the search returns nothing, try a broader search before giving up.
       If still nothing, suggest specific *evergreen* local activities relevant to their query 
       (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
-    - **Closing**: End with a helpful follow-up question (e.g., "Need a dinner recommendation nearby?" or "Want to see what's happening tomorrow instead?").
+    - **Closing**: End with a helpful follow-up question (e.g., "Want me to find bars nearby?", "Need a dinner spot close to the venue?", or "Want to see what's happening tomorrow instead?").
     """
 
     client = get_client()
     chat = client.aio.chats.create(
-        model='gemini-2.5-flash-lite',
+        model='gemini-3-flash-preview',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
             system_instruction=system_instruction
@@ -333,12 +361,34 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - Always resolve relative dates to actual ISO 8601 dates.
     
     CATEGORIZATION RULES:
-    - Assign AS MANY categories as possible based on the title, description, and venue.
-    - Use specific tags (e.g., "Rock", "Jazz", "Stand-up Comedy", "Yoga") AND broad categories (e.g., "Music", "Arts", "Health", "Nightlife").
-    - If an event is a concert, include "Music", the genre (e.g. "Country"), and "Concert".
-    - If an event is at a bar/brewery, include "Nightlife", "Drinks", "Social".
-    - If family friendly, include "Family", "Kids".
-    - Common categories to use: Music, Arts, Nightlife, Food, Drink, Family, Sports, Education, Business, Community, Festival, Market, Health, Comedy, Theatre.
+    You MUST only use categories from this exact canonical list. Do not invent new categories or use variations.
+
+    CANONICAL CATEGORIES (use these exact strings):
+      "Music"             — concerts, live bands, DJ sets, open mics, any live musical performance
+      "Comedy"            — stand-up comedy, improv, comedy shows, comedians performing live
+      "Arts & Theater"    — theater, ballet, dance, opera, symphony, orchestra, art exhibits, visual art, drag, circus
+      "Festival"          — multi-day festivals, street festivals, cultural celebrations, fairs with multiple activities (Rocklahoma, Oktoberfest, Mayfest, etc.)
+      "Film"              — movie screenings, film festivals, cinema events, documentaries
+      "Food & Drink"      — food tastings, cooking classes, brewery events, wine/beer/cocktail events, brunch series, food trucks, farmers markets
+      "Nightlife"         — bar events, club nights, DJ nights, 21+ events, late-night parties, happy hours, trivia nights
+      "Sports & Fitness"  — athletic events, races, cycling, yoga, fitness classes, spectator sports, recreational leagues
+      "Family"            — events explicitly for kids or families, all-ages events, storytime, children's programming
+      "Educational"       — lectures, workshops, library programs, museum programs, classes, seminars, book events
+      "Nature & Outdoors" — hiking, nature walks, outdoor recreation, park events (only if primarily outdoors)
+      "Community"         — nonprofit events, fundraisers, volunteer events, neighborhood gatherings, markets, vendor fairs, tradeshows
+
+    ASSIGNMENT RULES — these are non-negotiable:
+    - A comedian performing live → ["Comedy"] NEVER "Music" or "Arts & Theater"
+    - A concert or live band → ["Music"]
+    - A symphony, ballet, or opera → ["Arts & Theater"] NEVER "Music"
+    - A bar hosting live music → ["Music", "Nightlife"]
+    - A multi-day outdoor festival → ["Festival"]
+    - A food festival → ["Festival", "Food & Drink"]
+    - A library storytime → ["Family", "Educational"]
+    - A brewery trivia night → ["Nightlife", "Food & Drink"]
+    - An outdoor yoga class → ["Sports & Fitness", "Nature & Outdoors"]
+    - A farmers market → ["Community", "Food & Drink"]
+    - Assign 1-3 categories maximum. Do not pile on categories.
     
     OUTDOOR / FAMILY FRIENDLY RULES:
     - Set outdoor=true if the venue is a Park, Garden, Green, Amphitheater, Zoo, or if the description mentions "open air", "patio", "lawn".
@@ -370,7 +420,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.5-flash-lite',
+        model='gemini-2.5-pro',
         contents=[base_prompt, raw_content[:150000]],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"

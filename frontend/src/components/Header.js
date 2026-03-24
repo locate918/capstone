@@ -14,18 +14,18 @@ import headerImage from '../assets/header_bg.png';
 // =============================================================================
 
 const CATEGORIES = [
-    { id: "music", label: "Music", keywords: "music concert live band" },
-    { id: "nature", label: "Nature & Outdoors", keywords: "nature outdoor park hiking" },
-    { id: "educational", label: "Educational", keywords: "educational museum history lecture" },
-    { id: "film", label: "Film", keywords: "film movie cinema screening" },
-    { id: "art", label: "Arts & Culture", keywords: "art theater dance gallery performance" },
-    { id: "food", label: "Food & Drink", keywords: "food dining restaurant culinary" },
-    { id: "shopping", label: "Shopping & Markets", keywords: "shopping market fair expo tradeshow" },
-    { id: "pets", label: "Pets", keywords: "pet dog cat animal" },
-    { id: "fitness", label: "Fitness & Wellness", keywords: "fitness yoga workout gym wellness" },
-    { id: "comedy", label: "Comedy", keywords: "comedy comedian standup funny" },
-    { id: "family", label: "Family", keywords: "family kids children" },
-    { id: "sports", label: "Sports", keywords: "sports game tournament football basketball" },
+    { id: "music",      label: "Music",             keywords: "music concert live band" },
+    { id: "comedy",     label: "Comedy",             keywords: "comedy comedian standup funny" },
+    { id: "art",        label: "Arts & Theater",     keywords: "art theater dance ballet opera gallery performance" },
+    { id: "festival",   label: "Festival",           keywords: "festival fair outdoor celebration" },
+    { id: "film",       label: "Film",               keywords: "film movie cinema screening" },
+    { id: "food",       label: "Food & Drink",       keywords: "food dining restaurant beer wine cocktail brunch" },
+    { id: "nightlife",  label: "Nightlife",          keywords: "nightlife bar club dj party" },
+    { id: "sports",     label: "Sports & Fitness",   keywords: "sports fitness yoga workout cycling marathon game" },
+    { id: "family",     label: "Family",             keywords: "family kids children all ages storytime" },
+    { id: "educational",label: "Educational",        keywords: "educational museum history lecture workshop library" },
+    { id: "nature",     label: "Nature & Outdoors",  keywords: "nature outdoor park hiking trail garden" },
+    { id: "community",  label: "Community",          keywords: "community market vendor nonprofit fundraiser" },
 ];
 
 // =============================================================================
@@ -37,11 +37,11 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const selectedCategory = CATEGORIES.find(c =>
-        c.keywords.split(' ').some(kw => query.toLowerCase() === kw)
+        c.label.toLowerCase() === query.toLowerCase()
     );
 
     const handleCategorySelect = (category) => {
-        setQuery(category.keywords.split(' ')[0]);
+        setQuery(category.label);
         setIsDropdownOpen(false);
     };
 
@@ -202,7 +202,7 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
                                                     className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-all duration-200 ${selectedCategory?.id === category.id
                                                         ? 'bg-[#1f3a60] text-white'
                                                         : 'text-slate-300 hover:bg-[#1f3a60] hover:text-white'
-                                                        }`}
+                                                    }`}
                                                 >
                                                     <span className={`w-2 h-2 rounded-full ${selectedCategory?.id === category.id ? 'bg-[#d4af37]' : 'bg-slate-500'}`} />
                                                     <span>{category.label}</span>

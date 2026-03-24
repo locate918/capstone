@@ -13,6 +13,41 @@ const LLM_SERVICE_URL = process.env.REACT_APP_LLM_SERVICE_URL || "http://localho
 const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
 
 // =============================================================================
+// AGGREGATOR BLOCKLIST
+// =============================================================================
+
+/**
+ * Domains we treat as low-trust aggregators.
+ * Any event whose best known URL comes from one of these will have its
+ * original_url suppressed in the UI — the Venue button still works via
+ * venue_website, but the "Info / View Listing" button won't route users
+ * back to BIT / Visit Tulsa / Eventbrite.
+ */
+const AGGREGATOR_DOMAINS = [
+    'visittulsa.com',
+    'bit918.com',
+    'do918.com',
+    'eventbrite.com',
+    'eventbrite.co.uk',
+    'evbuc.com',
+    'allevents.in',
+    'events.com',
+    'eventful.com',
+    'meetup.com',
+    'facebook.com',
+];
+
+const isAggregatorUrl = (url) => {
+    if (!url) return false;
+    try {
+        const hostname = new URL(url).hostname.replace(/^www\./, '');
+        return AGGREGATOR_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+    } catch {
+        return false;
+    }
+};
+
+// =============================================================================
 // CATEGORY DEFINITIONS
 // =============================================================================
 
@@ -21,41 +56,41 @@ const USE_MOCKS = process.env.REACT_APP_USE_MOCKS === "true";
  * Each category has related terms that will map to it.
  */
 const CATEGORY_KEYWORDS = {
-    // Music / Live Music
-    music: ['music', 'concert', 'live music', 'band', 'singer', 'dj', 'jazz', 'rock', 'country', 'hip hop', 'rap', 'classical', 'orchestra', 'symphony', 'choir', 'karaoke', 'open mic', 'acoustic', 'blues', 'folk', 'indie', 'metal', 'punk', 'edm', 'electronic', 'r&b', 'soul', 'gospel', 'reggae'],
+    // Music — live performances, concerts, bands, DJ sets
+    music: ['music', 'concert', 'live music', 'band', 'singer', 'dj', 'jazz', 'rock', 'country', 'hip hop', 'rap', 'classical', 'orchestra', 'choir', 'karaoke', 'open mic', 'acoustic', 'blues', 'folk', 'indie', 'metal', 'punk', 'edm', 'electronic', 'r&b', 'soul', 'gospel', 'reggae', 'bluegrass', 'tribute'],
 
-    // Nature / Outdoors
-    nature: ['nature', 'outdoor', 'outdoors', 'park', 'garden', 'hiking', 'trail', 'camping', 'wildlife', 'bird', 'fishing', 'lake', 'river', 'kayak', 'canoe', 'botanical', 'zoo', 'aquarium', 'farm', 'ranch', 'picnic', 'bbq', 'barbecue'],
+    // Comedy — stand-up, improv, sketch, comedy shows
+    comedy: ['comedy', 'comedian', 'stand-up', 'standup', 'improv', 'sketch', 'funny', 'humor', 'laugh', 'comic', 'roast'],
 
-    // Educational / History
-    educational: ['educational', 'education', 'history', 'historical', 'museum', 'lecture', 'workshop', 'class', 'seminar', 'tour', 'exhibit', 'exhibition', 'science', 'library', 'book', 'reading', 'author', 'learning', 'school', 'university', 'college', 'heritage', 'culture', 'cultural'],
+    // Arts & Theater — theater, ballet, opera, symphony, visual arts, galleries
+    art: ['theater', 'theatre', 'ballet', 'opera', 'symphony', 'orchestra', 'dance', 'musical', 'play', 'gallery', 'exhibit', 'exhibition', 'painting', 'sculpture', 'photography', 'art show', 'performing arts', 'drag', 'burlesque', 'circus', 'magic'],
 
-    // Film / Movie
-    film: ['film', 'movie', 'cinema', 'screening', 'documentary', 'indie film', 'short film', 'film festival', 'drive-in', 'premiere', 'director', 'animation', 'animated'],
+    // Festival — multi-day or large outdoor celebrations
+    festival: ['festival', 'fest', 'oktoberfest', 'mayfest', 'rocklahoma', 'carnival', 'celebration', 'street festival', 'culture fest', 'block party', 'heritage', 'irish fest', 'tulsa tough'],
 
-    // Art / Performing Arts
-    art: ['art', 'arts', 'theater', 'theatre', 'dance', 'ballet', 'opera', 'musical', 'play', 'performance', 'performing', 'gallery', 'painting', 'sculpture', 'photography', 'craft', 'pottery', 'drawing', 'illustration', 'design', 'fashion', 'drag', 'burlesque', 'circus', 'magic', 'improv', 'sketch'],
+    // Film — movies, screenings, cinema events
+    film: ['film', 'movie', 'cinema', 'screening', 'documentary', 'indie film', 'film festival', 'drive-in', 'premiere'],
 
-    // Food
-    food: ['food', 'dining', 'restaurant', 'culinary', 'chef', 'cooking', 'tasting', 'wine', 'beer', 'brewery', 'distillery', 'cocktail', 'brunch', 'dinner', 'lunch', 'breakfast', 'foodie', 'food truck', 'farmers market', 'baking', 'dessert', 'chocolate', 'coffee', 'tea'],
+    // Food & Drink — food events, tastings, dining, brewery, wine, cocktails
+    food: ['food', 'dining', 'restaurant', 'culinary', 'chef', 'cooking', 'tasting', 'wine', 'beer', 'brewery', 'distillery', 'cocktail', 'brunch', 'dinner', 'food truck', 'farmers market', 'baking', 'dessert', 'coffee', 'whiskey', 'spirits'],
 
-    // Shopping / Tradeshows
-    shopping: ['shopping', 'market', 'tradeshow', 'trade show', 'expo', 'fair', 'bazaar', 'flea market', 'antique', 'vintage', 'craft fair', 'artisan', 'vendor', 'sale', 'auction', 'collectible', 'handmade', 'boutique', 'pop-up', 'popup'],
+    // Nightlife — bar events, club nights, late-night, 21+
+    nightlife: ['nightlife', 'bar', 'club night', 'dj set', 'dance party', 'late night', '21+', 'lounge', 'happy hour', 'trivia night', 'pub crawl', 'karaoke night'],
 
-    // Pets
-    pets: ['pet', 'pets', 'dog', 'cat', 'animal', 'adoption', 'rescue', 'veterinary', 'grooming', 'training', 'kennel', 'shelter', 'puppy', 'kitten', 'horse', 'equestrian', 'bird', 'reptile'],
+    // Sports & Fitness — athletic events, fitness classes, races, games
+    sports: ['sport', 'sports', 'game', 'match', 'tournament', 'league', 'football', 'basketball', 'baseball', 'soccer', 'hockey', 'wrestling', 'boxing', 'mma', 'racing', 'cycling', 'bike', 'run', 'marathon', '5k', '10k', 'yoga', 'fitness', 'workout', 'gym', 'pilates', 'wellness', 'meditation', 'swim', 'tennis', 'golf', 'rodeo', 'esports'],
 
-    // Fitness
-    fitness: ['fitness', 'workout', 'exercise', 'gym', 'yoga', 'pilates', 'crossfit', 'running', 'marathon', '5k', '10k', 'cycling', 'bike', 'swim', 'swimming', 'tennis', 'golf', 'wellness', 'health', 'meditation', 'mindfulness', 'spin', 'aerobics', 'zumba', 'bootcamp'],
+    // Family — kids/all-ages events, storytime, children's programming
+    family: ['family', 'kid', 'kids', 'children', 'child', 'all ages', 'youth', 'teen', 'toddler', 'baby', 'storytime', 'puppet', 'playground', 'family-friendly'],
 
-    // Comedy
-    comedy: ['comedy', 'comedian', 'stand-up', 'standup', 'improv', 'sketch', 'funny', 'humor', 'laugh', 'comic', 'roast', 'open mic comedy'],
+    // Educational — lectures, workshops, library programs, museums
+    educational: ['educational', 'education', 'history', 'historical', 'museum', 'lecture', 'workshop', 'class', 'seminar', 'tour', 'exhibit', 'science', 'library', 'book', 'reading', 'author', 'learning', 'school', 'university', 'heritage'],
 
-    // Family
-    family: ['family', 'kid', 'kids', 'children', 'child', 'family-friendly', 'all ages', 'youth', 'teen', 'toddler', 'baby', 'parent', 'carnival', 'festival', 'fair', 'playground', 'storytime', 'puppet', 'magic show'],
+    // Nature & Outdoors — parks, hiking, wildlife, outdoor recreation
+    nature: ['nature', 'outdoor', 'outdoors', 'park', 'garden', 'hiking', 'trail', 'camping', 'wildlife', 'bird', 'fishing', 'lake', 'river', 'kayak', 'botanical', 'zoo', 'aquarium', 'farm', 'ranch', 'picnic'],
 
-    // Sports
-    sports: ['sport', 'sports', 'game', 'match', 'tournament', 'league', 'football', 'basketball', 'baseball', 'soccer', 'hockey', 'wrestling', 'boxing', 'mma', 'ufc', 'racing', 'nascar', 'rodeo', 'bull riding', 'esports', 'gaming', 'poker', 'volleyball', 'softball', 'lacrosse']
+    // Community — markets, nonprofits, fundraisers, neighborhood events
+    community: ['community', 'market', 'vendor', 'nonprofit', 'fundraiser', 'charity', 'volunteer', 'neighborhood', 'tradeshow', 'expo', 'bazaar', 'flea market', 'antique', 'artisan', 'craft fair', 'pop-up', 'handmade', 'auction'],
 };
 
 // Attach Supabase access token when available so backend can verify identity.
@@ -88,8 +123,8 @@ export const fetchEvents = async () => {
     }
 
     try {
-        // Request up to 1000 events (backend max)
-        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events?limit=1000`);
+        // Request up to 2000 events (backend max)
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/events?limit=2000`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -159,7 +194,7 @@ export const smartSearch = async (query) => {
     } catch (error) {
         console.error("Smart search failed:", error);
         // Fallback to basic search
-        return { events: await searchEvents({ q: query }), parsed: { query } };
+        return { events: await searchEvents({ q: query, limit: 500 }), parsed: { query } };
     }
 };
 
@@ -243,9 +278,17 @@ const transformBackendEvents = (events) => {
         location: event.venue || event.location || "TBA",
         venue_address: event.venue_address,
         venue_website: event.venue_website,
+        venue_priority: event.venue_priority ?? 3,
+        categories: event.categories || [],
         imageUrl: event.image_url || getDefaultImage(event.categories, event.title, event.description),
         vibe_tags: mapCategoriesToVibes(event.categories, event.title, event.description),
-        original_url: event.source_url,
+        original_url: (() => {
+            // Prefer canonical_url (set only by direct venue/ticketing sources).
+            // Fall back to source_url. Suppress entirely if the best URL we have
+            // is still an aggregator — the Venue button covers that case.
+            const best = event.canonical_url || event.source_url;
+            return isAggregatorUrl(best) ? null : best;
+        })(),
         originalSource: event.source_name,
         price_min: event.price_min,
         price_max: event.price_max,
@@ -331,18 +374,18 @@ const mapCategoriesToVibes = (categories, title = '', description = '') => {
  */
 const formatCategoryLabel = (category) => {
     const labels = {
-        music: "Music",
-        nature: "Nature & Outdoors",
+        music:       "Music",
+        comedy:      "Comedy",
+        art:         "Arts & Theater",
+        festival:    "Festival",
+        film:        "Film",
+        food:        "Food & Drink",
+        nightlife:   "Nightlife",
+        sports:      "Sports & Fitness",
+        family:      "Family",
         educational: "Educational",
-        film: "Film",
-        art: "Arts & Culture",
-        food: "Food & Drink",
-        shopping: "Shopping & Markets",
-        pets: "Pets",
-        fitness: "Fitness & Wellness",
-        comedy: "Comedy",
-        family: "Family",
-        sports: "Sports"
+        nature:      "Nature & Outdoors",
+        community:   "Community",
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
 };
@@ -436,4 +479,33 @@ const getMockChatResponse = (message) => {
         events: getMockEvents(),
         conversationId: "mock-" + Date.now(),
     };
+};
+// =============================================================================
+// INTERACTION TRACKING
+// =============================================================================
+
+/**
+ * Records a user interaction with an event (clicked, saved, dismissed).
+ * Posts to the backend interactions endpoint if the user is logged in.
+ * Silently no-ops if not authenticated or on error.
+ */
+export const recordInteraction = async (eventId, interactionType, eventCategory = null, eventVenue = null) => {
+    if (!eventId) return;
+    try {
+        const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_RUST_BACKEND_URL || '';
+        await fetch(`${BACKEND_URL}/api/interactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                event_id: eventId,
+                interaction_type: interactionType,
+                event_category: eventCategory,
+                event_venue: eventVenue,
+            }),
+        });
+    } catch (e) {
+        // Non-critical — swallow silently
+        console.debug('[recordInteraction] skipped:', e.message);
+    }
 };

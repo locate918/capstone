@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import ChatRequest, ChatResponse
-from app.services import gemini
+from app.services import gemini, ranking
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
@@ -20,15 +20,102 @@ async def get_user_profile(user_id: str):
         try:
             response = await client.get(f"{BACKEND_URL}/api/users/{user_id}/profile")
             if response.status_code == 200:
-                return response.json()
-        except Exception:
+                profile_data = response.json()
+                print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
+                return profile_data
+            else:
+                print(f"DEBUG: Backend returned {response.status_code} for user {user_id} profile")
+        except Exception as e:
+            print(f"DEBUG: Failed to load profile for {user_id}: {e}")
             pass
+
     # Fallback default profile
+    print(f"DEBUG: Using fallback profile for user {user_id}")
     return {
-        "id": user_id,
-        "location_preference": "Tulsa",
-        "family_friendly_only": False
+        "user": {
+            "id": user_id,
+            "location_preference": "Tulsa",
+            "family_friendly_only": False,
+            "email": "guest@locate918.com"
+        },
+        "preferences": [],
+        "recent_interactions": []
     }
+
+async def execute_search_places(args: dict):
+    """
+    Executes the search_places tool by calling places_nearby() in Supabase.
+    Returns bars, restaurants, etc. near a given lat/lng.
+    """
+    lat          = args.get("lat")
+    lng          = args.get("lng")
+    place_type   = args.get("place_type")
+    radius_miles = args.get("radius_miles", 0.5)
+
+    if not lat or not lng:
+        return {"error": "lat and lng are required"}
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_KEY", "")
+
+    if not supabase_url or not supabase_key:
+        return {"error": "Supabase not configured"}
+
+    # Build the PostgREST RPC call to places_nearby()
+    params = {
+        "lat":          lat,
+        "lng":          lng,
+        "radius_miles": min(float(radius_miles), 2.0),  # cap at 2 miles
+    }
+
+    headers = {
+        "apikey":        supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type":  "application/json",
+    }
+
+    print(f"DEBUG: Calling places_nearby({lat}, {lng}, {radius_miles}mi) type={place_type}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{supabase_url}/rest/v1/rpc/places_nearby",
+                json=params,
+                headers=headers,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            places = resp.json()
+
+        # Filter by place_type if specified
+        if place_type:
+            places = [p for p in places if p.get("place_type") == place_type]
+
+        # Simplify for Gemini context (keep it lean)
+        simplified = []
+        for p in places[:8]:
+            price = p.get("price_level")
+            price_str = "$" * price if price else None
+            simplified.append({
+                "name":          p.get("name"),
+                "type":          p.get("place_type"),
+                "address":       p.get("address"),
+                "neighborhood":  p.get("neighborhood"),
+                "distance":      f"{p.get('distance_miles')} miles",
+                "price":         price_str,
+                "rating":        p.get("rating"),
+                "tags":          p.get("tags", []),
+                "description":   p.get("description"),
+                "website":       p.get("website"),
+                "google_maps":   p.get("google_maps_url"),
+            })
+
+        return {"places": simplified, "count": len(simplified)}
+
+    except Exception as e:
+        print(f"DEBUG: places_nearby error: {e}")
+        return {"error": str(e)}
+
 
 async def execute_search_events(args: dict):
     """Executes the search_events tool by calling the backend API."""
@@ -58,6 +145,10 @@ async def execute_search_events(args: dict):
             response = await client.get(f"{BACKEND_URL}/api/events/search", params=params)
             if response.status_code == 200:
                 events = response.json()
+
+                # Rank events based on user profile if available
+                if user_profile:
+                    events = ranking.rank_events(events, user_profile)
 
                 # Simplify event data to save tokens and avoid 429 errors
                 simplified_events = []
@@ -123,9 +214,13 @@ async def chat_with_tully(request: ChatRequest):
     try:
         user_profile = await get_user_profile(request.user_id)
 
-        # Define tools available to Gemini
+        # Define tools available to Gemini with user profile context for ranking
+        async def search_with_profile(args: dict):
+            return await execute_search_events(args, user_profile)
+
         tool_functions = {
-            "search_events": execute_search_events
+            "search_events":  execute_search_events,
+            "search_places":  execute_search_places,
         }
 
         # Limit history to last 15 turns to prevent context exhaustion

@@ -288,8 +288,57 @@ async def fetch_with_playwright(url: str) -> str:
                 except Exception:
                     pass  # Not a TNEW site, silently continue
 
+        # ── WordPress / Tribe Events Calendar pagination ──
+        # Tribe paginates via /events/page/2/, /events/page/3/ etc.
+        # Follow next-page links up to MAX_PAGES and concatenate all HTML.
+        MAX_TRIBE_PAGES = 5
+        all_html_parts = []
+        current_html = await page.content()
+        all_html_parts.append(current_html)
+
+        from bs4 import BeautifulSoup as _BS4
+        for _pg in range(2, MAX_TRIBE_PAGES + 1):
+            try:
+                _soup = _BS4(current_html, 'html.parser')
+                # Tribe next-page link selectors
+                next_link = (
+                        _soup.select_one('a.tribe-events-nav-next') or
+                        _soup.select_one('a[rel="next"]') or
+                        _soup.select_one('.tribe-events-c-nav__next a') or
+                        _soup.select_one('a.next.page-numbers')
+                )
+                if not next_link or not next_link.get('href'):
+                    break
+                next_url = next_link['href']
+                # Sanity check — must be on same domain
+                from urllib.parse import urlparse as _urlparse
+                if _urlparse(next_url).netloc and _urlparse(next_url).netloc != _urlparse(url).netloc:
+                    break
+                print(f"[Pagination] Following page {_pg}: {next_url}")
+                try:
+                    await page.goto(next_url, wait_until="domcontentloaded", timeout=20000)
+                except:
+                    await page.goto(next_url, timeout=20000)
+                await page.wait_for_timeout(2500)
+                current_html = await page.content()
+                all_html_parts.append(current_html)
+            except Exception as _pe:
+                print(f"[Pagination] Stopped at page {_pg}: {_pe}")
+                break
+
+        if len(all_html_parts) > 1:
+            print(f"[Pagination] Fetched {len(all_html_parts)} pages total")
+            # Combine: keep first page head/body wrapper, append inner bodies from extras
+            combined = all_html_parts[0]
+            for _extra in all_html_parts[1:]:
+                _s = _BS4(_extra, 'html.parser')
+                _body = _s.find('body')
+                combined += f"\n<!-- PAGINATION_PAGE -->\n{str(_body) if _body else _extra}"
+        else:
+            combined = all_html_parts[0]
+
         # ── Collect HTML and inject captured API data ──
-        html = await page.content()
+        html = combined
 
         if etix_api_data:
             html += "\n<!-- ETIX_API_DATA -->\n"
