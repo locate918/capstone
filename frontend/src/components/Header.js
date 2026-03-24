@@ -37,11 +37,11 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const selectedCategory = CATEGORIES.find(c =>
-        c.keywords.split(' ').some(kw => query.toLowerCase() === kw)
+        c.label.toLowerCase() === query.toLowerCase()
     );
 
     const handleCategorySelect = (category) => {
-        setQuery(category.keywords.split(' ')[0]);
+        setQuery(category.label);
         setIsDropdownOpen(false);
     };
 

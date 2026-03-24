@@ -321,19 +321,32 @@ export default function App() {
     const filteredEvents = useMemo(() => {
         let filtered = Array.isArray(events) ? events : [];
 
-        // Apply search filter if query exists
         if (debouncedQuery) {
             const searchStr = debouncedQuery.toLowerCase();
-            filtered = filtered.filter(e =>
-                e.title?.toLowerCase().includes(searchStr) ||
-                e.description?.toLowerCase().includes(searchStr) ||
-                e.venue?.toLowerCase().includes(searchStr) ||
-                e.source_name?.toLowerCase().includes(searchStr) ||
-                e.categories?.some(c => c.toLowerCase().includes(searchStr)) ||
-                e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
-                e.summary?.toLowerCase().includes(searchStr) ||
-                e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
-            );
+
+            const CATEGORY_LABELS = [
+                'music', 'comedy', 'arts & theater', 'festival', 'film',
+                'food & drink', 'nightlife', 'sports & fitness', 'family',
+                'educational', 'nature & outdoors', 'community'
+            ];
+            const isCategoryFilter = CATEGORY_LABELS.includes(searchStr);
+
+            if (isCategoryFilter) {
+                filtered = filtered.filter(e =>
+                    e.categories?.some(c => c.toLowerCase() === searchStr)
+                );
+            } else {
+                filtered = filtered.filter(e =>
+                    e.title?.toLowerCase().includes(searchStr) ||
+                    e.description?.toLowerCase().includes(searchStr) ||
+                    e.venue?.toLowerCase().includes(searchStr) ||
+                    e.source_name?.toLowerCase().includes(searchStr) ||
+                    e.categories?.some(c => c.toLowerCase().includes(searchStr)) ||
+                    e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
+                    e.summary?.toLowerCase().includes(searchStr) ||
+                    e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
+                );
+            }
         }
 
         return filtered;
