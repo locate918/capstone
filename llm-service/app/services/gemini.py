@@ -106,7 +106,7 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.5-flash-lite',
+        model='gemini-3-flash-preview',
         contents=[base_prompt, message],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
@@ -191,7 +191,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
 
     client = get_client()
     chat = client.aio.chats.create(
-        model='gemini-2.5-flash',
+        model='gemini-3-flash-preview',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
             system_instruction=system_instruction
@@ -385,7 +385,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.5-flash-lite',
+        model='gemini-2.5-pro',
         contents=[base_prompt, raw_content[:150000]],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"

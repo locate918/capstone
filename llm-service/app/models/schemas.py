@@ -84,3 +84,4 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     message: Optional[str] = None
     tool_call: Optional[Dict[str, Any]] = None
+
