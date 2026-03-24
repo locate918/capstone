@@ -13,7 +13,7 @@
  *    - Pagination
  * 4. Event Modal (overlay for event details)
  *
- * STATE:
+ * STATE: for git
  * - events: Array of event objects from API
  * - loading: Boolean for loading state
  * - query: Search query string
