@@ -57,19 +57,6 @@ from scraperExtractors import (
     extract_hardrock_tulsa_events,
     extract_gypsy_events,
     extract_badass_renees_events,
-    extract_bricktown_comedy_events,
-    extract_loonybin_events,
-    extract_rhp_events,
-    extract_church_studio_events,
-    extract_carneyfest_events,
-    extract_maggies_events,
-    extract_route66_village_events,
-    extract_living_arts_events,
-    extract_jenks_planetarium_events,
-    extract_riverparks_events,
-    extract_magic_city_books_events,
-    extract_spotlight_theater_events,
-    extract_tulsamayfest_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -238,6 +225,14 @@ HTML_TEMPLATE = '''
                     <label>Source Name</label>
                     <input type="text" id="source" placeholder="Venue Name">
                 </div>
+                <div class="form-group" style="max-width: 140px;">
+                    <label>Venue Priority</label>
+                    <select id="venue-priority" style="width:100%;background:#1a1a1a;border:1px solid #333;color:#ccc;padding:8px 10px;border-radius:5px;font-size:13px;">
+                        <option value="1">P1 — Flagship</option>
+                        <option value="2" selected>P2 — Featured</option>
+                        <option value="3">P3 — Standard</option>
+                    </select>
+                </div>
             </div>
             <div class="checkbox-row">
                 <input type="checkbox" id="playwright" checked>
@@ -247,7 +242,7 @@ HTML_TEMPLATE = '''
             </div>
             <div class="btn-group">
                 <button class="btn btn-primary" id="scrape-btn" onclick="scrape()">Scrape</button>
-                <button class="btn btn-secondary" onclick="saveUrl()">Save URL</button>
+                <button class="btn btn-secondary" onclick="saveUrl()">Save Source</button>
             </div>
             <div id="status" class="status hidden"></div>
             <div id="log-box" class="log hidden"></div>
@@ -316,8 +311,9 @@ async function loadSaved() {
             return;
         }
         list.innerHTML = urls.map(function(u, i) {
+            var vp = u.venue_priority || 2;
             return "<div class=\\"source-chip\\" data-idx=\\"" + i + "\\" " +
-                "onclick=\\"selectSource(this,'" + esc(u.url) + "','" + esc(u.name) + "'," + (u.playwright !== false) + ")\\">" +
+                "onclick=\\"selectSource(this,'" + esc(u.url) + "','" + esc(u.name) + "'," + (u.playwright !== false) + "," + vp + ")\\">" +
                 "<span class=\\"name\\">" + u.name + "</span>" +
                 "<span class=\\"x\\" onclick=\\"event.stopPropagation();deleteUrl('" + esc(u.url) + "')\\">×</span>" +
                 "</div>";
@@ -327,13 +323,14 @@ async function loadSaved() {
 
 function esc(s) { return s.replace(/\\\\/g,"\\\\\\\\").replace(/'/g,"\\\\'"); }
 
-function selectSource(el, url, name, pw) {
+function selectSource(el, url, name, pw, vp) {
     document.querySelectorAll(".source-chip").forEach(function(c){ c.classList.remove("active"); });
     el.classList.add("active");
     activeChip = el;
     document.getElementById("url").value = url;
     document.getElementById("source").value = name;
     document.getElementById("playwright").checked = pw;
+    document.getElementById("venue-priority").value = vp || 2;
 }
 
 async function deleteUrl(url) {
@@ -349,14 +346,15 @@ async function saveUrl() {
     var url = document.getElementById("url").value.trim();
     var name = document.getElementById("source").value.trim();
     var pw = document.getElementById("playwright").checked;
+    var vp = parseInt(document.getElementById("venue-priority").value);
     if (!url || !name) { status("Enter a URL and source name", "error"); return; }
     try {
         await fetch("/saved-urls", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({url: url, name: name, playwright: pw})
+            body: JSON.stringify({url: url, name: name, playwright: pw, venue_priority: vp})
         });
-        status("Saved " + name, "success");
+        status("Saved " + name + " (P" + vp + ")", "success");
         loadSaved();
     } catch(e) { status("Save error: " + e.message, "error"); }
 }
@@ -518,6 +516,188 @@ async function scrapeAll() {
 
 loadSaved();
     </script>
+</body>
+</html>
+'''
+
+
+VENUE_PRIORITY_HTML = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Venue Priority — Locate918</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0d0d0d; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; }
+        .header { background: #111; border-bottom: 1px solid #222; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+        .header h1 { color: #D4AF37; font-size: 18px; font-weight: 700; }
+        .header a { color: #888; text-decoration: none; font-size: 12px; }
+        .header a:hover { color: #D4AF37; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+        .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+        .toolbar input { background: #1a1a1a; border: 1px solid #333; color: #ccc; padding: 8px 12px; border-radius: 6px; font-size: 13px; width: 260px; }
+        .toolbar input:focus { outline: none; border-color: #D4AF37; }
+        .filter-btns { display: flex; gap: 6px; }
+        .filter-btn { background: #1a1a1a; border: 1px solid #333; color: #888; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .filter-btn.active, .filter-btn:hover { border-color: #D4AF37; color: #D4AF37; }
+        .count { color: #555; font-size: 12px; margin-left: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        thead th { background: #161616; color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 12px; text-align: left; border-bottom: 1px solid #222; position: sticky; top: 0; }
+        tbody tr { border-bottom: 1px solid #1a1a1a; transition: background 0.15s; }
+        tbody tr:hover { background: #161616; }
+        td { padding: 10px 12px; vertical-align: middle; }
+        .venue-name { color: #e0e0e0; font-weight: 500; }
+        .venue-address { color: #555; font-size: 11px; margin-top: 2px; }
+        .website-link { color: #D4AF37; text-decoration: none; font-size: 11px; }
+        .website-link:hover { text-decoration: underline; }
+        .priority-cell { display: flex; gap: 6px; align-items: center; }
+        .p-btn { width: 32px; height: 28px; border-radius: 5px; border: 1px solid #333; background: #1a1a1a; color: #666; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.15s; }
+        .p-btn:hover { border-color: #888; color: #ccc; }
+        .p-btn.active-1 { background: #2a1f00; border-color: #D4AF37; color: #D4AF37; }
+        .p-btn.active-2 { background: #0d2a1a; border-color: #4CAF50; color: #4CAF50; }
+        .p-btn.active-3 { background: #1a1a2a; border-color: #5566aa; color: #7788cc; }
+        .saving { color: #888; font-size: 11px; margin-left: 6px; }
+        .saved-flash { color: #4CAF50; font-size: 11px; margin-left: 6px; }
+        .error-flash { color: #e74c3c; font-size: 11px; margin-left: 6px; }
+        .legend { display: flex; gap: 18px; margin-bottom: 16px; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap-6px; gap: 6px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot-1 { background: #D4AF37; }
+        .dot-2 { background: #4CAF50; }
+        .dot-3 { background: #5566aa; }
+        .loading { text-align: center; color: #555; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Venue Priority</h1>
+        <a href="/">← Scraper</a>
+    </div>
+    <div class="container">
+        <div class="legend">
+            <div class="legend-item"><div class="dot dot-1"></div> P1 Flagship — shown first in feed</div>
+            <div class="legend-item"><div class="dot dot-2"></div> P2 Featured — shown above P3</div>
+            <div class="legend-item"><div class="dot dot-3"></div> P3 Standard — libraries, restaurants, etc.</div>
+        </div>
+        <div class="toolbar">
+            <input type="text" id="search" placeholder="Search venues..." oninput="renderTable()">
+            <div class="filter-btns">
+                <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+                <button class="filter-btn" onclick="setFilter('1', this)">P1</button>
+                <button class="filter-btn" onclick="setFilter('2', this)">P2</button>
+                <button class="filter-btn" onclick="setFilter('3', this)">P3</button>
+            </div>
+            <span class="count" id="count"></span>
+        </div>
+        <div id="table-wrap">
+            <div class="loading">Loading venues...</div>
+        </div>
+    </div>
+
+<script>
+var allVenues = [];
+var activeFilter = 'all';
+
+async function loadVenues() {
+    try {
+        var r = await fetch('/api/venues/all');
+        allVenues = await r.json();
+        renderTable();
+    } catch(e) {
+        document.getElementById('table-wrap').innerHTML = '<div class="loading">Error loading venues: ' + e.message + '</div>';
+    }
+}
+
+function setFilter(f, btn) {
+    activeFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    renderTable();
+}
+
+function renderTable() {
+    var q = document.getElementById('search').value.toLowerCase();
+    var rows = allVenues.filter(function(v) {
+        var matchQ = !q || v.name.toLowerCase().includes(q) || (v.address||'').toLowerCase().includes(q);
+        var p = v.venue_priority || 3;
+        var matchF = activeFilter === 'all' || String(p) === activeFilter;
+        return matchQ && matchF;
+    });
+
+    document.getElementById('count').textContent = rows.length + ' venues';
+
+    if (!rows.length) {
+        document.getElementById('table-wrap').innerHTML = '<div class="loading">No venues match.</div>';
+        return;
+    }
+
+    var html = '<table><thead><tr>' +
+        '<th>Venue</th><th>Address</th><th>Website</th><th style="width:140px">Priority</th>' +
+        '</tr></thead><tbody>';
+
+    rows.forEach(function(v) {
+        var p = v.venue_priority || 3;
+        html += '<tr id="row-' + v.id + '">' +
+            '<td><div class="venue-name">' + esc(v.name) + '</div></td>' +
+            '<td><div class="venue-address">' + esc(v.address || '—') + '</div></td>' +
+            '<td>' + (v.website ? '<a class="website-link" href="' + esc(v.website) + '" target="_blank">' + esc(v.website.replace(/https?:\\/\\//, '').split('/')[0]) + '</a>' : '<span style="color:#444">—</span>') + '</td>' +
+            '<td><div class="priority-cell">' +
+                '<button class="p-btn ' + (p===1?'active-1':'') + '" onclick="setPriority(\'' + v.id + '\', 1, this)">P1</button>' +
+                '<button class="p-btn ' + (p===2?'active-2':'') + '" onclick="setPriority(\'' + v.id + '\', 2, this)">P2</button>' +
+                '<button class="p-btn ' + (p===3?'active-3':'') + '" onclick="setPriority(\'' + v.id + '\', 3, this)">P3</button>' +
+                '<span id="msg-' + v.id + '"></span>' +
+            '</div></td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('table-wrap').innerHTML = html;
+}
+
+async function setPriority(id, priority, btn) {
+    var msg = document.getElementById('msg-' + id);
+    msg.className = 'saving';
+    msg.textContent = '…';
+
+    // Optimistically update button styles
+    var row = document.getElementById('row-' + id);
+    row.querySelectorAll('.p-btn').forEach(function(b) {
+        b.classList.remove('active-1', 'active-2', 'active-3');
+    });
+    btn.classList.add('active-' + priority);
+
+    try {
+        var r = await fetch('/api/venues/set-priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id, venue_priority: priority})
+        });
+        var d = await r.json();
+        if (d.ok) {
+            // Update local data
+            var v = allVenues.find(function(x) { return x.id === id; });
+            if (v) v.venue_priority = priority;
+            msg.className = 'saved-flash';
+            msg.textContent = '✓';
+            setTimeout(function() { msg.textContent = ''; }, 1500);
+        } else {
+            msg.className = 'error-flash';
+            msg.textContent = 'Error';
+        }
+    } catch(e) {
+        msg.className = 'error-flash';
+        msg.textContent = 'Error';
+    }
+}
+
+function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+loadVenues();
+</script>
 </body>
 </html>
 '''
@@ -957,7 +1137,8 @@ def register_routes(app):
             data.get('url', ''),
             data.get('name', ''),
             data.get('playwright', True),
-            data.get('priority'),  # None → auto-detected from domain
+            data.get('priority'),        # None → auto-detected from domain
+            data.get('venue_priority'),  # None → auto-detected from venue name
         )
         return jsonify(urls)
 
@@ -1192,97 +1373,6 @@ def register_routes(app):
                     events = bar_ev
                     methods.append(f"BadAssRenees ({len(events)})")
                     print(f"[BadAssRenees] SUCCESS: {len(events)} events")
-
-            if not events:
-                bcc_ev, bcc_detected = asyncio.run(extract_bricktown_comedy_events(html, source_name, url, future_only))
-                if bcc_detected and bcc_ev:
-                    events = bcc_ev
-                    methods.append(f"BricktownComedy ({len(events)})")
-                    print(f"[BricktownComedy] SUCCESS: {len(events)} events")
-
-            if not events:
-                lb_ev, lb_detected = asyncio.run(extract_loonybin_events(html, source_name, url, future_only))
-                if lb_detected and lb_ev:
-                    events = lb_ev
-                    methods.append(f"LoonybinTulsa ({len(events)})")
-                    print(f"[LoonybinTulsa] SUCCESS: {len(events)} events")
-
-            if not events:
-                rhp_ev, rhp_detected = asyncio.run(extract_rhp_events(html, source_name, url, future_only))
-                if rhp_detected and rhp_ev:
-                    events = rhp_ev
-                    methods.append(f"RHPEvents ({len(events)})")
-                    print(f"[RHPEvents] SUCCESS: {len(events)} events")
-
-            if not events:
-                cs_ev, cs_detected = asyncio.run(extract_church_studio_events(html, source_name, url, future_only))
-                if cs_detected and cs_ev:
-                    events = cs_ev
-                    methods.append(f"ChurchStudio ({len(events)})")
-                    print(f"[ChurchStudio] SUCCESS: {len(events)} events")
-
-            if not events:
-                cf_ev, cf_detected = asyncio.run(extract_carneyfest_events(html, source_name, url, future_only))
-                if cf_detected and cf_ev:
-                    events = cf_ev
-                    methods.append(f"CarneyFest ({len(events)})")
-                    print(f"[CarneyFest] SUCCESS: {len(events)} events")
-
-            if not events:
-                mg_ev, mg_detected = asyncio.run(extract_maggies_events(html, source_name, url, future_only))
-                if mg_detected and mg_ev:
-                    events = mg_ev
-                    methods.append(f"MaggiesOK ({len(events)})")
-                    print(f"[MaggiesOK] SUCCESS: {len(events)} events")
-
-            if not events:
-                r66_ev, r66_detected = asyncio.run(extract_route66_village_events(html, source_name, url, future_only))
-                if r66_detected and r66_ev:
-                    events = r66_ev
-                    methods.append(f"Route66Village ({len(events)})")
-                    print(f"[Route66Village] SUCCESS: {len(events)} events")
-
-            if not events:
-                la_ev, la_detected = asyncio.run(extract_living_arts_events(html, source_name, url, future_only))
-                if la_detected and la_ev:
-                    events = la_ev
-                    methods.append(f"LivingArts ({len(events)})")
-                    print(f"[LivingArts] SUCCESS: {len(events)} events")
-
-            if not events:
-                jp_ev, jp_detected = asyncio.run(extract_jenks_planetarium_events(html, source_name, url, future_only))
-                if jp_detected and jp_ev:
-                    events = jp_ev
-                    methods.append(f"JenksPlanetarium ({len(events)})")
-                    print(f"[JenksPlanetarium] SUCCESS: {len(events)} events")
-
-            if not events:
-                rp_ev, rp_detected = asyncio.run(extract_riverparks_events(html, source_name, url, future_only))
-                if rp_detected and rp_ev:
-                    events = rp_ev
-                    methods.append(f"RiverParks ({len(events)})")
-                    print(f"[RiverParks] SUCCESS: {len(events)} events")
-
-            if not events:
-                mcb_ev, mcb_detected = asyncio.run(extract_magic_city_books_events(html, source_name, url, future_only))
-                if mcb_detected and mcb_ev:
-                    events = mcb_ev
-                    methods.append(f"MagicCityBooks ({len(events)})")
-                    print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
-
-            if not events:
-                spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, source_name, url, future_only))
-                if spt_detected and spt_ev:
-                    events = spt_ev
-                    methods.append(f"SpotlightTheater ({len(events)})")
-                    print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
-
-            if not events:
-                mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, source_name, url, future_only))
-                if mf_detected and mf_ev:
-                    events = mf_ev
-                    methods.append(f"TulsaMayfest ({len(events)})")
-                    print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
 
             if not events:
                 events = extract_events_universal(html, url, source_name)
@@ -1579,97 +1669,6 @@ def register_routes(app):
                             events = bar_ev
                             methods.append(f"BadAssRenees ({len(events)})")
                             print(f"[BadAssRenees] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        bcc_ev, bcc_detected = asyncio.run(extract_bricktown_comedy_events(html, name, url, True))
-                        if bcc_detected and bcc_ev:
-                            events = bcc_ev
-                            methods.append(f"BricktownComedy ({len(events)})")
-                            print(f"[BricktownComedy] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        lb_ev, lb_detected = asyncio.run(extract_loonybin_events(html, name, url, True))
-                        if lb_detected and lb_ev:
-                            events = lb_ev
-                            methods.append(f"LoonybinTulsa ({len(events)})")
-                            print(f"[LoonybinTulsa] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        rhp_ev, rhp_detected = asyncio.run(extract_rhp_events(html, name, url, True))
-                        if rhp_detected and rhp_ev:
-                            events = rhp_ev
-                            methods.append(f"RHPEvents ({len(events)})")
-                            print(f"[RHPEvents] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        cs_ev, cs_detected = asyncio.run(extract_church_studio_events(html, name, url, True))
-                        if cs_detected and cs_ev:
-                            events = cs_ev
-                            methods.append(f"ChurchStudio ({len(events)})")
-                            print(f"[ChurchStudio] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        cf_ev, cf_detected = asyncio.run(extract_carneyfest_events(html, name, url, True))
-                        if cf_detected and cf_ev:
-                            events = cf_ev
-                            methods.append(f"CarneyFest ({len(events)})")
-                            print(f"[CarneyFest] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        mg_ev, mg_detected = asyncio.run(extract_maggies_events(html, name, url, True))
-                        if mg_detected and mg_ev:
-                            events = mg_ev
-                            methods.append(f"MaggiesOK ({len(events)})")
-                            print(f"[MaggiesOK] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        r66_ev, r66_detected = asyncio.run(extract_route66_village_events(html, name, url, True))
-                        if r66_detected and r66_ev:
-                            events = r66_ev
-                            methods.append(f"Route66Village ({len(events)})")
-                            print(f"[Route66Village] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        la_ev, la_detected = asyncio.run(extract_living_arts_events(html, name, url, True))
-                        if la_detected and la_ev:
-                            events = la_ev
-                            methods.append(f"LivingArts ({len(events)})")
-                            print(f"[LivingArts] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        jp_ev, jp_detected = asyncio.run(extract_jenks_planetarium_events(html, name, url, True))
-                        if jp_detected and jp_ev:
-                            events = jp_ev
-                            methods.append(f"JenksPlanetarium ({len(events)})")
-                            print(f"[JenksPlanetarium] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        rp_ev, rp_detected = asyncio.run(extract_riverparks_events(html, name, url, True))
-                        if rp_detected and rp_ev:
-                            events = rp_ev
-                            methods.append(f"RiverParks ({len(events)})")
-                            print(f"[RiverParks] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        mcb_ev, mcb_detected = asyncio.run(extract_magic_city_books_events(html, name, url, True))
-                        if mcb_detected and mcb_ev:
-                            events = mcb_ev
-                            methods.append(f"MagicCityBooks ({len(events)})")
-                            print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        spt_ev, spt_detected = asyncio.run(extract_spotlight_theater_events(html, name, url, True))
-                        if spt_detected and spt_ev:
-                            events = spt_ev
-                            methods.append(f"SpotlightTheater ({len(events)})")
-                            print(f"[SpotlightTheater] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        mf_ev, mf_detected = asyncio.run(extract_tulsamayfest_events(html, name, url, True))
-                        if mf_detected and mf_ev:
-                            events = mf_ev
-                            methods.append(f"TulsaMayfest ({len(events)})")
-                            print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
 
                     if not events:
                         events = extract_events_universal(html, url, name)
@@ -2026,6 +2025,55 @@ def register_routes(app):
                 })
             else:
                 return jsonify({"error": f"Backend returned {resp.status_code}"}), 500
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ============================================================================
+    # VENUE PRIORITY ADMIN
+    # ============================================================================
+
+    @app.route('/venue-priority')
+    def venue_priority_page():
+        """Admin panel for manually setting venue display priority."""
+        return render_template_string(VENUE_PRIORITY_HTML)
+
+    @app.route('/api/venues/all', methods=['GET'])
+    def get_all_venues_for_admin():
+        """Return all venues with their current priority for the admin panel."""
+        try:
+            resp = httpx.get(f"{BACKEND_URL}/api/venues?limit=1000", timeout=15)
+            if resp.status_code != 200:
+                return jsonify({"error": f"Backend returned {resp.status_code}"}), 500
+            venues = resp.json()
+            # Sort: unset (null/3) first so the ones needing attention are on top,
+            # then by name within each tier.
+            venues.sort(key=lambda v: (v.get('venue_priority') or 3, v.get('name', '').lower()))
+            return jsonify(venues)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/venues/set-priority', methods=['POST'])
+    def set_venue_priority():
+        """Update a single venue's display priority via the Rust backend PATCH endpoint."""
+        data = request.json
+        venue_id = data.get('id')
+        priority = data.get('venue_priority')
+
+        if not venue_id or priority is None:
+            return jsonify({"error": "id and venue_priority required"}), 400
+        if priority not in (1, 2, 3):
+            return jsonify({"error": "venue_priority must be 1, 2, or 3"}), 400
+
+        try:
+            resp = httpx.patch(
+                f"{BACKEND_URL}/api/venues/{venue_id}",
+                json={"venue_priority": priority},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return jsonify({"ok": True, "venue": resp.json()})
+            else:
+                return jsonify({"error": f"Backend returned {resp.status_code}: {resp.text}"}), 500
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

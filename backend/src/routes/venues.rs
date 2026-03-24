@@ -41,6 +41,8 @@ pub struct Venue {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Display priority: 1 = flagship, 2 = featured, 3 = standard (default)
+    pub venue_priority: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,6 +67,7 @@ pub struct UpdateVenue {
     pub website: Option<String>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    pub venue_priority: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,7 +102,7 @@ async fn list_venues(
             r#"
             SELECT id, name, address, city, capacity, venue_type, noise_level,
                    parking_info, accessibility_info, website, created_at,
-                   latitude, longitude
+                   latitude, longitude, venue_priority
             FROM venues
             WHERE website IS NULL OR website = ''
             ORDER BY name ASC
@@ -114,7 +117,7 @@ async fn list_venues(
             r#"
             SELECT id, name, address, city, capacity, venue_type, noise_level,
                    parking_info, accessibility_info, website, created_at,
-                   latitude, longitude
+                   latitude, longitude, venue_priority
             FROM venues
             ORDER BY name ASC
             LIMIT $1
@@ -314,6 +317,7 @@ async fn create_venue(
         created_at: now,
         latitude: payload.latitude,
         longitude: payload.longitude,
+        venue_priority: None,
     };
 
     Ok((StatusCode::CREATED, Json(venue)))
@@ -341,7 +345,8 @@ async fn update_venue(
             accessibility_info = COALESCE($8, accessibility_info),
             website = COALESCE($9, website),
             latitude = COALESCE($10, latitude),
-            longitude = COALESCE($11, longitude)
+            longitude = COALESCE($11, longitude),
+            venue_priority = COALESCE($12, venue_priority)
         WHERE id = $1
         "#
     )
@@ -356,6 +361,7 @@ async fn update_venue(
         .bind(&payload.website)
         .bind(&payload.latitude)
         .bind(&payload.longitude)
+        .bind(&payload.venue_priority)
         .execute(&pool)
         .await
         .map_err(|e| {
@@ -368,7 +374,7 @@ async fn update_venue(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
                parking_info, accessibility_info, website, created_at,
-               latitude, longitude
+               latitude, longitude, venue_priority
         FROM venues
         WHERE id = $1
         "#

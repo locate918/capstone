@@ -466,10 +466,14 @@ def load_saved_urls() -> list:
     return []
 
 
-def save_url(url: str, name: str, use_playwright: bool = True, priority: int = None) -> list:
-    """Add a URL to saved list. priority: 1=venue, 2=ticketing, 3=aggregator (auto-detected if omitted)."""
+def save_url(url: str, name: str, use_playwright: bool = True, priority: int = None, venue_priority: int = None) -> list:
+    """Add a URL to saved list.
+    priority: source trust tier (1=venue, 2=ticketing, 3=aggregator — auto-detected if omitted).
+    venue_priority: display priority (1=flagship, 2=featured, 3=standard — falls back to get_venue_display_priority if omitted).
+    """
     urls = load_saved_urls()
     resolved_priority = priority if priority is not None else get_source_priority(url)
+    resolved_venue_priority = venue_priority if venue_priority is not None else get_venue_display_priority(name)
     for u in urls:
         if u['url'] == url:
             u['name'] = name
@@ -478,10 +482,21 @@ def save_url(url: str, name: str, use_playwright: bool = True, priority: int = N
                 u['priority'] = resolved_priority
             elif 'priority' not in u:
                 u['priority'] = resolved_priority
+            # venue_priority: always write if explicitly passed, otherwise don't overwrite existing
+            if venue_priority is not None:
+                u['venue_priority'] = resolved_venue_priority
+            elif 'venue_priority' not in u:
+                u['venue_priority'] = resolved_venue_priority
             SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
             return urls
 
-    urls.append({'url': url, 'name': name, 'playwright': use_playwright, 'priority': resolved_priority})
+    urls.append({
+        'url': url,
+        'name': name,
+        'playwright': use_playwright,
+        'priority': resolved_priority,
+        'venue_priority': resolved_venue_priority,
+    })
     SAVED_URLS_FILE.write_text(json.dumps(urls, indent=2))
     return urls
 

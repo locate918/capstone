@@ -337,10 +337,12 @@ export default function App() {
         }
 
         if (activeTab === 'thisWeek') {
-            return filterThisWeekEvents(filteredEvents);
+            // This Week: flagship + featured only (P1 + P2), no P3 clutter
+            const featured = filteredEvents.filter(e => (e.venue_priority ?? 3) <= 2);
+            return filterThisWeekEvents(featured);
         }
 
-        // "All Events" tab - apply date filter if set
+        // "All Events" tab - show everything, apply date filter if set
         return (dateFrom || dateTo)
             ? filterByDateRange(filteredEvents, dateFrom, dateTo)
             : filteredEvents;
@@ -353,8 +355,11 @@ export default function App() {
         return tabFilteredEvents.slice(startIndex, startIndex + EVENTS_PER_PAGE);
     }, [tabFilteredEvents, currentPage]);
 
-    // Count for "This Week" tab badge
-    const thisWeekCount = useMemo(() => filterThisWeekEvents(events).length, [events]);
+    // Count for "This Week" tab badge — P1+P2 only
+    const thisWeekCount = useMemo(() => {
+        const featured = events.filter(e => (e.venue_priority ?? 3) <= 2);
+        return filterThisWeekEvents(featured).length;
+    }, [events]);
 
     // Check if date filter is active
     const hasDateFilter = dateFrom || dateTo;
