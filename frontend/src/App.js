@@ -292,10 +292,17 @@ export default function App() {
 
     // Fetch events (all or search results)
     useEffect(() => {
+        const FETCH_CATEGORY_LABELS = [
+            'music', 'comedy', 'arts & theater', 'festival', 'film',
+            'food & drink', 'nightlife', 'sports & fitness', 'family',
+            'educational', 'nature & outdoors', 'community'
+        ];
+        const isCategoryQuery = debouncedQuery && FETCH_CATEGORY_LABELS.includes(debouncedQuery.toLowerCase());
+
         const loadData = async () => {
             try {
                 let data;
-                if (debouncedQuery) {
+                if (debouncedQuery && !isCategoryQuery) {
                     const result = await smartSearch(debouncedQuery, user?.id);
                     data = Array.isArray(result?.events) ? result.events : [];
                 } else {
