@@ -1,0 +1,443 @@
+[
+  {
+    "url": "https://thestarlitebar.com/",
+    "name": "Starlite",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://philbrook.org/calendar/",
+    "name": "Philbrook Museum of Art",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://my.gilcrease.org/events?view=list&span=month&k=public%20events&_gl=1*5lnc6k*_ga*MTk5ODE2Nzc3LjE3NzA5NDYzMDE.*_ga_G0ZQJL5W12*czE3NzA5NDYzMDEkbzEkZzAkdDE3NzA5NDYzMDEkajYwJGwwJGgw",
+    "name": "Gilcrease Museum",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://bobdylancenter.com/events/",
+    "name": "Bob Dylan Center",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.gatheringplace.org/parkcalendar",
+    "name": "Gathering Place",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://cca.sandspringschamber.org/EvtListingMainSearch.aspx?class=B",
+    "name": "Sand Springs",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://tulsaparks.recdesk.com/Community/Calendar",
+    "name": "Tulsa parks",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.exposquare.com/events",
+    "name": "Expo Square",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.tulsashrine.com/",
+    "name": "The Shrine",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://app.wompatulsa.com/events-1/c/0",
+    "name": "wompa",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.bokcenter.com/events",
+    "name": "BOK Center",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.motherroadmarket.com/events",
+    "name": "Mother Road Market",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://mabeecenter.com/mcevents/",
+    "name": "mabee center",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.guthriegreen.com/events",
+    "name": "Guthrie Green",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.hardrockcasinotulsa.com/entertainment",
+    "name": "Hard Rock Hotel & Casino Tulsa",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://events.ticketleap.com/events/belafonte",
+    "name": "belafonte",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.cainsballroom.com/",
+    "name": "Cain's Ballroom",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.thechurchstudio.com/events/",
+    "name": "church studio",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.thewhittierbar.com/",
+    "name": "whittier",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.lowdowntulsa.com/shows",
+    "name": "low down",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://secure.tulsaopera.com/events",
+    "name": "tulsa opera",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://tulsatheater.com/events/",
+    "name": "Tulsa Theater",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.thesoundpony.com/",
+    "name": "sound pony",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://thehuntclubtulsa.com/",
+    "name": "hunt club",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://maggiesok.com/events",
+    "name": "maggies",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.thevanguardtulsa.com/",
+    "name": "The Vanguard",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.tulsamuseum.org/events/",
+    "name": "TASM",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.discoverylab.org/events",
+    "name": "Discovery Lab",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.route66village.com/tulsaevents",
+    "name": "route 66 village",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.greenwoodrising.org/calendar",
+    "name": "greenwood rising",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://livingarts.org/exhibitions/",
+    "name": "living arts",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://woodyguthriecenter.org/events/",
+    "name": "woody guthrie center",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://woolaroc.org/events/",
+    "name": "woolaroc",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://okeq.org/event-calendar/",
+    "name": "equality center",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.prekindle.com/events/mercurylounge",
+    "name": "mercury",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.tickettailor.com/all-tickets/thecolony/",
+    "name": "colony",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.stubhub.com/the-cove-at-river-spirit-casino-resort-tickets/venue/150009062/",
+    "name": "River Spirit",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.circlecinema.org/",
+    "name": "Circle Cinema",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.riverparks.org/events/events",
+    "name": "riverParks-tulsa",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://jenksriverwalk.com/events/",
+    "name": "Jenks riverwalk",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://events.tulsalibrary.org/events?r=thisweek",
+    "name": "Tulsa library system",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.tulsabrunchfestival.org/",
+    "name": "Tulsa brunch fest",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://am.ticketmaster.com/tulsapac/buy",
+    "name": "TPAC",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.roosterdays.com/",
+    "name": "RoosterDays",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://flywheeltulsa.com/#events",
+    "name": "FlyWheel",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.arvestconventioncenter.com/events",
+    "name": "Arvest convention center",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.tulsatough.com/",
+    "name": "Tulsa Tough",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.joingradient.com/events",
+    "name": "Gradient",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.tulsafarmersmarket.org/visit",
+    "name": "Tulsa Farmers market",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://okcastle.com/",
+    "name": "Ren fair",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://tulsazoo.org/events",
+    "name": "Tulsa Zoo",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.gatheringplace.org/parkcalendar?cal-305818-endDate=2026-03-31&cal-305818-page=1&cal-305818-startDate=2026-03-01",
+    "name": "Gathering Place",
+    "playwright": true,
+    "priority": 1,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://thetulsaartsdistrict.org/events/",
+    "name": "Tulsa Arts District",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://badassrenees.net/bands%2Fevents",
+    "name": "BadAssRenee's",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://www.gypsycoffee.com/events--music.html",
+    "name": "Gypsy",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 3
+  },
+  {
+    "url": "https://bricktowntulsa.com/events",
+    "name": "Bricktown Comedy",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://tulsa.loonybincomedy.com/",
+    "name": "Loony bin",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://carneyfest.com/",
+    "name": "carney fest",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://magiccitybooks.com/programs-services/events",
+    "name": "Magic city Books",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.tulsaspotlighttheater.com/box-office",
+    "name": "Spotlight theatre",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 2
+  },
+  {
+    "url": "https://www.tulsamayfest.org/",
+    "name": "May Fest",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://www.rocklahoma.com/",
+    "name": "Rocklahoma",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  },
+  {
+    "url": "https://tulsaoktoberfest.org/festival-guide/",
+    "name": "OktoberFest",
+    "playwright": true,
+    "priority": 2,
+    "venue_priority": 1
+  }
+]
