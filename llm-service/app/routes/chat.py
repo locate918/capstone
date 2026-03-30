@@ -117,7 +117,7 @@ async def execute_search_places(args: dict):
         return {"error": str(e)}
 
 
-async def execute_search_events(args: dict):
+async def execute_search_events(args: dict, user_profile: dict = None):
     """Executes the search_events tool by calling the backend API."""
     # Pad bare dates (YYYY-MM-DD) to full ISO 8601 with Central Time offset.
     # Tulsa is UTC-6 (CST), so "Feb 27" in Central = Feb 27 06:00 UTC to Feb 28 06:00 UTC.
@@ -219,7 +219,7 @@ async def chat_with_tully(request: ChatRequest):
             return await execute_search_events(args, user_profile)
 
         tool_functions = {
-            "search_events":  execute_search_events,
+            "search_events":  search_with_profile,
             "search_places":  execute_search_places,
         }
 
