@@ -1,19 +1,33 @@
 import os
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from app.models.schemas import SearchRequest, SearchResponse
 from app.services import gemini, ranking
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
 
-async def get_user_profile(user_id: str):
+async def get_user_profile(user_id: str, auth_header: str):
     """
     Fetches user profile from backend.
     """
+    if not auth_header:
+        print(f"DEBUG: No auth header for user {user_id}, using fallback profile.")
+        # Fallback default profile
+        return {
+            "user": {
+                "id": user_id,
+                "location_preference": "Tulsa",
+                "family_friendly_only": False,
+                "email": "guest@locate918.com"
+            },
+            "preferences": [],
+            "recent_interactions": []
+        }
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{BACKEND_URL}/api/users/{user_id}/profile")
+            headers = {"Authorization": auth_header}
+            response = await client.get(f"{BACKEND_URL}/api/users/me/profile", headers=headers)
             if response.status_code == 200:
                 profile_data = response.json()
                 print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
@@ -36,7 +50,7 @@ async def get_user_profile(user_id: str):
     }
 
 @router.post("/search", response_model=SearchResponse)
-async def search_intent(request: SearchRequest):
+async def search_intent(request: SearchRequest, authorization: str = Header(None, alias="Authorization")):
     """
     Analyzes a natural language query and extracts structured search parameters.
     Then queries the backend for matching events.
@@ -65,18 +79,16 @@ async def search_intent(request: SearchRequest):
             if response.status_code == 200:
                 events = response.json()
             
-            # FALLBACK: If smart search returns nothing, but we have a 'q', try searching JUST 'q'.
-            # This fixes cases where LLM infers a category/date that excludes the item the user is looking for by name.
+            # FALLBACK: If smart search returns nothing, but we have a 'q', try searching just with 'q'.
             if not events and params.get("q"):
                 fallback_params = {"q": params["q"]}
                 response = await client.get(f"{BACKEND_URL}/api/events/search", params=fallback_params)
                 if response.status_code == 200:
                     events = response.json()
 
-        # 4. Rank events if user_id is provided
-        if request.user_id:
-            profile = await get_user_profile(request.user_id)
-            events = ranking.rank_events(events, profile)
+        # if request.user_id:
+        #   profile = await get_user_profile(request.user_id, authorization)
+        #   events = ranking.rank_events(events, profile)
 
         return SearchResponse(parsed_params=params, events=events)
     except Exception as e:
