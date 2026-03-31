@@ -1316,6 +1316,9 @@ def register_routes(app):
     def check_auth():
         if not ADMIN_PASSWORD:
             return  # no password set, open access
+        # Allow internal cron calls to /scrape-all without auth
+        if request.path == '/scrape-all' and request.remote_addr in ('127.0.0.1', '::1'):
+            return
         auth = request.authorization
         if not auth or auth.password != ADMIN_PASSWORD:
             return Response(
