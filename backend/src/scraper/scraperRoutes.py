@@ -1686,14 +1686,19 @@ def register_routes(app):
 
         def generate():
             while True:
-                item = q.get()
-                if item is None:
-                    break
-                yield f"data: {json.dumps(item)}\n\n"
+                try:
+                    item = q.get(timeout=25)
+                    if item is None:
+                        break
+                    yield f"data: {json.dumps(item)}\n\n"
+                except Exception:
+                    # Queue timed out — send SSE keepalive so proxy stays open
+                    yield ": keepalive\n\n"
 
         return Response(generate(), mimetype='text/event-stream', headers={
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
         })
 
     @app.route('/scrape-source', methods=['POST'])
