@@ -258,7 +258,11 @@ const cleanHtml = (text) => {
     // Pass 2: strip actual HTML tags (<p> → clean text)
     const clean = new DOMParser().parseFromString(decoded, "text/html").body.textContent || "";
     // Pass 3: trim trailing truncation artifacts (& , - , etc.)
-    return clean.replace(/[\s&\-,;:]+$/, '').trim() + (clean.length >= 195 ? '…' : '');
+    const cleanedText = clean.replace(/[\s&\-,;:]+$/, '').trim();
+    
+    // Truncate to desired max length (e.g., 500 chars) and add ellipsis
+    const MAX_LENGTH = 500;
+    return cleanedText.length > MAX_LENGTH ? cleanedText.slice(0, MAX_LENGTH) + '…' : cleanedText;
 };
 
 /**
@@ -481,31 +485,42 @@ const getMockChatResponse = (message) => {
     };
 };
 // =============================================================================
-// INTERACTION TRACKING
+// INTERACTION & PREFERENCE API
 // =============================================================================
 
 /**
- * Records a user interaction with an event (clicked, saved, dismissed).
- * Posts to the backend interactions endpoint if the user is logged in.
- * Silently no-ops if not authenticated or on error.
+ * Records a user interaction and triggers a preference update.
+ * This function calls the LLM service, which then:
+ * 1. Logs the raw interaction to the main backend.
+ * 2. Calculates and applies preference score changes.
  */
-export const recordInteraction = async (eventId, interactionType, eventCategory = null, eventVenue = null) => {
-    if (!eventId) return;
+export const recordInteraction = async ({
+    userId,
+    eventId,
+    interactionType,
+    eventCategories = []
+}) => {
+    console.log("[DEBUG] recordInteraction (to LLM service) called:", { userId, eventId, interactionType, eventCategories });
+    // No-op if user is not logged in or eventId is missing
+    if (!userId || !eventId) {
+        console.log("[DEBUG] Skipping interaction: missing userId or eventId.");
+        return;
+    }
+
     try {
-        const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_RUST_BACKEND_URL || '';
-        await fetch(`${BACKEND_URL}/api/interactions`, {
+        // This endpoint orchestrates logging the interaction and updating preferences.
+        await authedFetch(`${LLM_SERVICE_URL}/api/interactions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({
+                user_id: userId,
                 event_id: eventId,
                 interaction_type: interactionType,
-                event_category: eventCategory,
-                event_venue: eventVenue,
+                event_categories: eventCategories, // Pass the full array of categories
             }),
         });
+        console.log(`[DEBUG] Interaction for event ${eventId} sent to LLM service.`);
     } catch (e) {
-        // Non-critical — swallow silently
-        console.debug('[recordInteraction] skipped:', e.message);
+        console.warn('[recordInteraction] failed to send interaction to LLM service:', e.message);
     }
 };

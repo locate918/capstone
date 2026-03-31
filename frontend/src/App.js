@@ -32,7 +32,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock } from 'lucide-react';
-import { fetchEvents, smartSearch } from './services/api';
+import { fetchEvents, smartSearch, recordInteraction } from './services/api';
 import { useAuth } from './context/AuthContext';
 
 // Components
@@ -271,7 +271,7 @@ const VenueImage = ({ src, alt }) => {
 
     return (
         <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#162b4a] to-[#1f3a60]">
-            {/* Real image — only rendered when there's a src to try */}
+            {/* Real image ï¿½ only rendered when there's a src to try */}
             {status !== 'fallback' && src && (
                 <img
                     src={src}
@@ -282,7 +282,7 @@ const VenueImage = ({ src, alt }) => {
                 />
             )}
 
-            {/* Logo fallback — only shown when there's no image or it failed */}
+            {/* Logo fallback ï¿½ only shown when there's no image or it failed */}
             {status === 'fallback' && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <img
@@ -625,6 +625,19 @@ export default function App() {
         setShowVenueModal(true);
     };
 
+    const handleEventClick = (event) => {
+        console.log(`[DEBUG] Event clicked: ${event.title}`);
+        setSelectedEvent(event);
+        if (user) {
+            recordInteraction({
+                userId: user.id,
+                eventId: event.id,
+                interactionType: 'clicked',
+                eventCategories: event.categories
+            });
+        }
+    };
+
     // --- RENDER ---
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
@@ -633,7 +646,7 @@ export default function App() {
             <BetaDisclaimer isOpen={showBetaDisclaimer} onClose={handleCloseBetaDisclaimer} />
 
             {/* ===== VENUE SELECTOR MODAL ===== */}
-            <VenueSelectorModal
+.            <VenueSelectorModal
                 isOpen={showVenueModal}
                 onClose={() => {
                     setShowVenueModal(false);
@@ -965,7 +978,7 @@ export default function App() {
                                                 <EventCard
                                                     event={event}
                                                     index={index}
-                                                    onClick={setSelectedEvent}
+                                                    onClick={handleEventClick}
                                                 />
                                             </div>
                                         ))}
@@ -1090,7 +1103,7 @@ export default function App() {
                             <div className="lg:sticky lg:top-[260px] animate-fade-up delay-200">
                                 <TulsaMap
                                     events={tabFilteredEvents}
-                                    onMarkerClick={setSelectedEvent}
+                                    onMarkerClick={handleEventClick}
                                     hoveredEventId={hoveredEventId}
                                     className="h-[60vh] min-h-[400px] sm:h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white"
                                 />

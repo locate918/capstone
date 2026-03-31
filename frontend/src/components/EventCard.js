@@ -33,10 +33,10 @@ const EventCard = ({ event, onClick, index = 0 }) => {
         if (event.id) {
             console.log(`[DEBUG] logClick called: ${type} for event ${event.id}`);
             recordInteraction(
-                event.id, 
-                type, 
-                event.categories?.[0] || event.category, 
-                event.venue || event.location
+                event.id,
+                type,
+                event.categories?.[0] || event.category,
+                event.location
             );
         } else {
             console.warn("[DEBUG] logClick called but event.id is missing", event);
@@ -68,11 +68,7 @@ const EventCard = ({ event, onClick, index = 0 }) => {
 
     return (
         <div
-            onClick={() => {
-                // recordInteraction is now handled by EventModal when it opens
-                // logClick('clicked'); 
-                onClick(event);
-            }}
+            onClick={() => onClick(event)}
             className="group rounded-xl border border-white/5 hover:border-[#d4af37]/30 transition-all duration-500 cursor-pointer overflow-hidden flex flex-col h-full relative hover:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.5)] hover:-translate-y-2 animate-fade-up"
             style={{
                 backgroundColor: THEME.bgCard,

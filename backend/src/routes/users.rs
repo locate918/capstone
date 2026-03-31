@@ -160,7 +160,7 @@ async fn get_my_profile(
     let recent_interactions = sqlx::query_as::<_, UserInteractionWithEvent>(
         r#"
         SELECT ui.interaction_type, e.title as event_title,
-               (SELECT categories[1] FROM events WHERE id = ui.event_id) as event_category,
+               e.categories as event_categories,
                ui.created_at
         FROM user_interactions ui
         JOIN events e ON ui.event_id = e.id
@@ -341,7 +341,7 @@ async fn get_my_interactions(
 ) -> Result<Json<Vec<UserInteraction>>, StatusCode> {
     let interactions = sqlx::query_as::<_, UserInteraction>(
         r#"
-        SELECT id, user_id, event_id, interaction_type, event_category, event_venue, created_at
+        SELECT id, user_id, event_id, interaction_type, event_categories, event_venue, created_at
         FROM user_interactions
         WHERE user_id = $1
         ORDER BY created_at DESC
@@ -378,8 +378,8 @@ async fn add_my_interaction(
     let now = chrono::Utc::now();
 
     // Fetch event details for denormalization
-    let event = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-        "SELECT (SELECT categories[1] FROM events WHERE id = $1), venue FROM events WHERE id = $1",
+    let event = sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
+        "SELECT categories, venue FROM events WHERE id = $1",
     )
         .bind(&payload.event_id)
         .fetch_optional(&pool)
@@ -389,7 +389,7 @@ async fn add_my_interaction(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let (event_category, event_venue) = event.unwrap_or((None, None));
+    let (event_categories, event_venue) = event.unwrap_or((None, None));
 
     // Ensure the user exists in public.users to avoid foreign key constraint error
     let user_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
@@ -417,7 +417,7 @@ async fn add_my_interaction(
 
     sqlx::query(
         r#"
-        INSERT INTO user_interactions (id, user_id, event_id, interaction_type, event_category, event_venue, created_at)
+        INSERT INTO user_interactions (id, user_id, event_id, interaction_type, event_categories, event_venue, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
@@ -425,7 +425,7 @@ async fn add_my_interaction(
         .bind(auth.user_id)
         .bind(&payload.event_id)
         .bind(&payload.interaction_type)
-        .bind(&event_category)
+        .bind(&event_categories)
         .bind(&event_venue)
         .bind(&now)
         .execute(&pool)
@@ -440,7 +440,7 @@ async fn add_my_interaction(
         user_id: auth.user_id,
         event_id: payload.event_id,
         interaction_type: payload.interaction_type,
-        event_category,
+        event_categories,
         event_venue,
         created_at: now,
     };
