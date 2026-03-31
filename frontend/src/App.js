@@ -32,7 +32,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock } from 'lucide-react';
-import { fetchEvents, smartSearch } from './services/api';
+import { fetchEvents, smartSearch, recordInteraction } from './services/api';
 import { useAuth } from './context/AuthContext';
 
 // Components
@@ -258,6 +258,48 @@ const BetaDisclaimer = ({ isOpen, onClose }) => {
 };
 
 // =============================================================================
+// VENUE IMAGE COMPONENT (handles load/error state per card)
+// =============================================================================
+
+const VenueImage = ({ src, alt }) => {
+    const [status, setStatus] = useState(src ? 'loading' : 'fallback');
+
+    // Reset status when src changes
+    useEffect(() => {
+        setStatus(src ? 'loading' : 'fallback');
+    }, [src]);
+
+    return (
+        <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#162b4a] to-[#1f3a60]">
+            {/* Real image � only rendered when there's a src to try */}
+            {status !== 'fallback' && src && (
+                <img
+                    src={src}
+                    alt={alt}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    onLoad={() => setStatus('loaded')}
+                    onError={() => setStatus('fallback')}
+                />
+            )}
+
+            {/* Logo fallback � only shown when there's no image or it failed */}
+            {status === 'fallback' && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <img
+                        src="/assets/Logo.png"
+                        alt="Locate918"
+                        className="w-16 h-16 object-contain opacity-50"
+                    />
+                </div>
+            )}
+
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+        </div>
+    );
+};
+
+// =============================================================================
 // VENUE SELECTOR MODAL
 // =============================================================================
 
@@ -321,37 +363,18 @@ const VenueSelectorModal = ({ isOpen, onClose, venues, onSelectVenue }) => {
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                     {filteredVenues.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {filteredVenues.map((venue, index) => (
+                            {filteredVenues.map((venue) => (
                                 <button
                                     key={venue.name}
                                     onClick={() => onSelectVenue(venue.name)}
                                     className="group bg-white rounded-xl border border-slate-200 overflow-hidden hover:border-[#D4AF37] hover:shadow-lg transition-all duration-300 text-left"
                                 >
-                                    {/* Venue Image */}
-                                    <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#162b4a] to-[#1f3a60]">
-                                        {venue.imageUrl && (
-                                            <img
-                                                src={venue.imageUrl}
-                                                alt={venue.name}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                                onError={(e) => {
-                                                    e.target.onerror = null;
-                                                    e.target.style.display = 'none';
-                                                }}
-                                            />
-                                        )}
-                                        {/* Fallback - Logo centered on gradient background */}
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                            <img
-                                                src="/assets/Logo.png"
-                                                alt="Locate918"
-                                                className="w-16 h-16 object-contain opacity-50"
-                                            />
-                                        </div>
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                                    {/* Venue Image with proper fallback */}
+                                    <div className="relative">
+                                        <VenueImage src={venue.imageUrl} alt={venue.name} />
 
                                         {/* Event Count Badge */}
-                                        <div className="absolute top-2 right-2 bg-[#D4AF37] text-black text-xs font-bold px-2 py-1 rounded-full">
+                                        <div className="absolute top-2 right-2 bg-[#D4AF37] text-black text-xs font-bold px-2 py-1 rounded-full z-10">
                                             {venue.eventCount} {venue.eventCount === 1 ? 'event' : 'events'}
                                         </div>
                                     </div>
@@ -602,6 +625,19 @@ export default function App() {
         setShowVenueModal(true);
     };
 
+    const handleEventClick = (event) => {
+        console.log(`[DEBUG] Event clicked: ${event.title}`);
+        setSelectedEvent(event);
+        if (user) {
+            recordInteraction({
+                userId: user.id,
+                eventId: event.id,
+                interactionType: 'clicked',
+                eventCategories: event.categories
+            });
+        }
+    };
+
     // --- RENDER ---
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
@@ -610,7 +646,7 @@ export default function App() {
             <BetaDisclaimer isOpen={showBetaDisclaimer} onClose={handleCloseBetaDisclaimer} />
 
             {/* ===== VENUE SELECTOR MODAL ===== */}
-            <VenueSelectorModal
+.            <VenueSelectorModal
                 isOpen={showVenueModal}
                 onClose={() => {
                     setShowVenueModal(false);
@@ -942,7 +978,7 @@ export default function App() {
                                                 <EventCard
                                                     event={event}
                                                     index={index}
-                                                    onClick={setSelectedEvent}
+                                                    onClick={handleEventClick}
                                                 />
                                             </div>
                                         ))}
@@ -1067,7 +1103,7 @@ export default function App() {
                             <div className="lg:sticky lg:top-[260px] animate-fade-up delay-200">
                                 <TulsaMap
                                     events={tabFilteredEvents}
-                                    onMarkerClick={setSelectedEvent}
+                                    onMarkerClick={handleEventClick}
                                     hoveredEventId={hoveredEventId}
                                     className="h-[60vh] min-h-[400px] sm:h-[500px] lg:h-[650px] shadow-2xl shadow-slate-200/50 border border-white"
                                 />

@@ -188,12 +188,10 @@ const MapController = ({ hoveredEventId, events, onMapReady }) => {
     const animationRef = useRef(null);
 
     useEffect(() => {
-        // Notify parent that map is ready
         if (onMapReady) {
             onMapReady(map);
         }
 
-        // Force invalidate size multiple times to ensure proper rendering
         const timers = [100, 300, 500].map(delay =>
             setTimeout(() => map.invalidateSize(), delay)
         );
@@ -308,7 +306,6 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
         injectMapStyles();
     }, []);
 
-    // Create a lookup map for events by coordinates
     const eventsByPosition = useMemo(() => {
         const lookup = new Map();
         normalizedEvents.forEach(event => {
@@ -332,12 +329,10 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
         mapInstanceRef.current = map;
     };
 
-    // Handle cluster click - find events by their positions
     const handleClusterClick = (e) => {
         const cluster = e.layer;
         const childMarkers = cluster.getAllChildMarkers();
 
-        // Get events from the lookup based on marker positions
         const eventsInCluster = [];
         childMarkers.forEach(marker => {
             const latlng = marker.getLatLng();
@@ -505,32 +500,39 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
 
             {/* Bottom Sheet for Clustered Events */}
             {clusterEvents && (
-                <div className="absolute bottom-0 left-0 right-0 z-[1000] animate-slide-up">
+                <div className="absolute inset-0 z-[1000] animate-slide-up">
+                    {/* Backdrop scrim within the map */}
                     <div
-                        className="fixed inset-0 bg-black/40 -z-10"
+                        className="absolute inset-0 bg-black/40"
                         onClick={() => setClusterEvents(null)}
                     />
 
-                    <div className="bg-white rounded-t-2xl shadow-2xl max-h-[60vh] flex flex-col">
-                        <div className="flex justify-center pt-3 pb-2">
-                            <div className="w-10 h-1 bg-slate-300 rounded-full" />
-                        </div>
+                    {/* Bottom sheet anchored to bottom of map */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl max-h-[85%] flex flex-col">
 
-                        <div className="flex items-center justify-between px-4 pb-3 border-b border-slate-100">
-                            <div className="flex items-center gap-2">
-                                <MapPin size={18} className="text-[#D4AF37]" />
-                                <span className="font-semibold text-slate-900">
-                                    {clusterEvents.length} Events nearby
-                                </span>
+                        {/* Sticky header: drag handle + title bar with X — never scrolls away */}
+                        <div className="flex-shrink-0 bg-white rounded-t-2xl">
+                            <div className="flex justify-center pt-3 pb-2">
+                                <div className="w-10 h-1 bg-slate-300 rounded-full" />
                             </div>
-                            <button
-                                onClick={() => setClusterEvents(null)}
-                                className="p-1.5 hover:bg-slate-100 rounded-full transition-colors"
-                            >
-                                <X size={18} className="text-slate-500" />
-                            </button>
+
+                            <div className="flex items-center justify-between px-4 pb-3 border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                    <MapPin size={18} className="text-[#D4AF37]" />
+                                    <span className="font-semibold text-slate-900">
+                                        {clusterEvents.length} Events nearby
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setClusterEvents(null)}
+                                    className="p-1.5 hover:bg-slate-100 rounded-full transition-colors"
+                                >
+                                    <X size={18} className="text-slate-500" />
+                                </button>
+                            </div>
                         </div>
 
+                        {/* Scrollable event list */}
                         <div className="overflow-y-auto flex-1 overscroll-contain">
                             {clusterEvents.map((event) => (
                                 <button

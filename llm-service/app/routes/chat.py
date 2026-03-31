@@ -2,7 +2,7 @@ import os
 import httpx
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import gemini, ranking
 
@@ -15,10 +15,24 @@ except ZoneInfoNotFoundError:
     # Keep service booting and rely on UTC formatting until tzdata is installed.
     CENTRAL = timezone.utc
 
-async def get_user_profile(user_id: str):
+async def get_user_profile(user_id: str, auth_header: str):
+    if not auth_header:
+        print(f"DEBUG: No auth header for user {user_id}, using fallback profile.")
+        # Fallback default profile
+        return {
+            "user": {
+                "id": user_id,
+                "location_preference": "Tulsa",
+                "family_friendly_only": False,
+                "email": "guest@locate918.com"
+            },
+            "preferences": [],
+            "recent_interactions": []
+        }
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{BACKEND_URL}/api/users/{user_id}/profile")
+            headers = {"Authorization": auth_header}
+            response = await client.get(f"{BACKEND_URL}/api/users/me/profile", headers=headers)
             if response.status_code == 200:
                 profile_data = response.json()
                 print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
@@ -117,7 +131,7 @@ async def execute_search_places(args: dict):
         return {"error": str(e)}
 
 
-async def execute_search_events(args: dict, user_profile: dict = None):
+async def execute_search_events(args: dict, user_profile=None):
     """Executes the search_events tool by calling the backend API."""
     # Pad bare dates (YYYY-MM-DD) to full ISO 8601 with Central Time offset.
     # Tulsa is UTC-6 (CST), so "Feb 27" in Central = Feb 27 06:00 UTC to Feb 28 06:00 UTC.
@@ -166,12 +180,13 @@ async def execute_search_events(args: dict, user_profile: dict = None):
                             pass
 
                     simplified_events.append({
+                        "id": e.get("id"),
                         "title": e.get("title"),
                         "start_time": display_time,
                         "venue": e.get("venue"),
                         "venue_website": e.get("venue_website"),
                         "price": f"{e.get('price_min')} - {e.get('price_max')}",
-                        "description": (e.get("description") or "")[:200] + "...",
+                        "description": (e.get("description") or "")[:500] + ("..." if len(e.get("description") or "") > 500 else ""),
                         "categories": e.get("categories"),
                         "source_url": e.get("source_url")
                     })
@@ -207,19 +222,20 @@ def sanitize_history(history: list) -> list:
     return sanitized
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_with_tully(request: ChatRequest):
+async def chat_with_tully(request: ChatRequest, authorization: str = Header(None, alias="Authorization")):
     """
     Handles conversation with Tully.
     """
     try:
-        user_profile = await get_user_profile(request.user_id)
+        user_profile = await get_user_profile(request.user_id, authorization)
 
         # Define tools available to Gemini with user profile context for ranking
         async def search_with_profile(args: dict):
             return await execute_search_events(args, user_profile)
 
         tool_functions = {
-            "search_events":  search_with_profile,
+            "search_events":  execute_search_events,
+            "search_with_profile": search_with_profile,
             "search_places":  execute_search_places,
         }
 

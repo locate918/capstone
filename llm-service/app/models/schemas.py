@@ -85,3 +85,10 @@ class ChatResponse(BaseModel):
     message: Optional[str] = None
     tool_call: Optional[Dict[str, Any]] = None
 
+class InteractionRequest(BaseModel):
+    user_id: str = Field(..., alias="userId")
+    event_id: str = Field(..., alias="eventId")
+    event_categories: List[str] = Field(..., alias="eventCategories")
+    interaction_type: str = Field(..., alias="interactionType")
+
+    model_config = ConfigDict(populate_by_name=True)

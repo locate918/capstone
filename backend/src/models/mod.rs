@@ -207,7 +207,7 @@ pub struct UserInteraction {
     pub event_id: Uuid,
     pub interaction_type: String,
     /// Denormalized for faster ML queries
-    pub event_category: Option<String>,
+    pub event_categories: Option<Vec<String>>,
     /// Denormalized for faster ML queries
     pub event_venue: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -242,12 +242,11 @@ pub struct UserProfile {
 pub struct UserInteractionWithEvent {
     pub interaction_type: String,
     pub event_title: String,
-    pub event_category: Option<String>,
+    pub event_categories: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
 }
 
 // =============================================================================
 // SEARCH MODELS
 // =============================================================================
-
 

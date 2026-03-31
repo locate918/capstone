@@ -8,24 +8,42 @@
  * - onClose: Function called when modal should close
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
-import { recordInteraction } from '../services/api';
 
 const EventModal = ({ event, onClose }) => {
-    // Record 'viewed' interaction when modal opens
+    const [expanded, setExpanded] = useState(false);
+    const [isClamped, setIsClamped] = useState(false);
+    const summaryRef = useRef(null);
+
+    // Measure whether text overflows the clamp
+    const checkClamped = useCallback(() => {
+        const el = summaryRef.current;
+        if (!el) return;
+        // scrollHeight > clientHeight means line-clamp is hiding content
+        setIsClamped(el.scrollHeight > el.clientHeight + 1);
+    }, []);
+
+    // Reset expanded state when a different event opens, and detect clamping
     useEffect(() => {
-        if (event && event.id) {
-            console.log(`[DEBUG] EventModal viewed: ${event.id}`);
-            recordInteraction(
-                event.id, 
-                'clicked', 
-                event.categories?.[0] || event.category, 
-                event.venue || event.location
-            );
-        }
-    }, [event]);
+        if (!event) return;
+
+        setExpanded(false);
+        setIsClamped(false);
+
+        // Multiple timing attempts to catch layout settling
+        // rAF alone can miss because the modal transition hasn't finished
+        const raf = requestAnimationFrame(checkClamped);
+        const t1 = setTimeout(checkClamped, 100);
+        const t2 = setTimeout(checkClamped, 300);
+
+        return () => {
+            cancelAnimationFrame(raf);
+            clearTimeout(t1);
+            clearTimeout(t2);
+        };
+    }, [event, checkClamped]);
 
     // Don't render if no event selected
     if (!event) return null;
@@ -143,14 +161,25 @@ const EventModal = ({ event, onClose }) => {
                                     </a>
                                 </div>
                             )}
-
-
                         </div>
 
-                        {/* Summary */}
-                        <p className="text-slate-300 mb-6 sm:mb-8 leading-relaxed font-light text-base sm:text-lg">
-                            {event.summary}
-                        </p>
+                        {/* Summary with expandable toggle */}
+                        <div className="mb-6 sm:mb-8">
+                            <p
+                                ref={summaryRef}
+                                className={`text-slate-300 leading-relaxed font-light text-base sm:text-lg transition-all duration-300 ${expanded ? '' : 'line-clamp-3'}`}
+                            >
+                                {event.summary}
+                            </p>
+                            {(isClamped || expanded) && (
+                                <button
+                                    onClick={() => setExpanded((prev) => !prev)}
+                                    className="text-sm text-[#d4af37] hover:text-[#e5c548] mt-2 font-medium transition-colors duration-200"
+                                >
+                                    {expanded ? 'Show less' : 'Show more'}
+                                </button>
+                            )}
+                        </div>
 
                         {/* Atmosphere Analysis */}
                         {(aiAnalysis.noise_level || aiAnalysis.networking_pressure || aiAnalysis.crowd_type) && (

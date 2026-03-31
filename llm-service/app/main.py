@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from app.routes import chat, search, normalize
+from app.routes import chat, search, normalize, interactions
 
 app = FastAPI()
 
@@ -36,6 +36,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 app.include_router(chat.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(normalize.router, prefix="/api")
+app.include_router(interactions.router, prefix="/api")
 
 @app.get("/health")
 async def health_check():
