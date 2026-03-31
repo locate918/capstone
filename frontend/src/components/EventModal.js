@@ -11,7 +11,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
-import { recordInteraction } from '../services/api';
 
 const EventModal = ({ event, onClose }) => {
     const [expanded, setExpanded] = useState(false);
@@ -25,19 +24,6 @@ const EventModal = ({ event, onClose }) => {
         // scrollHeight > clientHeight means line-clamp is hiding content
         setIsClamped(el.scrollHeight > el.clientHeight + 1);
     }, []);
-
-    // Record 'viewed' interaction when modal opens
-    useEffect(() => {
-        if (event && event.id) {
-            console.log(`[DEBUG] EventModal viewed: ${event.id}`);
-            recordInteraction(
-                event.id,
-                'clicked',
-                event.categories?.[0] || event.category,
-                event.venue || event.location
-            );
-        }
-    }, [event]);
 
     // Reset expanded state when a different event opens, and detect clamping
     useEffect(() => {
