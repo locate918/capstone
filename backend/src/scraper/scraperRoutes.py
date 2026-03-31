@@ -1074,17 +1074,15 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
 def normalize_batch(events: list, source_url: str = "", source_name: str = "") -> list:
     """
     Send a batch of scraped events through the LLM normalization endpoint.
-
-    Sends events as a JSON array to POST /api/normalize on the LLM service.
-    Gemini normalizes all fields: timestamps (with timezone + inference),
-    descriptions, categories, etc.
-
-    Returns normalized events, or empty list if normalization fails.
+    Retries on 503 (Gemini overload) with exponential backoff.
     Chunks into groups of 10 to stay within token limits.
     """
+    import time
+
     all_normalized = []
     chunk_size = 10
     failed_chunks = 0
+    MAX_RETRIES = 4
 
     for i in range(0, len(events), chunk_size):
         chunk = events[i:i + chunk_size]
@@ -1098,39 +1096,59 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
                 ev_copy.pop('start_time', None)
             clean_chunk.append(ev_copy)
 
-        try:
-            payload = {
-                "raw_content": json.dumps(clean_chunk),
-                "source_url": source_url,
-                "content_type": "json"
-            }
+        payload = {
+            "raw_content": json.dumps(clean_chunk),
+            "source_url": source_url,
+            "content_type": "json"
+        }
 
-            resp = httpx.post(
-                f"{LLM_SERVICE_URL}/api/normalize",
-                json=payload,
-                timeout=120  # increased from 30 — gemini-2.0-flash still needs headroom per chunk
-            )
+        success = False
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = httpx.post(
+                    f"{LLM_SERVICE_URL}/api/normalize",
+                    json=payload,
+                    timeout=120
+                )
 
-            if resp.status_code == 200:
-                data = resp.json()
-                normalized = data.get("events", [])
+                if resp.status_code == 200:
+                    data = resp.json()
+                    normalized = data.get("events", [])
+                    if normalized:
+                        print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
+                        all_normalized.extend(normalized)
+                    else:
+                        print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
+                        failed_chunks += 1
+                    success = True
+                    break
 
-                if normalized:
-                    print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
-                    all_normalized.extend(normalized)
+                elif resp.status_code in [500, 503]:
+                    wait = 5 * (2 ** attempt)  # 5s, 10s, 20s, 40s
+                    print(f"[Normalize] Gemini overloaded (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait}s...")
+                    time.sleep(wait)
+
                 else:
-                    print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
+                    print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
                     failed_chunks += 1
-            else:
-                print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
-                failed_chunks += 1
+                    success = True
+                    break
 
-        except httpx.ConnectError:
-            print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
-            return []
-        except Exception as e:
-            print(f"[Normalize] Error: {e}")
+            except httpx.ConnectError:
+                print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
+                return []
+            except Exception as e:
+                print(f"[Normalize] Error: {e}")
+                failed_chunks += 1
+                success = True
+                break
+
+        if not success:
+            print(f"[Normalize] Chunk {i // chunk_size + 1}: All {MAX_RETRIES} retries failed, skipping")
             failed_chunks += 1
+
+        # Small delay between chunks to avoid hammering Gemini
+        time.sleep(2)
 
     if failed_chunks:
         print(f"[Normalize] {failed_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")

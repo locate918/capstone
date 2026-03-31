@@ -205,15 +205,17 @@ async def run_extraction_chain(html: str, name: str, url: str,
 # ── DB pipeline ───────────────────────────────────────────────────────────────
 
 def _post_events_to_db(events: list, url: str, name: str,
-                       source_priority: int = None) -> int:
+                       source_priority: int = None) -> tuple:
+    """Returns (db_saved, normalization_succeeded)."""
     import httpx as _httpx
     try:
         from scraperRoutes import normalize_batch, transform_event_for_backend
     except ImportError as e:
         print(f"[DB] Import error: {e}")
-        return 0
+        return 0, False
 
     normalized = normalize_batch(events, source_url=url, source_name=name)
+    normalization_succeeded = bool(normalized)
     to_post = normalized if normalized else events
     saved = 0
     for ev in to_post:
@@ -228,7 +230,7 @@ def _post_events_to_db(events: list, url: str, name: str,
                 saved += 1
         except Exception as e:
             print(f"[DB] {name}: {e}")
-    return saved
+    return saved, normalization_succeeded
 
 
 # ── Single source scraper ─────────────────────────────────────────────────────
@@ -282,10 +284,11 @@ async def scrape_one(entry: dict,
                 json.dumps(events, indent=2), encoding='utf-8'
             )
             loop = asyncio.get_event_loop()
-            db_saved = await loop.run_in_executor(
+            db_saved, norm_ok = await loop.run_in_executor(
                 None, _post_events_to_db, events, url, name, prio
             )
             result['db_saved'] = db_saved
+            result['norm_failed'] = not norm_ok
 
     except Exception as exc:
         tb = traceback.format_exc()
@@ -399,6 +402,8 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
                 'methods':      result['methods'],
                 'error':        result['error'],
                 'error_report': result['error_report'],
+                'norm_failed':  result.get('norm_failed', False),
+                'events':       result.get('events', []),
             }
             save_status(status_data)
 
@@ -416,6 +421,57 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
                 'completed':    completed,
                 'total':        total,
             })
+
+    # ── Normalization retry queue ─────────────────────────────────────────────
+    # Re-attempt normalization for any sources that fell back to raw events
+    norm_queue = [
+        r for r in [
+            status_data.get(e.get('url', {})) for e in saved
+        ] if r and r.get('norm_failed')
+    ]
+
+    if norm_queue:
+        import time
+        print(f"[NormRetry] Retrying normalization for {len(norm_queue)} source(s) after 30s cooldown...")
+        q.put({'type': 'norm_retry_start', 'count': len(norm_queue)})
+        time.sleep(30)  # Let Gemini recover
+
+        try:
+            from scraperRoutes import normalize_batch, transform_event_for_backend
+            import httpx as _httpx
+
+            for entry in saved:
+                url  = entry.get('url', '')
+                sdata = status_data.get(url, {})
+                if not sdata.get('norm_failed'):
+                    continue
+                name = sdata.get('name', url)
+                prio = entry.get('priority', entry.get('venue_priority'))
+                events = sdata.get('events', [])
+                if not events:
+                    continue
+
+                print(f"[NormRetry] Retrying: {name}")
+                normalized = normalize_batch(events, source_url=url, source_name=name)
+                if normalized:
+                    retry_saved = 0
+                    for ev in normalized:
+                        try:
+                            xf = transform_event_for_backend(ev, source_priority=prio)
+                            if not xf.get('source_url'): xf['source_url'] = url
+                            if not xf.get('source_name'): xf['source_name'] = name
+                            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=5)
+                            if resp.status_code in [200, 201]:
+                                retry_saved += 1
+                                total_saved_db += 1
+                        except Exception as e:
+                            print(f"[NormRetry] {name}: {e}")
+                    print(f"[NormRetry] {name}: {retry_saved}/{len(normalized)} saved")
+                    q.put({'type': 'norm_retry_done', 'name': name, 'saved': retry_saved})
+                else:
+                    print(f"[NormRetry] {name}: still failing, skipping")
+        except Exception as e:
+            print(f"[NormRetry] Error: {e}")
 
     q.put({
         'type':            'complete',
