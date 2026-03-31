@@ -12,4 +12,4 @@ ENV PORT=5000
 
 EXPOSE $PORT
 
-CMD python ScraperTool.py
+CMD gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:$PORT --timeout 3600 --keep-alive 65 "ScraperTool:app"
