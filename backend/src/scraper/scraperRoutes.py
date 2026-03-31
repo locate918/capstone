@@ -1681,7 +1681,13 @@ def register_routes(app):
 
         q = _queue.Queue()
         def _run():
-            asyncio.run(asyncScraper.scrape_all_prioritized(saved, q))
+            # Create a fresh event loop in this thread — required under gevent
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(asyncScraper.scrape_all_prioritized(saved, q))
+            finally:
+                loop.close()
         _threading.Thread(target=_run, daemon=True).start()
 
         def generate():
