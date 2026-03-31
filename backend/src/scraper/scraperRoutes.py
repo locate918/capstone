@@ -10,7 +10,7 @@ import re
 import json
 import asyncio
 from datetime import datetime
-from flask import render_template_string, request, jsonify, send_file, Response
+from flask import render_template_string, render_template, request, jsonify, send_file, Response
 import httpx
 
 from scraperUtils import (
@@ -207,6 +207,30 @@ HTML_TEMPLATE = '''
             margin-top: 10px; max-height: 250px; overflow-y: auto;
             font-family: monospace; font-size: 11px; color: #0f0;
         }
+        /* Source manager table */
+        #source-table tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+        #source-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+        #source-table td { padding: 8px 10px; vertical-align: middle; }
+        .src-name { color: #ddd; font-weight: 500; cursor: pointer; }
+        .src-name:hover { color: #D4AF37; }
+        .src-url { color: #555; font-size: 10px; margin-top: 1px; }
+        .p-tag { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; }
+        .p-tag-1 { background:rgba(212,175,55,0.18); color:#D4AF37; border:1px solid rgba(212,175,55,0.4); }
+        .p-tag-2 { background:rgba(40,167,69,0.15); color:#4caf70; border:1px solid rgba(40,167,69,0.3); }
+        .p-tag-3 { background:rgba(85,102,170,0.15); color:#7788cc; border:1px solid rgba(85,102,170,0.3); }
+        .status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+        .sb-working { background:rgba(40,167,69,0.15); color:#4caf70; border:1px solid rgba(40,167,69,0.3); }
+        .sb-empty   { background:rgba(255,193,7,0.15); color:#ffc107; border:1px solid rgba(255,193,7,0.3); }
+        .sb-error   { background:rgba(220,53,69,0.15); color:#e05565; border:1px solid rgba(220,53,69,0.3); cursor:pointer; }
+        .sb-stale   { background:rgba(255,255,255,0.05); color:#666; border:1px solid rgba(255,255,255,0.1); }
+        .sb-running { background:rgba(212,175,55,0.1); color:#D4AF37; border:1px solid rgba(212,175,55,0.2); }
+        .method-pill { display:inline-block; background:#222; color:#888; padding:2px 7px; border-radius:8px; font-size:10px; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .row-btn { padding:3px 10px; font-size:11px; border:none; border-radius:5px; cursor:pointer; font-weight:600; transition:background 0.15s; }
+        .row-scrape { background:#2a2a1a; color:#D4AF37; border:1px solid rgba(212,175,55,0.3); }
+        .row-scrape:hover { background:rgba(212,175,55,0.2); }
+        .row-scrape:disabled { opacity:0.4; cursor:not-allowed; }
+        .row-del { background:transparent; color:#555; border:1px solid rgba(255,255,255,0.08); margin-left:4px; }
+        .row-del:hover { color:#e05565; border-color:rgba(220,53,69,0.4); }
         .footer { text-align: center; color: #333; margin-top: 25px; font-size: 11px; }
     </style>
 </head>
@@ -265,19 +289,36 @@ HTML_TEMPLATE = '''
             <div id="event-list" class="event-list"></div>
         </div>
 
-        <!-- Saved Sources -->
-        <div class="card">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-                <h3 style="margin:0;">Saved Sources <span class="source-count" id="source-count"></span></h3>
-                <button class="btn btn-primary" onclick="scrapeAll()" style="padding:7px 16px; font-size:12px;">Scrape All</button>
-            </div>
-            <div id="saved-list" class="sources-grid">
-                <span style="color:#555;font-size:12px;">Loading...</span>
+        <!-- Source Manager -->
+        <div class="card" id="source-manager">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <h3 style="margin:0;">Sources <span id="source-count" style="color:#555;font-size:12px;font-weight:400;"></span></h3>
+                    <div id="tier-badges" style="display:flex;gap:5px;"></div>
+                </div>
+                <button class="btn btn-primary" id="scrape-all-btn" onclick="scrapeAll()" style="padding:7px 16px;font-size:12px;">&#9889; Scrape All</button>
             </div>
             <div id="scrape-all-status" class="status hidden"></div>
             <div class="progress-bar hidden" id="progress-bar"><div class="fill" id="progress-fill"></div></div>
-            <div id="scrape-all-counter" style="text-align:center;color:#888;font-size:12px;margin-top:5px;" class="hidden"></div>
-            <div id="scrape-all-log" class="scrape-all-log hidden"></div>
+            <div id="scrape-all-counter" style="text-align:center;color:#888;font-size:11px;margin-top:4px;" class="hidden"></div>
+            <div style="overflow-x:auto;margin-top:8px;">
+                <table id="source-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                            <th style="text-align:left;padding:6px 10px;color:#555;font-weight:600;">Source</th>
+                            <th style="text-align:center;padding:6px 8px;color:#555;font-weight:600;">P</th>
+                            <th style="text-align:left;padding:6px 10px;color:#555;font-weight:600;white-space:nowrap;">Last Run</th>
+                            <th style="text-align:center;padding:6px 8px;color:#555;font-weight:600;">Status</th>
+                            <th style="text-align:center;padding:6px 6px;color:#555;font-weight:600;">Events</th>
+                            <th style="text-align:left;padding:6px 10px;color:#555;font-weight:600;">Method</th>
+                            <th style="text-align:center;padding:6px 8px;color:#555;font-weight:600;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="source-tbody">
+                        <tr><td colspan="7" style="text-align:center;padding:20px;color:#555;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="footer">Locate918 &bull; Senior Capstone 2026</div>
@@ -285,51 +326,135 @@ HTML_TEMPLATE = '''
 
     <script>
 var events = [];
-var activeChip = null;
+var savedUrls = [];
+var scrapeStatus = {};
+var runningUrls  = new Set();
 
 function log(msg, cls) {
     var b = document.getElementById("log-box");
     b.classList.remove("hidden");
-    b.innerHTML += "<div" + (cls ? " class=\\"" + cls + "\\"" : "") + ">" + msg + "</div>";
+    b.innerHTML += "<div" + (cls ? " class=\"" + cls + "\"" : "") + ">" + msg + "</div>";
     b.scrollTop = b.scrollHeight;
 }
-
 function status(msg, type) {
     type = type || "loading";
     var el = document.getElementById("status");
     el.className = "status " + type;
-    el.innerHTML = type === "loading" ? "<span class=\\"spinner\\"></span>" + msg : msg;
+    el.innerHTML = type === "loading" ? "<span class=\"spinner\"></span>" + msg : msg;
     el.classList.remove("hidden");
 }
-
-async function loadSaved() {
-    try {
-        var r = await fetch("/saved-urls");
-        var urls = await r.json();
-        var list = document.getElementById("saved-list");
-        document.getElementById("source-count").textContent = "(" + urls.length + ")";
-        if (!urls.length) {
-            list.innerHTML = "<span style=\\"color:#555;font-size:12px;\\">No saved sources. Scrape a URL to add one.</span>";
-            return;
-        }
-        list.innerHTML = urls.map(function(u, i) {
-            var vp = u.venue_priority || 2;
-            return "<div class=\\"source-chip\\" data-idx=\\"" + i + "\\" " +
-                "onclick=\\"selectSource(this,'" + esc(u.url) + "','" + esc(u.name) + "'," + (u.playwright !== false) + "," + vp + ")\\">" +
-                "<span class=\\"name\\">" + u.name + "</span>" +
-                "<span class=\\"x\\" onclick=\\"event.stopPropagation();deleteUrl('" + esc(u.url) + "')\\">×</span>" +
-                "</div>";
-        }).join("");
-    } catch(e) { console.error(e); }
+function esc(s) {
+    return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function escJs(s) {
+    return String(s || "").replace(/'/g, String.fromCharCode(92) + "'");
+}
+function relTime(iso) {
+    if (!iso) return "never";
+    var d = new Date(iso), now = Date.now(), diff = Math.floor((now - d) / 1000);
+    if (diff < 60)    return diff + "s ago";
+    if (diff < 3600)  return Math.floor(diff/60) + "m ago";
+    if (diff < 86400) return Math.floor(diff/3600) + "h ago";
+    return Math.floor(diff/86400) + "d ago";
+}
+function statusBadge(st, errReport) {
+    var map = {working:"sb-working", empty:"sb-empty", error:"sb-error", stale:"sb-stale"};
+    var cls = map[st] || "sb-stale";
+    var label = st || "stale";
+    if (st === "error" && errReport) {
+        return "<a href=\"/download/" + esc(errReport) + "\" class=\"status-badge " + cls + "\" title=\"Download error report\" download>&#9888; " + label + "</a>";
+    }
+    return "<span class=\"status-badge " + cls + "\">" + label + "</span>";
+}
+function pTag(p) {
+    p = parseInt(p) || 3;
+    return "<span class=\"p-tag p-tag-" + p + "\">P" + p + "</span>";
 }
 
-function esc(s) { return s.replace(/\\\\/g,"\\\\\\\\").replace(/'/g,"\\\\'"); }
+async function loadSourceTable() {
+    try {
+        var [urlsR, statusR] = await Promise.all([
+            fetch("/saved-urls"),
+            fetch("/scrape-status")
+        ]);
+        savedUrls    = await urlsR.json();
+        scrapeStatus = await statusR.json();
+    } catch(e) {
+        savedUrls    = [];
+        scrapeStatus = {};
+    }
+    renderSourceTable();
+}
 
-function selectSource(el, url, name, pw, vp) {
-    document.querySelectorAll(".source-chip").forEach(function(c){ c.classList.remove("active"); });
-    el.classList.add("active");
-    activeChip = el;
-    document.getElementById("url").value = url;
+function renderSourceTable() {
+    var tbody   = document.getElementById("source-tbody");
+    var countEl = document.getElementById("source-count");
+    if (!savedUrls.length) {
+        tbody.innerHTML = "<tr><td colspan=\"7\" style=\"text-align:center;padding:20px;color:#555;\">No saved sources yet. Scrape a URL above to add one.</td></tr>";
+        countEl.textContent = "";
+        return;
+    }
+    countEl.textContent = "(" + savedUrls.length + ")";
+
+    var t = {1:0,2:0,3:0};
+    savedUrls.forEach(function(u) { t[parseInt(u.venue_priority||u.priority||3)]++; });
+    var tb = document.getElementById("tier-badges");
+    if (tb) tb.innerHTML =
+        (t[1] ? "<span class=\"p-tag p-tag-1\" style=\"font-size:10px;\">P1 &times;" + t[1] + "</span>" : "") +
+        (t[2] ? "<span class=\"p-tag p-tag-2\" style=\"font-size:10px;margin-left:4px;\">P2 &times;" + t[2] + "</span>" : "") +
+        (t[3] ? "<span class=\"p-tag p-tag-3\" style=\"font-size:10px;margin-left:4px;\">P3 &times;" + t[3] + "</span>" : "");
+
+    var sorted = savedUrls.slice().sort(function(a,b) {
+        var pa = parseInt(a.venue_priority||a.priority||3);
+        var pb = parseInt(b.venue_priority||b.priority||3);
+        if (pa !== pb) return pa - pb;
+        return (a.name||"").localeCompare(b.name||"");
+    });
+
+    tbody.innerHTML = sorted.map(function(u) {
+        var url = u.url;
+        var st  = scrapeStatus[url] || {};
+        var p   = parseInt(u.venue_priority || u.priority || 3);
+        var isRunning = runningUrls.has(url);
+
+        var statusCell = isRunning
+            ? "<span class=\"status-badge sb-running\"><span class=\"spinner\" style=\"width:10px;height:10px;\"></span> running</span>"
+            : statusBadge(st.status, st.error_report);
+
+        var methods = (st.methods || []);
+        var methodCell = methods.length
+            ? "<span class=\"method-pill\" title=\"" + esc(methods.join(", ")) + "\">" + esc(methods[0].replace(/ \(\d+\)/, "")) + "</span>"
+            : "<span style=\"color:#444;\">—</span>";
+
+        var evCount = (st.event_count != null)
+            ? "<span style=\"color:" + (st.event_count > 0 ? "#4caf70" : "#666") + ";font-weight:600;\">" + st.event_count + "</span>"
+            : "<span style=\"color:#444;\">—</span>";
+
+        var rowId = "row-" + btoa(url).replace(/[^a-zA-Z0-9]/g,"").slice(0,12);
+
+        return "<tr id=\"" + rowId + "\">" +
+            "<td>" +
+              "<div class=\"src-name\" onclick=\"selectSource('" + escJs(url) + "','" + escJs(u.name) + "'," + (u.playwright !== false) + "," + p + ")\">" + esc(u.name) + "</div>" +
+              "<div class=\"src-url\">" + esc(url.replace(/^https?:\/\//, "").split("/")[0]) + "</div>" +
+            "</td>" +
+            "<td style=\"text-align:center;\">" + pTag(p) + "</td>" +
+            "<td style=\"color:#555;white-space:nowrap;\">" + esc(relTime(st.last_scraped)) + "</td>" +
+            "<td style=\"text-align:center;\">" + statusCell + "</td>" +
+            "<td style=\"text-align:center;\">" + evCount + "</td>" +
+            "<td>" + methodCell + "</td>" +
+            "<td style=\"text-align:center;white-space:nowrap;\">" +
+              "<button class=\"row-btn row-scrape\" id=\"btn-" + rowId + "\"" +
+                (isRunning ? " disabled" : "") +
+                " onclick=\"scrapeSource('" + escJs(url) + "','" + escJs(u.name) + "'," + (u.playwright !== false) + "," + p + ")\"" +
+              ">&#9654;</button>" +
+              "<button class=\"row-btn row-del\" onclick=\"deleteUrl('" + escJs(url) + "')\">&#215;</button>" +
+            "</td>" +
+        "</tr>";
+    }).join("");
+}
+
+function selectSource(url, name, pw, vp) {
+    document.getElementById("url").value    = url;
     document.getElementById("source").value = name;
     document.getElementById("playwright").checked = pw;
     document.getElementById("venue-priority").value = vp || 2;
@@ -341,7 +466,7 @@ async function deleteUrl(url) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({url: url})
     });
-    loadSaved();
+    loadSourceTable();
 }
 
 async function saveUrl() {
@@ -357,21 +482,127 @@ async function saveUrl() {
             body: JSON.stringify({url: url, name: name, playwright: pw, venue_priority: vp})
         });
         status("Saved " + name + " (P" + vp + ")", "success");
-        loadSaved();
+        loadSourceTable();
     } catch(e) { status("Save error: " + e.message, "error"); }
 }
 
+async function scrapeSource(url, name, usePw, vp) {
+    if (runningUrls.has(url)) return;
+    runningUrls.add(url);
+    renderSourceTable();
+    try {
+        var r = await fetch("/scrape-source", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({url: url, name: name, use_playwright: usePw, venue_priority: vp})
+        });
+        var d = await r.json();
+        if (d.error && !d.status) {
+            scrapeStatus[url] = { status: "error", error: d.error, last_scraped: new Date().toISOString(), event_count: 0, methods: [] };
+        } else {
+            scrapeStatus[url] = {
+                status:       d.status,
+                event_count:  d.event_count,
+                methods:      d.methods,
+                last_scraped: d.last_scraped,
+                error:        d.error,
+                error_report: d.error_report,
+            };
+        }
+    } catch(e) {
+        scrapeStatus[url] = { status: "error", error: e.message, last_scraped: new Date().toISOString(), event_count: 0, methods: [] };
+    } finally {
+        runningUrls.delete(url);
+        renderSourceTable();
+    }
+}
+
+async function scrapeAll() {
+    var statusEl = document.getElementById("scrape-all-status");
+    var bar      = document.getElementById("progress-fill");
+    var barC     = document.getElementById("progress-bar");
+    var counter  = document.getElementById("scrape-all-counter");
+    var btn      = document.getElementById("scrape-all-btn");
+
+    btn.disabled = true;
+    statusEl.className = "status loading";
+    statusEl.innerHTML = "<span class=\"spinner\"></span>Starting priority run...";
+    statusEl.classList.remove("hidden");
+    barC.classList.remove("hidden");
+    counter.classList.remove("hidden");
+    bar.style.width = "0%";
+    counter.textContent = "";
+
+    try {
+        var response = await fetch("/scrape-all", { method: "POST" });
+        var reader   = response.body.getReader();
+        var decoder  = new TextDecoder();
+        var buffer   = "";
+        var total    = 0;
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf("data: ") !== 0) continue;
+                try {
+                    var d = JSON.parse(lines[i].slice(6));
+                    if (d.type === "start") {
+                        total = d.total_sources;
+                        counter.textContent = "0 / " + total;
+                        statusEl.innerHTML = "<span class=\"spinner\"></span>Scraping P1 (" + d.p1 + ") \u2192 P2 (" + d.p2 + ") \u2192 P3 (" + d.p3 + ")";
+                    } else if (d.type === "tier_start") {
+                        statusEl.innerHTML = "<span class=\"spinner\"></span>Running P" + d.tier + " tier (" + d.count + " sources concurrently)";
+                    } else if (d.type === "source_start") {
+                        runningUrls.add(d.url);
+                        renderSourceTable();
+                    } else if (d.type === "source_done") {
+                        runningUrls.delete(d.url);
+                        scrapeStatus[d.url] = {
+                            status:       d.status,
+                            event_count:  d.event_count,
+                            methods:      d.methods,
+                            last_scraped: new Date().toISOString(),
+                            error:        d.error,
+                            error_report: d.error_report,
+                        };
+                        bar.style.width = Math.round((d.completed / d.total) * 100) + "%";
+                        counter.textContent = d.completed + " / " + d.total;
+                        renderSourceTable();
+                    } else if (d.type === "complete") {
+                        bar.style.width = "100%";
+                        statusEl.className = "status success";
+                        statusEl.textContent = "Done \u2014 " + d.total_events + " events found, " + d.total_saved + " saved to DB (" + d.sources_scraped + " sources)";
+                        counter.textContent = d.sources_scraped + " / " + total;
+                    }
+                } catch(pe) {}
+            }
+        }
+    } catch(e) {
+        statusEl.className = "status error";
+        statusEl.textContent = "Error: " + e.message;
+    } finally {
+        runningUrls.clear();
+        btn.disabled = false;
+        renderSourceTable();
+    }
+}
+
 async function scrape() {
-    var url = document.getElementById("url").value.trim();
-    var source = document.getElementById("source").value.trim() || "unknown";
-    var pw = document.getElementById("playwright").checked;
+    var url       = document.getElementById("url").value.trim();
+    var src       = document.getElementById("source").value.trim() || "unknown";
+    var pw        = document.getElementById("playwright").checked;
     var futureOnly = document.getElementById("future-only").checked;
     if (!url) { status("Enter a URL", "error"); return; }
 
     document.getElementById("log-box").innerHTML = "";
     document.getElementById("scrape-btn").disabled = true;
     document.getElementById("results").classList.add("hidden");
-    status("Scraping " + source + "...");
+    status("Scraping " + src + "...");
     log("Fetching: " + url);
     log("Method: " + (pw ? "Playwright" : "httpx") + " | Future only: " + futureOnly, "i");
 
@@ -379,7 +610,7 @@ async function scrape() {
         var r = await fetch("/scrape", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({url: url, source_name: source, use_playwright: pw, future_only: futureOnly})
+            body: JSON.stringify({url: url, source_name: src, use_playwright: pw, future_only: futureOnly})
         });
         var d = await r.json();
 
@@ -391,28 +622,27 @@ async function scrape() {
         if (d.methods && d.methods.length) log("Methods: " + d.methods.join(", "), "i");
 
         document.getElementById("stat-count").textContent = events.length;
-        document.getElementById("stat-html").textContent = (d.html_size/1024).toFixed(1) + "KB";
+        document.getElementById("stat-html").textContent  = (d.html_size/1024).toFixed(1) + "KB";
 
         var md = document.getElementById("methods-used");
-        md.innerHTML = (d.methods||[]).map(function(m){ return "<span class=\\"method-tag\\">" + m + "</span>"; }).join("");
+        md.innerHTML = (d.methods||[]).map(function(m){ return "<span class=\"method-tag\">" + m + "</span>"; }).join("");
 
         var list = document.getElementById("event-list");
         if (!events.length) {
-            list.innerHTML = "<p style=\\"color:#666;\\">No events found.</p>";
+            list.innerHTML = "<p style=\"color:#666;\">No events found.</p>";
         } else {
             list.innerHTML = events.map(function(e) {
-                return "<div class=\\"event-item\\"><strong>" + (e.title||"Untitled") + "</strong>" +
-                    (e.date ? "<p>" + e.date + "</p>" : e.start_time ? "<p>" + e.start_time + "</p>" : "") +
-                    (e.venue ? "<p>" + e.venue + "</p>" : "") +
-                    (e.source_url ? "<a href=\\"" + e.source_url + "\\" target=\\"_blank\\">View →</a>" : "") +
+                return "<div class=\"event-item\"><strong>" + esc(e.title||"Untitled") + "</strong>" +
+                    (e.date ? "<p>" + esc(e.date) + "</p>" : e.start_time ? "<p>" + esc(e.start_time) + "</p>" : "") +
+                    (e.venue ? "<p>" + esc(e.venue) + "</p>" : "") +
+                    (e.source_url ? "<a href=\"" + esc(e.source_url) + "\" target=\"_blank\">View &#8594;</a>" : "") +
                     "</div>";
             }).join("");
         }
 
         document.getElementById("results").classList.remove("hidden");
         status("Found " + events.length + " events", "success");
-        loadSaved();  // refresh chip list since scraping auto-saves the URL
-
+        loadSourceTable();
     } catch(e) {
         log("Error: " + e.message, "e");
         status("Error: " + e.message, "error");
@@ -423,12 +653,12 @@ async function scrape() {
 
 async function saveJSON() {
     if (!events.length) return;
-    var source = document.getElementById("source").value.trim() || "unknown";
+    var src = document.getElementById("source").value.trim() || "unknown";
     try {
         var r = await fetch("/save", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({events: events, source: source})
+            body: JSON.stringify({events: events, source: src})
         });
         var d = await r.json();
         status("Saved " + d.count + " events to " + d.filename, "success");
@@ -446,77 +676,14 @@ async function sendToDatabase() {
         });
         var d = await r.json();
         var msg = d.saved + "/" + d.total + " saved";
-        if (d.normalized) msg += " (normalized)";
+        if (d.normalized)        msg += " (normalized)";
         if (d.venues_registered) msg += " | " + d.venues_registered + " venues";
-        if (d.venues_enriched) msg += " (" + d.venues_enriched + " enriched)";
+        if (d.venues_enriched)   msg += " (" + d.venues_enriched + " enriched)";
         status(msg, "success");
     } catch(e) { status("DB error: " + e.message, "error"); }
 }
 
-async function scrapeAll() {
-    var statusEl = document.getElementById("scrape-all-status");
-    var bar = document.getElementById("progress-fill");
-    var barC = document.getElementById("progress-bar");
-    var counter = document.getElementById("scrape-all-counter");
-    var slog = document.getElementById("scrape-all-log");
-
-    statusEl.className = "status loading";
-    statusEl.innerHTML = "<span class=\\"spinner\\"></span>Starting...";
-    statusEl.classList.remove("hidden");
-    barC.classList.remove("hidden");
-    counter.classList.remove("hidden");
-    slog.classList.remove("hidden");
-    slog.innerHTML = "";
-    bar.style.width = "0%";
-
-    try {
-        var response = await fetch("/scrape-all", { method: "POST" });
-        var reader = response.body.getReader();
-        var decoder = new TextDecoder();
-        var buffer = "";
-        var total = 0;
-
-        while (true) {
-            var chunk = await reader.read();
-            if (chunk.done) break;
-            buffer += decoder.decode(chunk.value, { stream: true });
-            var lines = buffer.split("\\n");
-            buffer = lines.pop();
-
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i].indexOf("data: ") !== 0) continue;
-                try {
-                    var d = JSON.parse(lines[i].slice(6));
-                    if (d.type === "start") {
-                        total = d.total_sources;
-                        counter.textContent = "0 / " + total;
-                    } else if (d.type === "source_start") {
-                        statusEl.textContent = "Scraping: " + d.name;
-                        slog.innerHTML += "<div style=\\"color:#6cf\\">▶ " + d.name + "</div>";
-                    } else if (d.type === "source_scraped") {
-                        slog.innerHTML += "<div style=\\"color:#aaa\\">  " + d.count + " events [" + d.methods.join(", ") + "]</div>";
-                    } else if (d.type === "source_done") {
-                        bar.style.width = Math.round(((d.index+1)/total)*100) + "%";
-                        counter.textContent = (d.index+1) + " / " + total;
-                        slog.innerHTML += "<div style=\\"color:#6f6\\">  ✓ " + d.saved + " saved</div>";
-                    } else if (d.type === "source_error") {
-                        slog.innerHTML += "<div style=\\"color:#f66\\">  ✗ " + d.error + "</div>";
-                    } else if (d.type === "complete") {
-                        bar.style.width = "100%";
-                        statusEl.className = "status success";
-                        statusEl.textContent = "Done! " + d.total_events + " events, " + d.total_saved + " saved (" + d.sources_scraped + "/" + d.total_sources + " sources)";
-                    }
-                    slog.scrollTop = slog.scrollHeight;
-                } catch(pe) {}
-            }
-        }
-    } catch(e) {
-        statusEl.className = "status error";
-        statusEl.textContent = "Error: " + e.message;
-    }
-}
-
-loadSaved();
+loadSourceTable();
     </script>
 </body>
 </html>
@@ -941,7 +1108,7 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
             resp = httpx.post(
                 f"{LLM_SERVICE_URL}/api/normalize",
                 json=payload,
-                timeout=30
+                timeout=120  # increased from 30 — gemini-2.0-flash still needs headroom per chunk
             )
 
             if resp.status_code == 200:
@@ -1126,7 +1293,7 @@ def register_routes(app):
 
     @app.route('/')
     def index():
-        return render_template_string(HTML_TEMPLATE)
+        return render_template('scraperUI.html')
 
     @app.route('/saved-urls', methods=['GET'])
     def get_saved_urls():
@@ -1468,326 +1635,394 @@ def register_routes(app):
 
     @app.route('/scrape-all', methods=['POST'])
     def scrape_all():
-        """Stream scrape all saved URLs with SSE progress events."""
+        """Priority-based async scrape-all via asyncScraper."""
+        import queue as _queue
+        import threading as _threading
+        import asyncScraper
+
         saved = load_saved_urls()
         if not saved:
             return jsonify({"error": "No saved URLs"}), 400
 
+        q = _queue.Queue()
+        def _run():
+            asyncio.run(asyncScraper.scrape_all_prioritized(saved, q))
+        _threading.Thread(target=_run, daemon=True).start()
+
         def generate():
-            total = len(saved)
-            yield f"data: {json.dumps({'type': 'start', 'total_sources': total})}\n\n"
-
-            total_events = 0
-            total_saved = 0
-            sources_scraped = 0
-
-            for i, entry in enumerate(saved):
-                url = entry.get('url', '')
-                name = entry.get('name', 'unknown')
-                use_pw = entry.get('use_playwright', True)
-
-                # Resolve canonical venue name from URL
-                name = resolve_source_name(url, name)
-
-                yield f"data: {json.dumps({'type': 'source_start', 'name': name, 'index': i})}\n\n"
-
-                try:
-                    # Check robots.txt
-                    robots_result = check_robots_txt(url)
-                    if not robots_result['allowed']:
-                        yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': f'Blocked by robots.txt'})}\n\n"
-                        continue
-
-                    # Fetch
-                    if use_pw:
-                        html = asyncio.run(fetch_with_playwright(url))
-                    else:
-                        html = asyncio.run(fetch_with_httpx(url))
-
-                    # Extract - same chain as /scrape
-                    methods = []
-                    events = []
-
-                    eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, name, url, True))
-                    if eca_detected and eca_events:
-                        events = eca_events
-                        methods.append(f"EventCalendarApp API ({len(events)})")
-
-                    if not events:
-                        timely_events, timely_detected = asyncio.run(extract_timely(html, name, url, True))
-                        if timely_detected and timely_events:
-                            events = timely_events
-                            methods.append(f"Timely API ({len(events)})")
-
-                    if not events:
-                        bok_events, bok_detected = asyncio.run(extract_bok_center(html, name, url, True))
-                        if bok_detected and bok_events:
-                            events = bok_events
-                            methods.append(f"BOK Center API ({len(events)})")
-
-                    if not events:
-                        cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, name, url, True))
-                        if cc_detected and cc_events:
-                            events = cc_events
-                            methods.append(f"Circle Cinema ({len(events)})")
-
-                    if not events:
-                        expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
-                        if expo_detected and expo_events:
-                            events = expo_events
-                            methods.append(f"Expo Square API ({len(events)})")
-
-                    if not events:
-                        eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, name, url, True))
-                        if eb_detected and eb_events:
-                            events = eb_events
-                            methods.append(f"Eventbrite API ({len(events)})")
-
-                    if not events:
-                        sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, name, url, True))
-                        if sv_detected and sv_events:
-                            events = sv_events
-                            methods.append(f"Simpleview API ({len(events)})")
-
-                    if not events:
-                        sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, name, url, True))
-                        if sw_detected and sw_events:
-                            events = sw_events
-                            methods.append(f"SiteWrench API ({len(events)})")
-
-                    if not events:
-                        rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, name, url, True))
-                        if rd_detected and rd_events:
-                            events = rd_events
-                            methods.append(f"RecDesk API ({len(events)})")
-
-                    if not events:
-                        tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, name, url, True))
-                        if tl_detected and tl_events:
-                            events = tl_events
-                            methods.append(f"TicketLeap ({len(events)})")
-
-                    if not events:
-                        ln_events, ln_detected = asyncio.run(extract_libnet_events(html, name, url, True))
-                        if ln_detected and ln_events:
-                            events = ln_events
-                            methods.append(f"LibNet API ({len(events)})")
-                            print(f"[LibNet] SUCCESS: {len(events)} events via API")
-
-                    if not events:
-                        pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, name, url, True))
-                        if pb_detected and pb_events:
-                            events = pb_events
-                            methods.append(f"Philbrook AJAX ({len(events)})")
-                            print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
-
-                    if not events:
-                        tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, name, url, True))
-                        if tpac_detected and tpac_events:
-                            events = tpac_events
-                            methods.append(f"TulsaPAC API ({len(events)})")
-                            print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
-
-                    if not events:
-                        rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, name, url, True))
-                        if rd_detected and rd_ev:
-                            events = rd_ev
-                            methods.append(f"RoosterDays ({len(events)})")
-                            print(f"[RoosterDays] SUCCESS: {len(events)} event")
-
-                    if not events:
-                        tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, name, url, True))
-                        if tbf_detected and tbf_ev:
-                            events = tbf_ev
-                            methods.append(f"TulsaBrunchFest ({len(events)})")
-                            print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
-
-                    if not events:
-                        okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, name, url, True))
-                        if okeq_detected and okeq_ev:
-                            events = okeq_ev
-                            methods.append(f"OKEQ ({len(events)})")
-                            print(f"[OKEQ] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, name, url, True))
-                        if flywheel_detected and flywheel_ev:
-                            events = flywheel_ev
-                            methods.append(f"Flywheel ({len(events)})")
-                            print(f"[Flywheel] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, name, url, True))
-                        if arvest_detected and arvest_ev:
-                            events = arvest_ev
-                            methods.append(f"Arvest ({len(events)})")
-                            print(f"[Arvest] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, name, url, True))
-                        if tt_detected and tt_ev:
-                            events = tt_ev
-                            methods.append(f"TulsaTough ({len(events)})")
-                            print(f"[TulsaTough] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, name, url, True))
-                        if gradient_detected and gradient_ev:
-                            events = gradient_ev
-                            methods.append(f"Gradient ({len(events)})")
-                            print(f"[Gradient] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, name, url, True))
-                        if tfm_detected and tfm_ev:
-                            events = tfm_ev
-                            methods.append(f"TFM ({len(events)})")
-                            print(f"[TFM] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, name, url, True))
-                        if okcastle_detected and okcastle_ev:
-                            events = okcastle_ev
-                            methods.append(f"OKCastle ({len(events)})")
-                            print(f"[OKCastle] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, name, url, True))
-                        if ba_detected and ba_ev:
-                            events = ba_ev
-                            methods.append(f"BrokenArrow ({len(events)})")
-                            print(f"[BrokenArrow] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, name, url, True))
-                        if zoo_detected and zoo_ev:
-                            events = zoo_ev
-                            methods.append(f"TulsaZoo ({len(events)})")
-                            print(f"[TulsaZoo] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, name, url, True))
-                        if hr_detected and hr_ev:
-                            events = hr_ev
-                            methods.append(f"HardRockTulsa ({len(events)})")
-                            print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, name, url, True))
-                        if gypsy_detected and gypsy_ev:
-                            events = gypsy_ev
-                            methods.append(f"Gypsy ({len(events)})")
-                            print(f"[Gypsy] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, name, url, True))
-                        if bar_detected and bar_ev:
-                            events = bar_ev
-                            methods.append(f"BadAssRenees ({len(events)})")
-                            print(f"[BadAssRenees] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, name, url, True))
-                        if rl_detected and rl_ev:
-                            events = rl_ev
-                            methods.append(f"Rocklahoma ({len(events)})")
-                            print(f"[Rocklahoma] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, name, url, True))
-                        if ok_detected and ok_ev:
-                            events = ok_ev
-                            methods.append(f"TulsaOktoberfest ({len(events)})")
-                            print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
-
-                    if not events:
-                        events = extract_events_universal(html, url, name)
-                        if events and '_extraction_methods' in events[0]:
-                            methods = events[0]['_extraction_methods']
-                            for e in events:
-                                e.pop('_extraction_methods', None)
-
-                    # Future filter
-                    if events:
-                        from dateutil import parser as date_parser
-                        now = datetime.now()
-                        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                        filtered = []
-                        for ev in events:
-                            date_str = ev.get('date', '') or ev.get('date_start', '') or ev.get('start_time', '')
-                            if not date_str:
-                                filtered.append(ev)
-                                continue
-                            try:
-                                dt = date_parser.parse(str(date_str), fuzzy=True)
-                                dt = dt.replace(tzinfo=None)
-                                if dt < cutoff:
-                                    days_past = (cutoff - dt).days
-                                    if days_past > 270:
-                                        dt = dt.replace(year=dt.year + 1)
-                                        ev['date'] = dt.strftime('%b %d, %Y')
-                                        if dt >= cutoff:
-                                            filtered.append(ev)
-                                else:
-                                    filtered.append(ev)
-                            except:
-                                filtered.append(ev)
-                        events = filtered
-
-                    yield f"data: {json.dumps({'type': 'source_scraped', 'name': name, 'index': i, 'count': len(events), 'methods': methods})}\n\n"
-
-                    # Save JSON to disk (backup)
-                    saved_count = 0
-                    if events:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        safe_name = re.sub(r'[^\w\-]', '_', name)
-                        filename = f"{safe_name}_{timestamp}.json"
-                        (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
-
-                        # --- Normalize via LLM service then POST to backend ---
-                        normalized = normalize_batch(events, source_url=url, source_name=name)
-                        events_to_post = normalized if normalized else events
-
-                        db_saved = 0
-                        for ev in events_to_post:
-                            try:
-                                transformed = transform_event_for_backend(ev, source_priority=source.get('priority'))
-                                # Ensure source fields are set
-                                if not transformed.get('source_url'):
-                                    transformed['source_url'] = url
-                                if not transformed.get('source_name'):
-                                    transformed['source_name'] = name
-                                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
-                                if resp.status_code in [200, 201]:
-                                    db_saved += 1
-                                else:
-                                    print(f"[ScrapeAll DB] Rejected: {resp.status_code} - {resp.text[:100]}")
-                            except Exception as db_err:
-                                print(f"[ScrapeAll DB] Error: {db_err}")
-
-                        saved_count = db_saved
-                        norm_tag = "normalized" if normalized else "fallback"
-                        print(f"[ScrapeAll DB] {name}: {db_saved}/{len(events_to_post)} saved ({norm_tag})")
-
-                    total_events += len(events)
-                    total_saved += saved_count
-                    sources_scraped += 1
-
-                    yield f"data: {json.dumps({'type': 'source_done', 'name': name, 'index': i, 'saved': saved_count, 'count': len(events)})}\n\n"
-
-                    print(f"[ScrapeAll] {i+1}/{total} {name}: {len(events)} events {methods}")
-
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': str(e)})}\n\n"
-
-            yield f"data: {json.dumps({'type': 'complete', 'total_events': total_events, 'total_saved': total_saved, 'sources_scraped': sources_scraped, 'total_sources': total})}\n\n"
+            while True:
+                item = q.get()
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item)}\n\n"
 
         return Response(generate(), mimetype='text/event-stream', headers={
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no',
         })
+
+    @app.route('/scrape-source', methods=['POST'])
+    def scrape_source():
+        """Per-row manual scrape — persists to scrape_status.json."""
+        import asyncScraper
+
+        data = request.json or {}
+        url  = data.get('url', '').strip()
+        if not url:
+            return jsonify({'error': 'url required'}), 400
+
+        saved = load_saved_urls()
+        entry = next((e for e in saved if e.get('url') == url), None)
+        if not entry:
+            entry = {
+                'url':            url,
+                'name':           data.get('name', resolve_source_name(url, '')),
+                'use_playwright': data.get('use_playwright', True),
+                'priority':       data.get('priority'),
+                'venue_priority': data.get('venue_priority'),
+            }
+
+        try:
+            result = asyncio.run(asyncScraper.scrape_one_standalone(entry))
+            return jsonify({
+                'url':          result['url'],
+                'name':         result['name'],
+                'status':       result['status'],
+                'event_count':  result['event_count'],
+                'methods':      result['methods'],
+                'last_scraped': result['last_scraped'],
+                'db_saved':     result['db_saved'],
+                'error':        result['error'],
+                'error_report': result['error_report'],
+            })
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/scrape-status', methods=['GET'])
+    def scrape_status():
+        """Return scrape_status.json directly — no heavy imports."""
+        import json as _json
+        status_file = OUTPUT_DIR / "scrape_status.json"
+        try:
+            data = _json.loads(status_file.read_text()) if status_file.exists() else {}
+        except Exception:
+            data = {}
+        return jsonify(data)
+
+    # ── old sequential generate() was here — replaced by asyncScraper ──
+
+    def _dead_generate():
+        total = len(saved)
+        yield f"data: {json.dumps({'type': 'start', 'total_sources': total})}\n\n"
+
+        total_events = 0
+        total_saved = 0
+        sources_scraped = 0
+
+        for i, entry in enumerate(saved):
+            url = entry.get('url', '')
+            name = entry.get('name', 'unknown')
+            use_pw = entry.get('use_playwright', True)
+
+            # Resolve canonical venue name from URL
+            name = resolve_source_name(url, name)
+
+            yield f"data: {json.dumps({'type': 'source_start', 'name': name, 'index': i})}\n\n"
+
+            try:
+                # Check robots.txt
+                robots_result = check_robots_txt(url)
+                if not robots_result['allowed']:
+                    yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': f'Blocked by robots.txt'})}\n\n"
+                    continue
+
+                # Fetch
+                if use_pw:
+                    html = asyncio.run(fetch_with_playwright(url))
+                else:
+                    html = asyncio.run(fetch_with_httpx(url))
+
+                # Extract - same chain as /scrape
+                methods = []
+                events = []
+
+                eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, name, url, True))
+                if eca_detected and eca_events:
+                    events = eca_events
+                    methods.append(f"EventCalendarApp API ({len(events)})")
+
+                if not events:
+                    timely_events, timely_detected = asyncio.run(extract_timely(html, name, url, True))
+                    if timely_detected and timely_events:
+                        events = timely_events
+                        methods.append(f"Timely API ({len(events)})")
+
+                if not events:
+                    bok_events, bok_detected = asyncio.run(extract_bok_center(html, name, url, True))
+                    if bok_detected and bok_events:
+                        events = bok_events
+                        methods.append(f"BOK Center API ({len(events)})")
+
+                if not events:
+                    cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, name, url, True))
+                    if cc_detected and cc_events:
+                        events = cc_events
+                        methods.append(f"Circle Cinema ({len(events)})")
+
+                if not events:
+                    expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
+                    if expo_detected and expo_events:
+                        events = expo_events
+                        methods.append(f"Expo Square API ({len(events)})")
+
+                if not events:
+                    eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, name, url, True))
+                    if eb_detected and eb_events:
+                        events = eb_events
+                        methods.append(f"Eventbrite API ({len(events)})")
+
+                if not events:
+                    sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, name, url, True))
+                    if sv_detected and sv_events:
+                        events = sv_events
+                        methods.append(f"Simpleview API ({len(events)})")
+
+                if not events:
+                    sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, name, url, True))
+                    if sw_detected and sw_events:
+                        events = sw_events
+                        methods.append(f"SiteWrench API ({len(events)})")
+
+                if not events:
+                    rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, name, url, True))
+                    if rd_detected and rd_events:
+                        events = rd_events
+                        methods.append(f"RecDesk API ({len(events)})")
+
+                if not events:
+                    tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, name, url, True))
+                    if tl_detected and tl_events:
+                        events = tl_events
+                        methods.append(f"TicketLeap ({len(events)})")
+
+                if not events:
+                    ln_events, ln_detected = asyncio.run(extract_libnet_events(html, name, url, True))
+                    if ln_detected and ln_events:
+                        events = ln_events
+                        methods.append(f"LibNet API ({len(events)})")
+                        print(f"[LibNet] SUCCESS: {len(events)} events via API")
+
+                if not events:
+                    pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, name, url, True))
+                    if pb_detected and pb_events:
+                        events = pb_events
+                        methods.append(f"Philbrook AJAX ({len(events)})")
+                        print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
+
+                if not events:
+                    tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, name, url, True))
+                    if tpac_detected and tpac_events:
+                        events = tpac_events
+                        methods.append(f"TulsaPAC API ({len(events)})")
+                        print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
+
+                if not events:
+                    rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, name, url, True))
+                    if rd_detected and rd_ev:
+                        events = rd_ev
+                        methods.append(f"RoosterDays ({len(events)})")
+                        print(f"[RoosterDays] SUCCESS: {len(events)} event")
+
+                if not events:
+                    tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, name, url, True))
+                    if tbf_detected and tbf_ev:
+                        events = tbf_ev
+                        methods.append(f"TulsaBrunchFest ({len(events)})")
+                        print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
+
+                if not events:
+                    okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, name, url, True))
+                    if okeq_detected and okeq_ev:
+                        events = okeq_ev
+                        methods.append(f"OKEQ ({len(events)})")
+                        print(f"[OKEQ] SUCCESS: {len(events)} events")
+
+                if not events:
+                    flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, name, url, True))
+                    if flywheel_detected and flywheel_ev:
+                        events = flywheel_ev
+                        methods.append(f"Flywheel ({len(events)})")
+                        print(f"[Flywheel] SUCCESS: {len(events)} events")
+
+                if not events:
+                    arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, name, url, True))
+                    if arvest_detected and arvest_ev:
+                        events = arvest_ev
+                        methods.append(f"Arvest ({len(events)})")
+                        print(f"[Arvest] SUCCESS: {len(events)} events")
+
+                if not events:
+                    tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, name, url, True))
+                    if tt_detected and tt_ev:
+                        events = tt_ev
+                        methods.append(f"TulsaTough ({len(events)})")
+                        print(f"[TulsaTough] SUCCESS: {len(events)} events")
+
+                if not events:
+                    gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, name, url, True))
+                    if gradient_detected and gradient_ev:
+                        events = gradient_ev
+                        methods.append(f"Gradient ({len(events)})")
+                        print(f"[Gradient] SUCCESS: {len(events)} events")
+
+                if not events:
+                    tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, name, url, True))
+                    if tfm_detected and tfm_ev:
+                        events = tfm_ev
+                        methods.append(f"TFM ({len(events)})")
+                        print(f"[TFM] SUCCESS: {len(events)} events")
+
+                if not events:
+                    okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, name, url, True))
+                    if okcastle_detected and okcastle_ev:
+                        events = okcastle_ev
+                        methods.append(f"OKCastle ({len(events)})")
+                        print(f"[OKCastle] SUCCESS: {len(events)} events")
+
+                if not events:
+                    ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, name, url, True))
+                    if ba_detected and ba_ev:
+                        events = ba_ev
+                        methods.append(f"BrokenArrow ({len(events)})")
+                        print(f"[BrokenArrow] SUCCESS: {len(events)} events")
+
+                if not events:
+                    zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, name, url, True))
+                    if zoo_detected and zoo_ev:
+                        events = zoo_ev
+                        methods.append(f"TulsaZoo ({len(events)})")
+                        print(f"[TulsaZoo] SUCCESS: {len(events)} events")
+
+                if not events:
+                    hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, name, url, True))
+                    if hr_detected and hr_ev:
+                        events = hr_ev
+                        methods.append(f"HardRockTulsa ({len(events)})")
+                        print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
+
+                if not events:
+                    gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, name, url, True))
+                    if gypsy_detected and gypsy_ev:
+                        events = gypsy_ev
+                        methods.append(f"Gypsy ({len(events)})")
+                        print(f"[Gypsy] SUCCESS: {len(events)} events")
+
+                if not events:
+                    bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, name, url, True))
+                    if bar_detected and bar_ev:
+                        events = bar_ev
+                        methods.append(f"BadAssRenees ({len(events)})")
+                        print(f"[BadAssRenees] SUCCESS: {len(events)} events")
+
+                if not events:
+                    rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, name, url, True))
+                    if rl_detected and rl_ev:
+                        events = rl_ev
+                        methods.append(f"Rocklahoma ({len(events)})")
+                        print(f"[Rocklahoma] SUCCESS: {len(events)} events")
+
+                if not events:
+                    ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, name, url, True))
+                    if ok_detected and ok_ev:
+                        events = ok_ev
+                        methods.append(f"TulsaOktoberfest ({len(events)})")
+                        print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
+
+                if not events:
+                    events = extract_events_universal(html, url, name)
+                    if events and '_extraction_methods' in events[0]:
+                        methods = events[0]['_extraction_methods']
+                        for e in events:
+                            e.pop('_extraction_methods', None)
+
+                # Future filter
+                if events:
+                    from dateutil import parser as date_parser
+                    now = datetime.now()
+                    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    filtered = []
+                    for ev in events:
+                        date_str = ev.get('date', '') or ev.get('date_start', '') or ev.get('start_time', '')
+                        if not date_str:
+                            filtered.append(ev)
+                            continue
+                        try:
+                            dt = date_parser.parse(str(date_str), fuzzy=True)
+                            dt = dt.replace(tzinfo=None)
+                            if dt < cutoff:
+                                days_past = (cutoff - dt).days
+                                if days_past > 270:
+                                    dt = dt.replace(year=dt.year + 1)
+                                    ev['date'] = dt.strftime('%b %d, %Y')
+                                    if dt >= cutoff:
+                                        filtered.append(ev)
+                            else:
+                                filtered.append(ev)
+                        except:
+                            filtered.append(ev)
+                    events = filtered
+
+                yield f"data: {json.dumps({'type': 'source_scraped', 'name': name, 'index': i, 'count': len(events), 'methods': methods})}\n\n"
+
+                # Save JSON to disk (backup)
+                saved_count = 0
+                if events:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safe_name = re.sub(r'[^\w\-]', '_', name)
+                    filename = f"{safe_name}_{timestamp}.json"
+                    (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
+
+                    # --- Normalize via LLM service then POST to backend ---
+                    normalized = normalize_batch(events, source_url=url, source_name=name)
+                    events_to_post = normalized if normalized else events
+
+                    db_saved = 0
+                    for ev in events_to_post:
+                        try:
+                            transformed = transform_event_for_backend(ev, source_priority=source.get('priority'))
+                            # Ensure source fields are set
+                            if not transformed.get('source_url'):
+                                transformed['source_url'] = url
+                            if not transformed.get('source_name'):
+                                transformed['source_name'] = name
+                            resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
+                            if resp.status_code in [200, 201]:
+                                db_saved += 1
+                            else:
+                                print(f"[ScrapeAll DB] Rejected: {resp.status_code} - {resp.text[:100]}")
+                        except Exception as db_err:
+                            print(f"[ScrapeAll DB] Error: {db_err}")
+
+                    saved_count = db_saved
+                    norm_tag = "normalized" if normalized else "fallback"
+                    print(f"[ScrapeAll DB] {name}: {db_saved}/{len(events_to_post)} saved ({norm_tag})")
+
+                total_events += len(events)
+                total_saved += saved_count
+                sources_scraped += 1
+
+                yield f"data: {json.dumps({'type': 'source_done', 'name': name, 'index': i, 'saved': saved_count, 'count': len(events)})}\n\n"
+
+                print(f"[ScrapeAll] {i+1}/{total} {name}: {len(events)} events {methods}")
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': str(e)})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'complete', 'total_events': total_events, 'total_saved': total_saved, 'sources_scraped': sources_scraped, 'total_sources': total})}\n\n"
+
 
     @app.route('/save', methods=['POST'])
     def save():

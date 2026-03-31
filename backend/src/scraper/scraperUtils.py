@@ -453,7 +453,7 @@ def check_robots_txt(url: str) -> dict:
 # URL MANAGEMENT
 # ============================================================================
 
-SAVED_URLS_FILE = OUTPUT_DIR / "saved_urls.json"
+SAVED_URLS_FILE = Path(__file__).parent / "saved_urls.json"
 
 
 def load_saved_urls() -> list:
