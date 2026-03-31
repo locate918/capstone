@@ -25,6 +25,7 @@ Module structure:
     scraperRoutes.py          - Flask routes, data transform, LLM normalization, GUI
 """
 
+import os
 from flask import Flask
 from scraperUtils import OUTPUT_DIR, BACKEND_URL, LLM_SERVICE_URL
 from scraperRoutes import register_routes
@@ -33,6 +34,8 @@ app = Flask(__name__)
 register_routes(app)
 
 if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+
     print("=" * 50)
     print("  Locate918 Universal Scraper")
     print("  Smart extraction — LLM Normalized")
@@ -43,7 +46,7 @@ if __name__ == '__main__':
     print(f"  Backend: {BACKEND_URL}")
     print(f"  LLM Service: {LLM_SERVICE_URL}")
     print("=" * 50)
-    print("  http://localhost:5000")
+    print(f"  http://0.0.0.0:{port}")
     print("=" * 50)
 
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=port, debug=False)
