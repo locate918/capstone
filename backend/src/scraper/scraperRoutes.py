@@ -9,6 +9,7 @@ import os
 import re
 import json
 import asyncio
+import functools
 from datetime import datetime
 from flask import render_template_string, render_template, request, jsonify, send_file, Response
 import httpx
@@ -1308,6 +1309,19 @@ def infer_venue_type_from_google(types: list, name: str) -> str:
 
 def register_routes(app):
     """Register all Flask routes on the given app instance."""
+
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+    @app.before_request
+    def check_auth():
+        if not ADMIN_PASSWORD:
+            return  # no password set, open access
+        auth = request.authorization
+        if not auth or auth.password != ADMIN_PASSWORD:
+            return Response(
+                "Unauthorized", 401,
+                {"WWW-Authenticate": 'Basic realm="Locate918 Admin"'}
+            )
 
     @app.route('/')
     def index():
