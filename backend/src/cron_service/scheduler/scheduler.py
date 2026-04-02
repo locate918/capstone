@@ -1,49 +1,64 @@
 """
-Locate918 Cron Scheduler
-========================
-Fires scrape jobs against the scraper service on a schedule.
-Runs as a separate Railway service from the scraper GUI.
+Locate918 Scraper Cron Runner
+=============================
+Executes a single scrape job and exits.
+Railway's built-in cron schedule triggers this service.
 
-Schedule:
-    - Thursday 3am CT:  Full scrape (all sources)
-    - Daily 6am CT:     Priority 1 only (flagship venues)
-
-Env vars required:
-    SCRAPER_URL   — e.g. https://your-scraper.up.railway.app
-    CRON_SECRET   — must match the CRON_SECRET on the scraper service
+Environment:
+    SCRAPER_URL   Base URL for the scraper service.
+    CRON_SECRET   Must match the CRON_SECRET on the scraper service.
+    JOB_TYPE      "all" or "priority"
+    PRIORITY      Priority tier when JOB_TYPE=priority (default: 1).
+    TIMEOUT       Request timeout in seconds (default: 7200).
 """
 
 import os
+import sys
 import httpx
-from apscheduler.schedulers.blocking import BlockingScheduler
 
-SCRAPER_URL = os.environ.get("SCRAPER_URL", "http://localhost:5000")
+SCRAPER_URL = os.environ.get("SCRAPER_URL", "http://localhost:5000").rstrip("/")
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
+JOB_TYPE = os.environ.get("JOB_TYPE", "all").strip().lower()
+TIMEOUT = float(os.environ.get("TIMEOUT", "7200"))
 
-# Use America/Chicago so schedules align with Tulsa local time
-scheduler = BlockingScheduler(timezone="America/Chicago")
 
+def main() -> int:
+    print("=" * 50)
+    print("  Locate918 Scraper Cron Runner")
+    print(f"  Scraper URL: {SCRAPER_URL}")
+    print(f"  Secret: {'set' if CRON_SECRET else 'NOT SET'}")
+    print(f"  Job Type: {JOB_TYPE}")
 
-def _call_cron_scrape(priority: str = None):
-    """
-    POST to /cron-scrape on the scraper service.
-    Returns plain JSON (not SSE), so httpx can handle it normally.
-    """
+    if not CRON_SECRET:
+        print("[Cron] ⚠ WARNING: CRON_SECRET not set — request will fail auth!", file=sys.stderr)
+
+    # Build query params
     params = {"secret": CRON_SECRET}
-    if priority:
+
+    if JOB_TYPE == "priority":
+        priority = os.environ.get("PRIORITY", "1")
         params["priority"] = priority
+        print(f"  Priority: {priority}")
+    elif JOB_TYPE == "all":
+        pass  # no priority filter — scrape everything
+    else:
+        print(f"[Cron] Unsupported JOB_TYPE '{JOB_TYPE}'", file=sys.stderr)
+        return 2
+
+    print("=" * 50)
 
     try:
-        # Long timeout — sequential scraping of 30+ venues takes a few minutes
-        resp = httpx.post(
+        response = httpx.post(
             f"{SCRAPER_URL}/cron-scrape",
             params=params,
-            timeout=7200,  # 2 hours max
+            timeout=TIMEOUT,
         )
 
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"[Scheduler] ✓ Complete — "
+        print(f"[Cron] Response status: {response.status_code}")
+
+        if response.status_code == 200:
+            data = response.json()
+            print(f"[Cron] ✓ Complete — "
                   f"{data.get('sources_scraped', 0)} sources, "
                   f"{data.get('total_events', 0)} events found, "
                   f"{data.get('total_saved', 0)} saved to DB, "
@@ -52,49 +67,26 @@ def _call_cron_scrape(priority: str = None):
             if data.get('errors'):
                 for err in data['errors'][:5]:
                     print(f"  ✗ {err.get('name', '?')}: {err.get('error', '?')}")
-        elif resp.status_code == 401:
-            print(f"[Scheduler] ✗ Auth failed (401) — check CRON_SECRET matches on both services")
+            return 0
+
+        elif response.status_code == 401:
+            print("[Cron] ✗ Auth failed — check CRON_SECRET matches on both services", file=sys.stderr)
+            return 1
+
         else:
-            print(f"[Scheduler] ✗ HTTP {resp.status_code}: {resp.text[:300]}")
+            response.raise_for_status()
+            return 0
 
     except httpx.TimeoutException:
-        print(f"[Scheduler] ✗ Request timed out (scrape may still be running)")
+        print(f"[Cron] ✗ Request timed out after {TIMEOUT}s (scrape may still be running)", file=sys.stderr)
+        return 1
     except httpx.ConnectError:
-        print(f"[Scheduler] ✗ Cannot reach scraper at {SCRAPER_URL} — is it running?")
-    except Exception as e:
-        print(f"[Scheduler] ✗ Error: {e}")
+        print(f"[Cron] ✗ Cannot reach scraper at {SCRAPER_URL}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"[Cron] ✗ Job failed: {exc}", file=sys.stderr)
+        return 1
 
-
-def scrape_all():
-    """Full scrape — all priorities."""
-    print("\n[Scheduler] ═══ Full scrape (all sources) ═══")
-    _call_cron_scrape()
-
-
-def scrape_priority1():
-    """Daily scrape — flagship venues only."""
-    print("\n[Scheduler] ═══ Priority 1 scrape (flagship venues) ═══")
-    _call_cron_scrape(priority="1")
-
-
-# Thursday 3am Central — full weekly scrape
-scheduler.add_job(scrape_all, "cron", day_of_week="thu", hour=3, minute=0)
-
-# Daily 6am Central — priority 1 venues only
-scheduler.add_job(scrape_priority1, "cron", hour=6, minute=0)
 
 if __name__ == "__main__":
-    if not CRON_SECRET:
-        print("⚠  WARNING: CRON_SECRET not set — requests will fail auth!")
-    if SCRAPER_URL == "http://localhost:5000":
-        print("⚠  WARNING: SCRAPER_URL is still localhost — set it to your Railway scraper URL")
-
-    print("=" * 50)
-    print("  Locate918 Cron Scheduler")
-    print(f"  Scraper: {SCRAPER_URL}")
-    print(f"  Secret:  {'set' if CRON_SECRET else 'NOT SET'}")
-    print("  ─────────────────────────────")
-    print("  Thu 3am CT  → Full scrape")
-    print("  Daily 6am CT → Priority 1")
-    print("=" * 50)
-    scheduler.start()
+    raise SystemExit(main())
