@@ -16,6 +16,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _resolve_data_root() -> Path:
+    """
+    Resolve the base directory for scraper state.
+
+    In production, set SCRAPER_DATA_DIR to a Railway volume mount such as
+    `/data/scraper`. Locally, this falls back to the scraper directory.
+    """
+    configured = os.getenv("SCRAPER_DATA_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return Path(__file__).parent
+
 # ============================================================================
 # AGGREGATOR / SOURCE PRIORITY
 # ============================================================================
@@ -294,7 +307,10 @@ except ImportError:
 # CONFIGURATION
 # ============================================================================
 
-OUTPUT_DIR = Path("scraped_data")
+DATA_ROOT = _resolve_data_root()
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = DATA_ROOT / "scraped_data"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000")
@@ -453,7 +469,7 @@ def check_robots_txt(url: str) -> dict:
 # URL MANAGEMENT
 # ============================================================================
 
-SAVED_URLS_FILE = Path(__file__).parent / "saved_urls.json"
+SAVED_URLS_FILE = DATA_ROOT / "saved_urls.json"
 
 
 def load_saved_urls() -> list:
