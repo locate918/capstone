@@ -15,6 +15,7 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5174",
         "http://localhost:3001",
+        "https://admin.locate918.com",
         "https://locate918.com",
         "https://www.locate918.com",
     ],

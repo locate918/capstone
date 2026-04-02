@@ -57,6 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_origin([
             "http://localhost:5173".parse::<HeaderValue>().unwrap(),
             "http://localhost:3001".parse::<HeaderValue>().unwrap(),
+            "https://admin.locate918.com".parse::<HeaderValue>().unwrap(),
             "https://locate918.com".parse::<HeaderValue>().unwrap(),
             "https://www.locate918.com".parse::<HeaderValue>().unwrap(),
         ])
