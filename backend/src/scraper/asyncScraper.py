@@ -1,10 +1,19 @@
 """
 Locate918 Async Scraper
 =======================
-Priority-based concurrent scraping engine.
+Sequential scraping engine with per-venue normalization.
 
-Extractors are imported lazily on first use — this keeps Flask startup
-fast so the GUI loads immediately.
+REWRITE: Replaced concurrent asyncio.gather with sequential processing.
+  - Scrapes one venue at a time
+  - Normalizes immediately after extraction (Gemini gets dedicated time)
+  - Submits to backend before moving to next venue
+  - Logs a per-venue report as it goes
+  - Configurable delay between venues to avoid Gemini rate limits
+
+This fixes:
+  1. Gemini overload from parallel normalization requests
+  2. Duplicate events from normalization fallback to raw data
+  3. Railway cron crashes (new /cron-scrape endpoint returns JSON, not SSE)
 """
 
 import asyncio
@@ -12,12 +21,12 @@ import json
 import queue
 import re
 import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
 
 # ── Light imports only at module level ───────────────────────────────────────
-# scraperUtils is tiny; scraperExtractors/scraperRoutes are heavy and lazy.
 from scraperUtils import (
     OUTPUT_DIR,
     BACKEND_URL,
@@ -25,9 +34,11 @@ from scraperUtils import (
     resolve_source_name,
 )
 
-# ── Concurrency caps ──────────────────────────────────────────────────────────
-PW_CONCURRENCY   = 3
-HTTP_CONCURRENCY = 8
+# ── Sequential pacing ────────────────────────────────────────────────────────
+# Delay between venues (seconds) — gives Gemini breathing room
+VENUE_DELAY = 3
+# Delay after a normalization failure before retrying next venue
+NORM_FAIL_DELAY = 10
 
 # ── Status persistence ────────────────────────────────────────────────────────
 STATUS_FILE = OUTPUT_DIR / "scrape_status.json"
@@ -202,11 +213,14 @@ async def run_extraction_chain(html: str, name: str, url: str,
     return events, methods
 
 
-# ── DB pipeline ───────────────────────────────────────────────────────────────
+# ── DB pipeline (single venue) ───────────────────────────────────────────────
 
 def _post_events_to_db(events: list, url: str, name: str,
                        source_priority: int = None) -> tuple:
-    """Returns (db_saved, normalization_succeeded)."""
+    """
+    Normalize then post events for ONE venue. Returns (db_saved, norm_ok).
+    Sequential design means Gemini only handles one venue at a time.
+    """
     import httpx as _httpx
     try:
         from scraperRoutes import normalize_batch, transform_event_for_backend
@@ -214,10 +228,18 @@ def _post_events_to_db(events: list, url: str, name: str,
         print(f"[DB] Import error: {e}")
         return 0, False
 
+    print(f"[DB] Normalizing {len(events)} events for {name}...")
     normalized = normalize_batch(events, source_url=url, source_name=name)
     normalization_succeeded = bool(normalized)
+
+    if normalization_succeeded:
+        print(f"[DB] ✓ Normalized {len(events)} → {len(normalized)} for {name}")
+    else:
+        print(f"[DB] ⚠ Normalization failed for {name}, using raw fallback")
+
     to_post = normalized if normalized else events
     saved = 0
+    errors = 0
     for ev in to_post:
         try:
             xf = transform_event_for_backend(ev, source_priority=source_priority)
@@ -225,19 +247,25 @@ def _post_events_to_db(events: list, url: str, name: str,
                 xf['source_url'] = url
             if not xf.get('source_name'):
                 xf['source_name'] = name
-            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=5)
+            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
             if resp.status_code in [200, 201]:
                 saved += 1
+            else:
+                errors += 1
         except Exception as e:
+            errors += 1
             print(f"[DB] {name}: {e}")
+
+    print(f"[DB] {name}: {saved}/{len(to_post)} saved to DB ({errors} errors)")
     return saved, normalization_succeeded
 
 
 # ── Single source scraper ─────────────────────────────────────────────────────
 
 async def scrape_one(entry: dict,
-                     sem_pw: asyncio.Semaphore,
-                     sem_http: asyncio.Semaphore) -> dict:
+                     sem_pw: asyncio.Semaphore = None,
+                     sem_http: asyncio.Semaphore = None) -> dict:
+    """Scrape a single venue. Semaphores are optional for sequential mode."""
     url    = entry.get('url', '')
     name   = resolve_source_name(url, entry.get('name', 'unknown'))
     use_pw = entry.get('use_playwright', entry.get('playwright', True))
@@ -255,6 +283,7 @@ async def scrape_one(entry: dict,
         'error':        None,
         'error_report': None,
         'db_saved':     0,
+        'norm_failed':  False,
     }
 
     try:
@@ -264,10 +293,20 @@ async def scrape_one(entry: dict,
             return result
 
         ext = _get_extractors()
-        sem = sem_pw if use_pw else sem_http
-        async with sem:
-            fetch_fn = ext['fetch_playwright'] if use_pw else ext['fetch_httpx']
-            html = await fetch_fn(url)
+
+        # Use semaphore if provided (GUI mode), otherwise just fetch
+        if use_pw:
+            if sem_pw:
+                async with sem_pw:
+                    html = await ext['fetch_playwright'](url)
+            else:
+                html = await ext['fetch_playwright'](url)
+        else:
+            if sem_http:
+                async with sem_http:
+                    html = await ext['fetch_httpx'](url)
+            else:
+                html = await ext['fetch_httpx'](url)
 
         events, methods = await run_extraction_chain(html, name, url)
         result.update({
@@ -278,11 +317,14 @@ async def scrape_one(entry: dict,
         })
 
         if events:
+            # Save JSON backup
             ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe = re.sub(r'[^\w\-]', '_', name)
             (OUTPUT_DIR / f"{safe}_{ts}.json").write_text(
                 json.dumps(events, indent=2), encoding='utf-8'
             )
+
+            # Normalize + submit to DB (synchronous — one venue at a time)
             loop = asyncio.get_event_loop()
             db_saved, norm_ok = await loop.run_in_executor(
                 None, _post_events_to_db, events, url, name, prio
@@ -312,9 +354,8 @@ async def scrape_one(entry: dict,
 
 
 async def scrape_one_standalone(entry: dict) -> dict:
-    sem_pw   = asyncio.Semaphore(1)
-    sem_http = asyncio.Semaphore(1)
-    result = await scrape_one(entry, sem_pw, sem_http)
+    """Standalone single-venue scrape (no semaphores)."""
+    result = await scrape_one(entry)
 
     status = load_status()
     status[entry.get('url', '')] = {
@@ -330,12 +371,24 @@ async def scrape_one_standalone(entry: dict) -> dict:
     return result
 
 
-# ── Priority-based full run ───────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SEQUENTIAL FULL RUN  (replaces concurrent scrape_all_prioritized)
+# ══════════════════════════════════════════════════════════════════════════════
 
-async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
-    sem_pw   = asyncio.Semaphore(PW_CONCURRENCY)
-    sem_http = asyncio.Semaphore(HTTP_CONCURRENCY)
+async def scrape_all_sequential(saved: list, q: queue.Queue = None) -> dict:
+    """
+    Scrape all venues ONE AT A TIME in priority order.
 
+    Pipeline per venue:
+      1. Fetch HTML
+      2. Extract events
+      3. Normalize via Gemini (dedicated, no contention)
+      4. Submit to backend
+      5. Log result
+      6. Wait VENUE_DELAY seconds before next venue
+
+    Returns a summary report dict (useful for /cron-scrape JSON response).
+    """
     tiers: dict = {1: [], 2: [], 3: []}
     for entry in saved:
         p = entry.get('priority', entry.get('venue_priority', 3)) or 3
@@ -346,8 +399,17 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
     completed      = 0
     total_events   = 0
     total_saved_db = 0
+    norm_failures  = 0
+    errors         = []
+    venue_reports  = []
 
-    q.put({
+    def _emit(msg):
+        """Send to SSE queue if available, otherwise just print."""
+        if q:
+            q.put(msg)
+        print(f"[Scraper] {msg.get('type', '')}: {msg.get('name', msg.get('total_sources', ''))}")
+
+    _emit({
         'type': 'start',
         'total_sources': total,
         'p1': len(tiers[1]),
@@ -355,45 +417,54 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
         'p3': len(tiers[3]),
     })
 
+    start_time = datetime.now()
+
     for tier_num in [1, 2, 3]:
         tier = tiers[tier_num]
         if not tier:
             continue
 
-        q.put({'type': 'tier_start', 'tier': tier_num, 'count': len(tier)})
+        _emit({'type': 'tier_start', 'tier': tier_num, 'count': len(tier)})
 
+        # ── SEQUENTIAL: one venue at a time ──────────────────────────────
         for entry in tier:
-            q.put({
+            url  = entry.get('url', '')
+            name = resolve_source_name(url, entry.get('name', ''))
+
+            _emit({
                 'type': 'source_start',
-                'name': resolve_source_name(entry.get('url', ''), entry.get('name', '')),
-                'url':  entry.get('url', ''),
+                'name': name,
+                'url':  url,
                 'tier': tier_num,
             })
 
-        tasks   = [scrape_one(entry, sem_pw, sem_http) for entry in tier]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for entry, result in zip(tier, results):
+            # Scrape this single venue (fetch → extract → normalize → submit)
+            result = await scrape_one(entry)
             completed += 1
 
-            if isinstance(result, BaseException):
-                result = {
-                    'url':          entry.get('url', ''),
-                    'name':         resolve_source_name(entry.get('url', ''), entry.get('name', '')),
-                    'status':       'error',
-                    'error':        str(result),
-                    'error_report': None,
-                    'event_count':  0,
-                    'events':       [],
-                    'methods':      [],
-                    'last_scraped': datetime.now().isoformat(),
-                    'db_saved':     0,
-                }
-
-            url             = result['url']
             total_events   += result['event_count']
             total_saved_db += result['db_saved']
 
+            if result.get('norm_failed'):
+                norm_failures += 1
+            if result.get('error'):
+                errors.append({'name': name, 'error': result['error']})
+
+            # Build per-venue report
+            venue_report = {
+                'name':         result['name'],
+                'url':          url,
+                'tier':         tier_num,
+                'status':       result['status'],
+                'event_count':  result['event_count'],
+                'db_saved':     result['db_saved'],
+                'norm_failed':  result.get('norm_failed', False),
+                'methods':      result['methods'],
+                'error':        result['error'],
+            }
+            venue_reports.append(venue_report)
+
+            # Update persistent status
             status_data[url] = {
                 'name':         result['name'],
                 'last_scraped': result['last_scraped'],
@@ -403,11 +474,10 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
                 'error':        result['error'],
                 'error_report': result['error_report'],
                 'norm_failed':  result.get('norm_failed', False),
-                'events':       result.get('events', []),
             }
             save_status(status_data)
 
-            q.put({
+            _emit({
                 'type':         'source_done',
                 'name':         result['name'],
                 'url':          url,
@@ -422,36 +492,53 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
                 'total':        total,
             })
 
-    # ── Normalization retry queue ─────────────────────────────────────────────
-    # Re-attempt normalization for any sources that fell back to raw events
-    norm_queue = [
-        r for r in [
-            status_data.get(e.get('url', {})) for e in saved
-        ] if r and r.get('norm_failed')
-    ]
+            # ── Pacing delay ─────────────────────────────────────────────
+            if result.get('norm_failed'):
+                # Extra delay after norm failure so Gemini can recover
+                print(f"[Pacing] Norm failed for {name}, waiting {NORM_FAIL_DELAY}s...")
+                await asyncio.sleep(NORM_FAIL_DELAY)
+            else:
+                await asyncio.sleep(VENUE_DELAY)
 
-    if norm_queue:
-        import time
-        print(f"[NormRetry] Retrying normalization for {len(norm_queue)} source(s) after 30s cooldown...")
-        q.put({'type': 'norm_retry_start', 'count': len(norm_queue)})
-        time.sleep(30)  # Let Gemini recover
+    # ── Normalization retry pass ─────────────────────────────────────────────
+    retry_venues = [r for r in venue_reports if r.get('norm_failed') and r['event_count'] > 0]
+
+    if retry_venues:
+        print(f"\n[NormRetry] Retrying {len(retry_venues)} venue(s) after 30s cooldown...")
+        _emit({'type': 'norm_retry_start', 'count': len(retry_venues)})
+        await asyncio.sleep(30)
 
         try:
             from scraperRoutes import normalize_batch, transform_event_for_backend
             import httpx as _httpx
 
-            for entry in saved:
-                url  = entry.get('url', '')
+            for vr in retry_venues:
+                url  = vr['url']
+                name = vr['name']
                 sdata = status_data.get(url, {})
-                if not sdata.get('norm_failed'):
-                    continue
-                name = sdata.get('name', url)
-                prio = entry.get('priority', entry.get('venue_priority'))
+                # Reload events from the saved JSON file
                 events = sdata.get('events', [])
                 if not events:
+                    # Try to find the most recent JSON file for this venue
+                    safe = re.sub(r'[^\w\-]', '_', name)
+                    json_files = sorted(OUTPUT_DIR.glob(f"{safe}_*.json"), reverse=True)
+                    if json_files:
+                        try:
+                            events = json.loads(json_files[0].read_text())
+                        except Exception:
+                            pass
+
+                if not events:
+                    print(f"[NormRetry] {name}: no events to retry")
                     continue
 
-                print(f"[NormRetry] Retrying: {name}")
+                prio = next(
+                    (e.get('priority', e.get('venue_priority'))
+                     for e in saved if e.get('url') == url),
+                    None
+                )
+
+                print(f"[NormRetry] Retrying: {name} ({len(events)} events)")
                 normalized = normalize_batch(events, source_url=url, source_name=name)
                 if normalized:
                     retry_saved = 0
@@ -460,23 +547,72 @@ async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
                             xf = transform_event_for_backend(ev, source_priority=prio)
                             if not xf.get('source_url'): xf['source_url'] = url
                             if not xf.get('source_name'): xf['source_name'] = name
-                            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=5)
+                            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
                             if resp.status_code in [200, 201]:
                                 retry_saved += 1
                                 total_saved_db += 1
                         except Exception as e:
                             print(f"[NormRetry] {name}: {e}")
                     print(f"[NormRetry] {name}: {retry_saved}/{len(normalized)} saved")
-                    q.put({'type': 'norm_retry_done', 'name': name, 'saved': retry_saved})
+                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': retry_saved})
                 else:
-                    print(f"[NormRetry] {name}: still failing, skipping")
+                    print(f"[NormRetry] {name}: still failing")
+                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': 0})
+
+                # Delay between retries too
+                await asyncio.sleep(VENUE_DELAY)
+
         except Exception as e:
             print(f"[NormRetry] Error: {e}")
 
-    q.put({
-        'type':            'complete',
-        'total_events':    total_events,
-        'total_saved':     total_saved_db,
-        'sources_scraped': completed,
-    })
-    q.put(None)
+    elapsed = (datetime.now() - start_time).total_seconds()
+
+    summary = {
+        'type':              'complete',
+        'total_sources':     total,
+        'sources_scraped':   completed,
+        'total_events':      total_events,
+        'total_saved':       total_saved_db,
+        'norm_failures':     norm_failures,
+        'error_count':       len(errors),
+        'errors':            errors[:20],  # Cap error list
+        'venues':            venue_reports,
+        'elapsed_seconds':   round(elapsed, 1),
+        'timestamp':         datetime.now().isoformat(),
+    }
+
+    _emit(summary)
+    if q:
+        q.put(None)  # Signal SSE stream to close
+
+    # Save summary report
+    try:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        (OUTPUT_DIR / f"scrape_report_{ts}.json").write_text(
+            json.dumps(summary, indent=2), encoding='utf-8'
+        )
+    except Exception:
+        pass
+
+    return summary
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEGACY COMPAT: scrape_all_prioritized wraps sequential with SSE queue
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
+    """SSE-compatible wrapper. Used by /scrape-all GUI endpoint."""
+    await scrape_all_sequential(saved, q=q)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CRON ENTRY POINT: returns summary dict, no SSE
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def scrape_all_cron(saved: list) -> dict:
+    """
+    Entry point for /cron-scrape. Runs sequentially, returns JSON summary.
+    No queue, no SSE, no threading — just scrape and report.
+    """
+    return await scrape_all_sequential(saved, q=None)

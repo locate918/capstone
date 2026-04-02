@@ -1311,14 +1311,27 @@ def register_routes(app):
     """Register all Flask routes on the given app instance."""
 
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+    CRON_SECRET = os.environ.get("CRON_SECRET", "")
 
     @app.before_request
     def check_auth():
         if not ADMIN_PASSWORD:
             return  # no password set, open access
-        # Allow internal cron calls to /scrape-all without auth
-        if request.path == '/scrape-all' and request.remote_addr in ('127.0.0.1', '::1'):
-            return
+
+        # Allow cron requests authenticated via CRON_SECRET header or query param
+        # Works regardless of IP (Railway cron, external triggers, etc.)
+        if request.path in ('/cron-scrape', '/scrape-all'):
+            cron_token = (
+                    request.headers.get('X-Cron-Secret') or
+                    request.args.get('secret') or
+                    ''
+            )
+            if CRON_SECRET and cron_token == CRON_SECRET:
+                return  # authenticated via cron secret
+            # Also allow localhost (backward compat)
+            if request.remote_addr in ('127.0.0.1', '::1'):
+                return
+
         auth = request.authorization
         if not auth or auth.password != ADMIN_PASSWORD:
             return Response(
@@ -1706,6 +1719,86 @@ def register_routes(app):
             'X-Accel-Buffering': 'no',
             'Connection': 'keep-alive',
         })
+
+    @app.route('/cron-scrape', methods=['POST'])
+    def cron_scrape():
+        """
+        Cron-safe scrape endpoint. Returns plain JSON report (not SSE).
+
+        Designed for Railway scheduler service, external cron, or curl.
+        Runs sequentially: scrape one venue → normalize → submit → next.
+
+        Auth: X-Cron-Secret header or ?secret= query param matching CRON_SECRET env var.
+
+        Optional priority filter:
+          ?priority=1          — only scrape priority 1 (flagship) venues
+          ?priority=1,2        — scrape priority 1 and 2
+          (omit for all)
+
+        Usage:
+          Full scrape:  POST /cron-scrape?secret=XXX
+          P1 only:      POST /cron-scrape?secret=XXX&priority=1
+          P1+P2:        POST /cron-scrape?secret=XXX&priority=1,2
+        """
+        import asyncScraper
+
+        saved = load_saved_urls()
+        if not saved:
+            return jsonify({"error": "No saved URLs", "status": "no_sources"}), 400
+
+        # ── Priority filter ──────────────────────────────────────────────
+        priority_param = request.args.get('priority', '')
+        if not priority_param and request.is_json:
+            priority_param = str(request.json.get('priority', ''))
+
+        if priority_param:
+            try:
+                allowed = {int(p.strip()) for p in priority_param.split(',')}
+            except ValueError:
+                return jsonify({"error": f"Invalid priority param: {priority_param}"}), 400
+
+            before_count = len(saved)
+            saved = [
+                e for e in saved
+                if (e.get('priority') or e.get('venue_priority') or 3) in allowed
+            ]
+            print(f"[CronScrape] Priority filter {allowed}: {before_count} → {len(saved)} sources")
+
+            if not saved:
+                return jsonify({
+                    "error": f"No sources match priority {priority_param}",
+                    "status": "no_sources",
+                }), 400
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                summary = loop.run_until_complete(asyncScraper.scrape_all_cron(saved))
+            finally:
+                loop.close()
+
+            return jsonify({
+                "status":           "complete",
+                "priority_filter":  priority_param or "all",
+                "total_sources":    summary.get('total_sources', 0),
+                "sources_scraped":  summary.get('sources_scraped', 0),
+                "total_events":     summary.get('total_events', 0),
+                "total_saved":      summary.get('total_saved', 0),
+                "norm_failures":    summary.get('norm_failures', 0),
+                "error_count":      summary.get('error_count', 0),
+                "elapsed_seconds":  summary.get('elapsed_seconds', 0),
+                "timestamp":        summary.get('timestamp', ''),
+                "errors":           summary.get('errors', [])[:10],
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "status": "error",
+                "error":  str(e),
+            }), 500
 
     @app.route('/scrape-source', methods=['POST'])
     def scrape_source():

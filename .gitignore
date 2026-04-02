@@ -29,6 +29,7 @@ npm-debug.log*
 
 # Secrets
 .env
+.env.dev
 *.pem
 *.key
 **/.env
