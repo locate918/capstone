@@ -625,15 +625,28 @@ export default function App() {
         setShowVenueModal(true);
     };
 
-    const handleEventClick = (event) => {
+    const handleEventClick = (event, type = 'clicked') => {
         console.log(`[DEBUG] Event clicked: ${event.title}`);
         setSelectedEvent(event);
         if (user) {
             recordInteraction({
                 userId: user.id,
                 eventId: event.id,
-                interactionType: 'clicked',
+                interactionType: type,
                 eventCategories: event.categories
+            });
+        }
+    };
+
+    const handleEventClosing = () => {
+        console.log(`[DEBUG] Event dismissed: ${selectedEvent.title}`);
+        setSelectedEvent(null);
+        if (user) {
+            recordInteraction({
+                userId: user.id,
+                eventId: selectedEvent.id,
+                interactionType: 'dismissed',
+                eventCategories: selectedEvent.categories
             });
         }
     };
@@ -978,7 +991,8 @@ export default function App() {
                                                 <EventCard
                                                     event={event}
                                                     index={index}
-                                                    onClick={handleEventClick}
+                                                    onClick={() => handleEventClick(event, 'clicked')}
+                                                    user={user}
                                                 />
                                             </div>
                                         ))}
@@ -1119,7 +1133,7 @@ export default function App() {
             </main>
 
             {/* ===== EVENT MODAL ===== */}
-            <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+            <EventModal event={selectedEvent} onClose={() => handleEventClosing()} user={user} />
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
         </div>
     );

@@ -11,8 +11,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
+import {recordInteraction} from "../services/api";
 
-const EventModal = ({ event, onClose }) => {
+const EventModal = ({ event, onClose, user }) => {
     const [expanded, setExpanded] = useState(false);
     const [isClamped, setIsClamped] = useState(false);
     const summaryRef = useRef(null);
@@ -24,6 +25,21 @@ const EventModal = ({ event, onClose }) => {
         // scrollHeight > clientHeight means line-clamp is hiding content
         setIsClamped(el.scrollHeight > el.clientHeight + 1);
     }, []);
+
+    // Helper for recording interactions
+    const logClick = (type) => {
+        if (user) {
+            console.log(`[DEBUG] Event ${type}: ${event.title}`);
+            recordInteraction({
+                userId: user.id,
+                eventId: event.id,
+                interactionType: type,
+                eventCategories: event.categories
+            });
+        } else {
+            console.warn("[DEBUG] logClick called but user is missing", event);
+        }
+    };
 
     // Reset expanded state when a different event opens, and detect clamping
     useEffect(() => {
@@ -236,6 +252,7 @@ const EventModal = ({ event, onClose }) => {
                             rel="noopener noreferrer"
                             className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
                             style={styles.primaryBg}
+                            onClick={() => logClick('clicked on og post')}
                         >
                             View Original Listing  <ExternalLink size={16} />
                         </a>

@@ -176,7 +176,7 @@ pub struct UserPreference {
     pub id: Uuid,
     pub user_id: Uuid,
     pub category: String,
-    pub weight: i32,
+    pub weight: f64,
     pub created_at: DateTime<Utc>,
 }
 
@@ -184,7 +184,7 @@ pub struct UserPreference {
 #[derive(Debug, Deserialize)]
 pub struct CreateUserPreference {
     pub category: String,
-    pub weight: i32,
+    pub weight: f64,
 }
 
 // =============================================================================
@@ -249,4 +249,3 @@ pub struct UserInteractionWithEvent {
 // =============================================================================
 // SEARCH MODELS
 // =============================================================================
-

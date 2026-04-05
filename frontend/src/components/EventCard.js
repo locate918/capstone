@@ -18,7 +18,7 @@ import { MapPin, Calendar, ExternalLink, Building2 } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
 import { recordInteraction } from '../services/api';
 
-const EventCard = ({ event, onClick, index = 0 }) => {
+const EventCard = ({ event, onClick, index = 0, user }) => {
     // Format date for display
     const formattedDate = event.date_iso
         ? new Date(event.date_iso).toLocaleDateString(undefined, {
@@ -30,23 +30,23 @@ const EventCard = ({ event, onClick, index = 0 }) => {
 
     // Helper for recording interactions
     const logClick = (type) => {
-        if (event.id) {
-            console.log(`[DEBUG] logClick called: ${type} for event ${event.id}`);
-            recordInteraction(
-                event.id,
-                type,
-                event.categories?.[0] || event.category,
-                event.location
-            );
+        if (user) {
+            console.log(`[DEBUG] Event ${type}: ${event.title}`);
+            recordInteraction({
+                userId: user.id,
+                eventId: event.id,
+                interactionType: type,
+                eventCategories: event.categories
+            });
         } else {
-            console.warn("[DEBUG] logClick called but event.id is missing", event);
+            console.warn("[DEBUG] logClick called but user is missing", event);
         }
     };
 
     // Handle "Info" click - open source URL in new tab
     const handleViewEvent = (e) => {
         e.stopPropagation(); // Don't trigger card onClick
-        logClick('clicked');
+        logClick('clicked on og post');
         if (event.original_url) {
             window.open(event.original_url, '_blank', 'noopener,noreferrer');
         }

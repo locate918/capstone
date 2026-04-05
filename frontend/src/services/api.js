@@ -500,7 +500,7 @@ export const recordInteraction = async ({
     interactionType,
     eventCategories = []
 }) => {
-    console.log("[DEBUG] recordInteraction (to LLM service) called:", { userId, eventId, interactionType, eventCategories });
+    console.log("[DEBUG] recordInteraction called:", { interactionType, eventCategories });
     // No-op if user is not logged in or eventId is missing
     if (!userId || !eventId) {
         console.log("[DEBUG] Skipping interaction: missing userId or eventId.");
@@ -519,7 +519,7 @@ export const recordInteraction = async ({
                 event_categories: eventCategories, // Pass the full array of categories
             }),
         });
-        console.log(`[DEBUG] Interaction for event ${eventId} sent to LLM service.`);
+        console.log(`[DEBUG] Interaction for event ${eventId} sent to database.`);
     } catch (e) {
         console.warn('[recordInteraction] failed to send interaction to LLM service:', e.message);
     }
