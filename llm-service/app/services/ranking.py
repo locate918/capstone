@@ -2,13 +2,13 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import math
 
-def get_interaction_weight(interaction_type: str) -> int:
+def get_interaction_weight(interaction_type: str) -> float:
     """Returns the weight for a given interaction type."""
     weights = {
-        "clicked": 1,
-        "saved": 2,
-        "dismissed": -1,
-        "attended": 3,
+        "clicked": 0.1,
+        "saved": 0.2,
+        "dismissed": -0.1,
+        "clicked on og post": 0.3,
     }
     return weights.get(interaction_type, 0)
 
@@ -29,14 +29,14 @@ def score_categories_from_interaction(
         current_score = user_preferences.get(category, 0)
         new_score = current_score + weight
         # Cap the score to maintain a reasonable preference scale (e.g., -10 to +10)
-        capped_score = max(-10, min(10, new_score))
+        capped_score = max(-10.0, min(10.0, new_score))
         updated_categories[category] = capped_score
     return updated_categories
 
 def score_all_categories(
     user_interactions: List[Dict[str, Any]],
-    user_preferences: Dict[str, int],
-) -> Dict[str, int]:
+    user_preferences: Dict[str, float],
+) -> dict[str, float]:
     """
     Updates user category preferences based on all of their interactions.
     """
