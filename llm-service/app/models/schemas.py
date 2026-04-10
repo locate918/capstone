@@ -85,6 +85,28 @@ class ChatResponse(BaseModel):
     message: Optional[str] = None
     tool_call: Optional[Dict[str, Any]] = None
 
+class ChatEvent(BaseModel):
+    """
+    Structured event data for Gemini's conversational response.
+    """
+    id: str
+    title: str
+    venue_name: str
+    venue_url: Optional[str] = None
+    display_time: str
+    price: str
+    description: str
+    source_url: str
+    emoji: str = "📅"
+
+class GeminiChatResponse(BaseModel):
+    """
+    Structured response from Gemini.
+    """
+    opening: str
+    events: List[ChatEvent] = []
+    closing: str
+
 class InteractionRequest(BaseModel):
     user_id: str = Field(..., alias="userId")
     event_id: str = Field(..., alias="eventId")
