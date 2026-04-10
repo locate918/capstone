@@ -1720,7 +1720,7 @@ def register_routes(app):
             'Connection': 'keep-alive',
         })
 
-    @app.route('/cron-scrape', methods=['POST'])
+    @app.route('/cron-scrape', methods=['GET', 'POST'])
     def cron_scrape():
         """
         Cron-safe scrape endpoint. Returns plain JSON report (not SSE).
@@ -1736,9 +1736,9 @@ def register_routes(app):
           (omit for all)
 
         Usage:
-          Full scrape:  POST /cron-scrape?secret=XXX
-          P1 only:      POST /cron-scrape?secret=XXX&priority=1
-          P1+P2:        POST /cron-scrape?secret=XXX&priority=1,2
+          Full scrape:  GET/POST /cron-scrape?secret=XXX
+          P1 only:      GET/POST /cron-scrape?secret=XXX&priority=1
+          P1+P2:        GET/POST /cron-scrape?secret=XXX&priority=1,2
         """
         import asyncScraper
 
