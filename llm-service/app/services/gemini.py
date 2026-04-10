@@ -204,7 +204,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     client = get_client()
     # Initialize the chat session
     chat = client.aio.chats.create(
-        model='gemini-3-flash-preview',
+        model='gemini-2.5-flash',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
             system_instruction=system_instruction,
