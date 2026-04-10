@@ -16,6 +16,7 @@ import httpx
 
 from scraperUtils import (
     OUTPUT_DIR,
+    SAVED_URLS_FILE,
     BACKEND_URL,
     LLM_SERVICE_URL,
     HEADERS,
@@ -1359,11 +1360,37 @@ def register_routes(app):
         )
         return jsonify(urls)
 
-    @app.route('/saved-urls', methods=['DELETE'])
-    def remove_saved_url():
-        data = request.json
-        urls = delete_saved_url(data.get('url', ''))
-        return jsonify(urls)
+ @app.route('/saved-urls', methods=['DELETE'])
+     def remove_saved_url():
+         data = request.json
+         urls = delete_saved_url(data.get('url', ''))
+         return jsonify(urls)
+
+    @app.route('/saved-urls/import', methods=['POST'])
+    def import_saved_urls():
+        """Bulk-import a full saved_urls list, merging with existing."""
+        incoming = request.json
+        if not isinstance(incoming, list):
+            return jsonify({"error": "Expected a JSON array"}), 400
+        existing = load_saved_urls()
+        existing_by_url = {u['url']: u for u in existing}
+        added = 0
+        updated = 0
+        for entry in incoming:
+            url = entry.get('url')
+            if not url:
+                continue
+            if url in existing_by_url:
+                existing_by_url[url].update(entry)
+                updated += 1
+            else:
+                existing_by_url[url] = entry
+                added += 1
+        merged = list(existing_by_url.values())
+        SAVED_URLS_FILE.write_text(json.dumps(merged, indent=2))
+        print(f"[Import] {added} added, {updated} updated, {len(merged)} total sources")
+        return jsonify({"added": added, "updated": updated, "total": len(merged)})
+
 
     @app.route('/scrape', methods=['POST'])
     def scrape():
