@@ -5,8 +5,8 @@ import math
 def get_interaction_weight(interaction_type: str) -> float:
     """Returns the weight for a given interaction type."""
     weights = {
-        "clicked": 0.1,
-        "saved": 0.2,
+        "clicked": 0.2,
+        "saved": 0.4,
         "dismissed": -0.1,
         "clicked on og post": 0.3,
     }

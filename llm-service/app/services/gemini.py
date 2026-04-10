@@ -26,7 +26,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 from google import genai
 from google.genai import types
-from app.models.schemas import NormalizedEvent
+from app.models.schemas import NormalizedEvent, GeminiChatResponse
 from app.tools.definitions import gemini_tools
 from dotenv import load_dotenv
 
@@ -110,7 +110,7 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-3-flash-preview',
         contents=[base_prompt, message],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
@@ -180,40 +180,21 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
          - Brady Arts District (general): 36.1547, -95.9850
          - Blue Dome District (general): 36.1450, -95.9950
        For other venues, estimate from the address or use the neighborhood center.
-    6. **Links**: ALWAYS link the **Event Title** to the `source_url` if available. 
-       If `source_url` is missing, use `venue_website`. Link the **Venue Name** to `venue_website` if available. For places, link the place name to `website` or `google_maps` if available.
+    6. **Links & Interaction Tracking (CRITICAL)**: You MUST ALWAYS include the exact event `id` and `source_url` in your response for each event.
+       - **Places**: Link the place name to `website` or `google_maps`.
     7. **Times**: Display times in 12-hour format with AM/PM in Central Time. 
        The database stores times in UTC — convert by subtracting 6 hours (CST) or 5 hours (CDT).
        If a time seems wrong (e.g. midnight for a concert), note it may be estimated.
-    7. **Search Fallback Protocol (Strict)**: 
+    8. **Search Fallback Protocol (Strict)**: 
        If a search returns 0 results, do NOT report failure until you have attempted these steps:
        - **Step 1**: Remove specific category filters but keep keywords. - **Step 2**: Remove keywords and search the Date Range globally. - **Step 3**: Expand the date range by +/- 3 days. - **Step 4**: If still 0 results, provide 2 "Evergreen" suggestions (e.g., Gathering Place, Philbrook Museum) based on the user's intent.
-    8. **Venue Proximity (The "Dinner & A Show" Rule)**: 
+    9. **Venue Proximity (The "Dinner & A Show" Rule)**: 
        - When a user asks for restaurants near a venue, identify the venue's neighborhood first (e.g., "Since the Mabee Center is in South Tulsa...").
        - Recommend at least 3 permanent restaurants in that specific area (e.g., near 71st/81st & Lewis for Mabee Center; near the Arts District for Cain's Ballroom). 
        - DO NOT say "There are no restaurant events." Restaurants are businesses, not events.
-    9. **Interaction Tracking Links (CRITICAL)**: To track user engagement, you MUST format event links in a special way. Instead of linking directly to the `source_url`, create a relative link for the frontend to intercept.
-       The format is: `Event Title`
-       - The link text is the event's title.
-       - The URL path MUST start with `/track-event/` followed by the event's UUID.
-       - The `redirect` query parameter MUST contain the URL-encoded `source_url`.
-       - The frontend will handle calling the interaction API and then redirecting the user.
-       - **Example**: `My Awesome Concert`
-       - For all other links, like the **Venue Name**, link directly to its website as before.
     
-    RESPONSE FORMATTING (Markdown):
+    RESPONSE FORMATTING:
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
-    - **Structure**:
-      - Start with a warm, brief opening.
-      - List events using this Markdown format:
-        *   [**Event Title**](source_url) (Use Markdown link syntax. Do NOT show raw URL.)
-        *   **Event Title** (Use the special tracking link format. Do NOT show raw URL.)
-            *   📍 **Venue**: Venue Name
-            *   ⏰ **Time**: [Day of week], [Time]
-            *   💰 **Price**: [Price]
-            *   📝 [Description]
-      - Use emojis relevant to the event type (🎸, 🎨, 🍔, 🎭).
-    
     - **No Events Found**: If the search returns nothing, try a broader search before giving up.
       If still nothing, suggest specific *evergreen* local activities relevant to their query 
       (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
@@ -221,11 +202,12 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     """
 
     client = get_client()
+    # Initialize the chat session
     chat = client.aio.chats.create(
-        model='gemini-2.0-flash',
+        model='gemini-2.5-flash',
         config=types.GenerateContentConfig(
             tools=[gemini_tools],
-            system_instruction=system_instruction
+            system_instruction=system_instruction,
         ),
         history=history
     )
@@ -233,7 +215,10 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     response = await chat.send_message(message)
 
     # Handle multi-turn tool execution loop
-    while response.function_calls:
+    max_turns = 10
+    turns = 0
+    while response.function_calls and turns < max_turns:
+        turns += 1
         tool_outputs = []
 
         for fc in response.function_calls:
@@ -267,10 +252,54 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
         else:
             break
 
+    # After all tools are finished, request the FINAL response in structured format
+    if not response.function_calls:
+        try:
+            # Use a separate generate_content call with the current chat history
+            # to force the final output into the desired schema.
+            # chat.history now contains the tool interactions.
+            final_history = chat.get_history()
+            
+            # The last message in history is the tool output. 
+            # We ask Gemini to summarize/respond based on that history.
+            response = await client.aio.models.generate_content(
+                model='gemini-3-flash-preview',
+                contents=final_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=GeminiChatResponse
+                )
+            )
+        except Exception as e:
+            print(f"Error requesting structured response: {e}")
+            # Fallback to normal response if structured fails or 429s again
+            pass
+
     try:
-        text_response = response.text
-        if not text_response:
-            text_response = "I checked the events but couldn't generate a response. Please try asking differently."
+        structured_response = response.parsed
+        if not structured_response:
+            # Fallback to text if parsing fails (though response_schema should prevent this)
+            text_response = response.text or "I checked the events but couldn't generate a response."
+        else:
+            # Format the structured response into the desired Markdown
+            formatted_parts = []
+            if structured_response.opening:
+                formatted_parts.append(structured_response.opening)
+            
+            for event in structured_response.events:
+                event_markdown = f"""*   {event.emoji} [{event.title}]({event.source_url})
+    *   📍 **Venue**: [{event.venue_name}]({event.venue_url or '#'})
+    *   ⏰ **Time**: {event.display_time}
+    *   💰 **Price**: {event.price}
+    *   📝 {event.description}"""
+                formatted_parts.append(event_markdown)
+            
+            if structured_response.closing:
+                formatted_parts.append(structured_response.closing)
+            
+            text_response = "\n\n".join(formatted_parts)
+
     except Exception as e:
         print(f"Gemini Response Error: {e}")
         text_response = "I'm having trouble formulating a response right now."
@@ -424,7 +453,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-3-flash-preview',
         contents=[base_prompt, raw_content[:150000]],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
