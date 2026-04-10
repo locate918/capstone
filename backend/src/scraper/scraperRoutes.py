@@ -1360,11 +1360,11 @@ def register_routes(app):
         )
         return jsonify(urls)
 
- @app.route('/saved-urls', methods=['DELETE'])
-     def remove_saved_url():
-         data = request.json
-         urls = delete_saved_url(data.get('url', ''))
-         return jsonify(urls)
+    @app.route('/saved-urls', methods=['DELETE'])
+    def remove_saved_url():
+        data = request.json
+        urls = delete_saved_url(data.get('url', ''))
+        return jsonify(urls)
 
     @app.route('/saved-urls/import', methods=['POST'])
     def import_saved_urls():
