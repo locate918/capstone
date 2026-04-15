@@ -2242,21 +2242,28 @@ def register_routes(app):
             events_to_save = events
 
         # --- Step 2: Collect, register, and auto-enrich venues ---
-        # Uses normalized events so venue names are canonical.
+        # Only register venues from priority=1 sources (direct venue scrapers).
+        # Aggregators (priority 2-3) produce wildly inconsistent venue strings
+        # (sub-rooms, addresses, people's names) that pollute the venues table
+        # and break the JOIN used for map coordinates and venue_priority.
+        source_priority_int = int(events_to_save[0].get('source_priority', 3)) if events_to_save else 3
+        should_register_venues = (source_priority_int == 1)
+
         venues_to_save = {}
-        for event in events_to_save:
-            venue_name = event.get('venue', '').strip()
-            if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
-                venue_key = venue_name.lower()
-                if venue_key not in venues_to_save:
-                    venues_to_save[venue_key] = {
-                        'name': venue_name,
-                        'address': event.get('venue_address', ''),
-                        'city': 'Tulsa',
-                        '_venue_website': event.get('_venue_website', ''),
-                    }
-                elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
-                    venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
+        if should_register_venues:
+            for event in events_to_save:
+                venue_name = event.get('venue', '').strip()
+                if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
+                    venue_key = venue_name.lower()
+                    if venue_key not in venues_to_save:
+                        venues_to_save[venue_key] = {
+                            'name': venue_name,
+                            'address': event.get('venue_address', ''),
+                            'city': 'Tulsa',
+                            '_venue_website': event.get('_venue_website', ''),
+                        }
+                    elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
+                        venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
 
         # Register and auto-enrich venues via Google Places
         venues_with_websites = 0
