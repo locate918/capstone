@@ -142,7 +142,10 @@ async fn list_events(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
         WHERE e.start_time >= NOW()
         ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
@@ -185,7 +188,10 @@ async fn get_event(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
         WHERE e.id = $1
         "#
     )
@@ -317,7 +323,10 @@ async fn create_event(
             v.longitude      AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
         WHERE e.source_url = $1
         "#
     )
@@ -463,7 +472,10 @@ async fn search_events(
                 v.longitude      AS venue_longitude,
                 v.venue_priority AS venue_priority
             FROM events e
-            LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+            LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
             WHERE {}
             ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}
