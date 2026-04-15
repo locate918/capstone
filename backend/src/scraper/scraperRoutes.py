@@ -10,6 +10,7 @@ import re
 import json
 import asyncio
 import functools
+import hashlib
 from datetime import datetime
 from flask import render_template_string, render_template, request, jsonify, send_file, Response
 import httpx
@@ -2325,6 +2326,21 @@ def register_routes(app):
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
+                # Synthetic unique source_url so events from venues without
+                # per-event permalinks don't all collapse onto one DB row.
+                if not transformed.get('source_url'):
+                    slug = (
+                        f"{source_url}|"
+                        f"{transformed.get('title','').lower().strip()}|"
+                        f"{transformed.get('start_time','')}"
+                    )
+                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
+                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
+                if not transformed.get('source_name'):
+                    transformed['source_name'] = source_name
+                # Canonical venue name from the scrape source
+                if source_name:
+                    transformed['venue'] = source_name
                 resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
                 if resp.status_code not in [200, 201]:
                     print(f"[DB] Rejected: {resp.status_code} - {resp.text[:100]}")
@@ -2392,6 +2408,18 @@ def register_routes(app):
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
+                if not transformed.get('source_url'):
+                    slug = (
+                        f"{source_url}|"
+                        f"{transformed.get('title','').lower().strip()}|"
+                        f"{transformed.get('start_time','')}"
+                    )
+                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
+                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
+                if not transformed.get('source_name'):
+                    transformed['source_name'] = source_name
+                if source_name:
+                    transformed['venue'] = source_name
                 resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
                 return resp.status_code in [200, 201]
             except Exception as e:
