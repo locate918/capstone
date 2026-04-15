@@ -243,10 +243,17 @@ def _post_events_to_db(events: list, url: str, name: str,
     for ev in to_post:
         try:
             xf = transform_event_for_backend(ev, source_priority=source_priority)
+            # Synthetic unique source_url — prevents all events collapsing onto
+            # one row when the extractor (e.g. Timely) returns no per-event URL.
             if not xf.get('source_url'):
-                xf['source_url'] = url
+                import hashlib as _hl
+                slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
+                uid  = _hl.md5(slug.encode()).hexdigest()[:8]
+                xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
             if not xf.get('source_name'):
                 xf['source_name'] = name
+            # Always use the admin-approved saved_urls name as canonical venue.
+            xf['venue'] = name
             resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
             if resp.status_code in [200, 201]:
                 saved += 1
@@ -545,8 +552,13 @@ async def scrape_all_sequential(saved: list, q: queue.Queue = None) -> dict:
                     for ev in normalized:
                         try:
                             xf = transform_event_for_backend(ev, source_priority=prio)
-                            if not xf.get('source_url'): xf['source_url'] = url
+                            if not xf.get('source_url'):
+                                import hashlib as _hl
+                                slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
+                                uid  = _hl.md5(slug.encode()).hexdigest()[:8]
+                                xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
                             if not xf.get('source_name'): xf['source_name'] = name
+                            xf['venue'] = name
                             resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
                             if resp.status_code in [200, 201]:
                                 retry_saved += 1
