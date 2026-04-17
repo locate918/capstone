@@ -1133,7 +1133,7 @@ export default function App() {
             </main>
 
             {/* ===== EVENT MODAL ===== */}
-            <EventModal event={selectedEvent} onClose={() => handleEventClosing()} user={user} />
+            <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} user={user} />
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
         </div>
     );

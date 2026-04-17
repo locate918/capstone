@@ -30,6 +30,7 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const messagesEndRef = useRef(null);
 
   // Generate or retrieve a persistent guest ID
@@ -63,7 +64,12 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
     }));
 
     try {
-      const response = await chatWithTully(inputValue, userId, conversationHistory);
+      const response = await chatWithTully(
+        inputValue, 
+        userId, 
+        conversationHistory,
+        (status) => setStatusMessage(status)
+      );
       setMessages(prev => [...prev, { role: 'assistant', text: response.message }]);
     } catch (error) {
       console.error("Chat error:", error);
@@ -73,6 +79,7 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
       }]);
     } finally {
       setIsTyping(false);
+      setStatusMessage("");
     }
   };
 
@@ -170,14 +177,23 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
           </div>
         ))}
         
-        {/* Typing Indicator */}
+        {/* Progress Update / Typing Indicator */}
         {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-white p-4 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 flex gap-1">
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-            </div>
+          <div className="flex justify-start items-center gap-3">
+            {statusMessage ? (
+              <div className="bg-white p-4 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 flex items-center gap-2">
+                <span className="w-2 h-2 bg-[#D4AF37] rounded-full animate-pulse"></span>
+                <span className="text-xs text-slate-500 font-medium italic">
+                  {statusMessage}
+                </span>
+              </div>
+            ) : (
+              <div className="bg-white p-4 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 flex gap-1 h-fit">
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></span>
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></span>
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+              </div>
+            )}
           </div>
         )}
         <div ref={messagesEndRef} />
