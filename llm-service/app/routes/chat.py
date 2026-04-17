@@ -3,6 +3,7 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import gemini, ranking
 
@@ -166,7 +167,7 @@ async def execute_search_events(args: dict, user_profile=None):
 
                 # Simplify event data to save tokens and avoid 429 errors
                 simplified_events = []
-                for e in events[:8]:  # Limit to 8 events
+                for e in events[:5]:  # Limit to 5 events
                     # Convert UTC start_time to Central Time for display
                     # so Gemini doesn't have to do timezone math
                     raw_time = e.get("start_time")
@@ -221,37 +222,39 @@ def sanitize_history(history: list) -> list:
             sanitized.append({"role": role, "parts": parts})
     return sanitized
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat")
 async def chat_with_tully(request: ChatRequest, authorization: str = Header(None, alias="Authorization")):
     """
-    Handles conversation with Tully.
+    Handles conversation with Tully using streaming for progress updates.
     """
-    try:
-        user_profile = await get_user_profile(request.user_id, authorization)
+    async def event_generator():
+        try:
+            user_profile = await get_user_profile(request.user_id, authorization)
 
-        # Define tools available to Gemini with user profile context for ranking
-        async def search_with_profile(args: dict):
-            return await execute_search_events(args, user_profile)
+            # Define tools available to Gemini with user profile context for ranking
+            async def search_with_profile(args: dict):
+                return await execute_search_events(args, user_profile)
 
-        tool_functions = {
-            "search_events":  execute_search_events,
-            "search_with_profile": search_with_profile,
-            "search_places":  execute_search_places,
-        }
+            tool_functions = {
+                "search_events":  execute_search_events,
+                "search_with_profile": search_with_profile,
+                "search_places":  execute_search_places,
+            }
 
-        # Limit history to last 15 turns to prevent context exhaustion
-        history = sanitize_history(request.conversation_history)
-        if len(history) > 15:
-            history = history[-15:]
+            # Limit history to last 15 turns to prevent context exhaustion
+            history = sanitize_history(request.conversation_history)
+            if len(history) > 15:
+                history = history[-15:]
 
-        response = await gemini.generate_chat_response(
-            message=request.message,
-            history=history,
-            user_profile=user_profile,
-            tool_functions=tool_functions
-        )
+            async for chunk in gemini.generate_chat_response(
+                message=request.message,
+                history=history,
+                user_profile=user_profile,
+                tool_functions=tool_functions
+            ):
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            print(f"Error in chat_with_tully stream: {e}")
+            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
 
-        return ChatResponse(**response)
-    except Exception as e:
-        print(f"Error in chat_with_tully: {e}")  # Print actual error to terminal
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -178,6 +178,7 @@ pub struct UserPreference {
     pub category: String,
     pub weight: f64,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// Request payload for adding/updating a category preference.

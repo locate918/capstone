@@ -84,24 +84,16 @@ async def log_interaction_and_update_preferences(request: InteractionRequest, au
     # Part 2: Calculate and update user preferences
     try:
         print("DEBUG: Starting preference update process...")
-        # Step A: Fetch the user's current preferences using their auth token.
-        current_preferences_list = await get_user_preferences(request.user_id, authorization)
-        
-        # Step B: Convert the list of preference objects into a simple dictionary for calculation.
-        # e.g., [{'category': 'Music', 'weight': 5}] -> {'Music': 5}
-        user_preferences_dict = {pref['category']: pref['weight'] for pref in current_preferences_list}
-        print(f"DEBUG: Current preference dictionary: {user_preferences_dict}")
 
-        # Step C: Calculate the new scores based on the new interaction.
+        # Calculate the new scores based on the new interaction.
         updated_preferences = ranking.score_categories_from_interaction(
             request.user_id,
             event_categories, # Use the potentially fetched categories
             request.interaction_type,
-            user_preferences_dict
         )
-        print(f"DEBUG: Calculated updated preference dictionary: {updated_preferences}")
+        print(f"DEBUG: Calculated updated preference dictionary (deltas): {updated_preferences}")
 
-        # Step D: Send each updated preference back to the backend, one by one.
+        # Send each updated preference (delta) back to the backend, one by one.
         print("DEBUG: Attempting to send updated preferences to backend...")
         async with httpx.AsyncClient() as client:
             for category, score in updated_preferences.items():
