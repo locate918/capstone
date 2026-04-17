@@ -205,8 +205,9 @@ export const smartSearch = async (query) => {
 /**
  * Send a chat message to Tully.
  * Returns a conversational response with optional event recommendations.
+ * Supports streaming for progress updates via an optional onProgress callback.
  */
-export const chatWithTully = async (message, userId = null, conversationHistory = [], conversationId = null) => {
+export const chatWithTully = async (message, userId = null, conversationHistory = [], onProgress = null) => {
     if (USE_MOCKS) {
         return getMockChatResponse(message);
     }
@@ -219,7 +220,6 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
                 message,
                 user_id: userId,
                 conversation_history: conversationHistory,
-                conversation_id: conversationId,
             }),
         });
 
@@ -227,12 +227,49 @@ export const chatWithTully = async (message, userId = null, conversationHistory 
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json();
-        return {
-            message: data.message,
-            events: transformBackendEvents(data.events || []),
-            conversationId: data.conversation_id,
-        };
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let result = { message: "", events: [], conversationId: null };
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            
+            // Keep the last partial line in the buffer
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        
+                        if (data.status && onProgress) {
+                            onProgress(data.status);
+                        }
+                        
+                        if (data.message) {
+                            result.message = data.message;
+                        }
+
+                        if (data.events) {
+                            result.events = transformBackendEvents(data.events);
+                        }
+
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                    } catch (e) {
+                        console.error("Error parsing SSE chunk:", e, line);
+                    }
+                }
+            }
+        }
+
+        return result;
     } catch (error) {
         console.error("Chat failed:", error);
         return {
