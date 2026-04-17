@@ -135,8 +135,8 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
 
         if future_only and start:
             try:
-                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                if start_dt < today:
+                start_dt = _timely_to_local(start)
+                if start_dt and start_dt < today:
                     continue
             except:
                 pass
@@ -270,6 +270,25 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
     return all_events
 
 
+def _timely_to_local(dt_str: str) -> datetime | None:
+    """Convert a Timely UTC datetime string to local Central time (CDT/CST)."""
+    if not dt_str:
+        return None
+    try:
+        from dateutil import parser as _dp
+        from datetime import timezone as _tz
+        dt = _dp.parse(dt_str)
+        if dt.tzinfo is not None:
+            utc_dt = dt.astimezone(_tz.utc)
+            month = utc_dt.month
+            offset_hours = -5 if 3 <= month <= 11 else -6
+            local_dt = utc_dt.replace(tzinfo=None) + timedelta(hours=offset_hours)
+            return local_dt
+        return dt.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
 def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
     events = []
     seen = set()
@@ -286,8 +305,8 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
 
         if future_only and start:
             try:
-                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                if start_dt < today:
+                start_dt = _timely_to_local(start)
+                if start_dt and start_dt < today:
                     continue
             except:
                 pass
@@ -295,11 +314,12 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
         date_str = ''
         if start:
             try:
-                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
+                dt = _timely_to_local(start)
+                if dt:
+                    date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
                 if end:
-                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
-                    if dt.date() == end_dt.date():
+                    end_dt = _timely_to_local(end)
+                    if dt and end_dt and dt.date() == end_dt.date():
                         date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
             except:
                 date_str = start
