@@ -314,13 +314,11 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
         date_str = ''
         if start:
             try:
-                dt = _timely_to_local(start)
-                if dt:
-                    date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
-                if end:
-                    end_dt = _timely_to_local(end)
-                    if dt and end_dt and dt.date() == end_dt.date():
-                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+                # Pass the raw start_datetime string from the Timely API directly.
+                # The Gemini normalization step (in scraperRoutes.normalize_batch)
+                # handles UTC→Central conversion using its own timezone-aware prompt.
+                # Do NOT convert here — double-converting produces a +5hr offset error.
+                date_str = start
             except:
                 date_str = start
 
