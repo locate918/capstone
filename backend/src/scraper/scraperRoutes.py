@@ -10,6 +10,7 @@ import re
 import json
 import asyncio
 import functools
+import hashlib
 from datetime import datetime
 from flask import render_template_string, render_template, request, jsonify, send_file, Response
 import httpx
@@ -2242,21 +2243,28 @@ def register_routes(app):
             events_to_save = events
 
         # --- Step 2: Collect, register, and auto-enrich venues ---
-        # Uses normalized events so venue names are canonical.
+        # Only register venues from priority=1 sources (direct venue scrapers).
+        # Aggregators (priority 2-3) produce wildly inconsistent venue strings
+        # (sub-rooms, addresses, people's names) that pollute the venues table
+        # and break the JOIN used for map coordinates and venue_priority.
+        source_priority_int = int(events_to_save[0].get('source_priority', 3)) if events_to_save else 3
+        should_register_venues = (source_priority_int == 1)
+
         venues_to_save = {}
-        for event in events_to_save:
-            venue_name = event.get('venue', '').strip()
-            if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
-                venue_key = venue_name.lower()
-                if venue_key not in venues_to_save:
-                    venues_to_save[venue_key] = {
-                        'name': venue_name,
-                        'address': event.get('venue_address', ''),
-                        'city': 'Tulsa',
-                        '_venue_website': event.get('_venue_website', ''),
-                    }
-                elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
-                    venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
+        if should_register_venues:
+            for event in events_to_save:
+                venue_name = event.get('venue', '').strip()
+                if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
+                    venue_key = venue_name.lower()
+                    if venue_key not in venues_to_save:
+                        venues_to_save[venue_key] = {
+                            'name': venue_name,
+                            'address': event.get('venue_address', ''),
+                            'city': 'Tulsa',
+                            '_venue_website': event.get('_venue_website', ''),
+                        }
+                    elif not venues_to_save[venue_key].get('_venue_website') and event.get('_venue_website'):
+                        venues_to_save[venue_key]['_venue_website'] = event.get('_venue_website')
 
         # Register and auto-enrich venues via Google Places
         venues_with_websites = 0
@@ -2318,6 +2326,21 @@ def register_routes(app):
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
+                # Synthetic unique source_url so events from venues without
+                # per-event permalinks don't all collapse onto one DB row.
+                if not transformed.get('source_url'):
+                    slug = (
+                        f"{source_url}|"
+                        f"{transformed.get('title','').lower().strip()}|"
+                        f"{transformed.get('start_time','')}"
+                    )
+                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
+                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
+                if not transformed.get('source_name'):
+                    transformed['source_name'] = source_name
+                # Canonical venue name from the scrape source
+                if source_name:
+                    transformed['venue'] = source_name
                 resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
                 if resp.status_code not in [200, 201]:
                     print(f"[DB] Rejected: {resp.status_code} - {resp.text[:100]}")
@@ -2385,6 +2408,18 @@ def register_routes(app):
         def post_event(event):
             try:
                 transformed = transform_event_for_backend(event)
+                if not transformed.get('source_url'):
+                    slug = (
+                        f"{source_url}|"
+                        f"{transformed.get('title','').lower().strip()}|"
+                        f"{transformed.get('start_time','')}"
+                    )
+                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
+                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
+                if not transformed.get('source_name'):
+                    transformed['source_name'] = source_name
+                if source_name:
+                    transformed['venue'] = source_name
                 resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
                 return resp.status_code in [200, 201]
             except Exception as e:

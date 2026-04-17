@@ -590,7 +590,12 @@ async fn get_my_profile(
 
     // Fetch preferences
     let preferences = sqlx::query_as::<_, UserPreference>(
-        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1",
+        r#"
+        SELECT id, user_id, category, 
+               ROUND((weight * POWER(0.95, EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400.0))::numeric, 2)::float8 AS weight, 
+               created_at, updated_at 
+        FROM user_preferences WHERE user_id = $1
+        "#,
     )
         .bind(user_id)
         .fetch_all(&pool)
@@ -641,7 +646,12 @@ async fn get_my_preferences(
     State(pool): State<PgPool>,
 ) -> Result<Json<Vec<UserPreference>>, StatusCode> {
     let preferences = sqlx::query_as::<_, UserPreference>(
-        "SELECT id, user_id, category, weight, created_at FROM user_preferences WHERE user_id = $1 ORDER BY weight DESC",
+        r#"
+        SELECT id, user_id, category, 
+               ROUND((weight * POWER(0.95, EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400.0))::numeric, 2)::float8 AS weight, 
+               created_at, updated_at 
+        FROM user_preferences WHERE user_id = $1 ORDER BY weight DESC
+        "#,
     )
         .bind(auth.user_id)
         .fetch_all(&pool)
@@ -692,11 +702,13 @@ async fn add_my_preference(
 
     let result = sqlx::query_as::<_, UserPreference>(
         r#"
-        INSERT INTO user_preferences (id, user_id, category, weight, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO user_preferences (id, user_id, category, weight, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $5)
         ON CONFLICT (user_id, category)
-        DO UPDATE SET weight = EXCLUDED.weight
-        RETURNING id, user_id, category, weight, created_at
+        DO UPDATE SET 
+            weight = ROUND(((user_preferences.weight * POWER(0.95, EXTRACT(EPOCH FROM (NOW() - user_preferences.updated_at)) / 86400.0)) + EXCLUDED.weight)::numeric, 2)::float8,
+            updated_at = EXCLUDED.updated_at
+        RETURNING id, user_id, category, weight, created_at, updated_at
         "#,
     )
         .bind(&id)

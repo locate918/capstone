@@ -142,7 +142,19 @@ async fn list_events(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN LATERAL (
+            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
+            FROM venues v2
+            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
+                COALESCE(
+                    (SELECT va.parent_venue FROM venue_aliases va
+                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
+                     LIMIT 1),
+                    e.venue
+                )
+            ))
+            LIMIT 1
+        ) v ON TRUE
         WHERE e.start_time >= NOW()
         ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
@@ -185,7 +197,19 @@ async fn get_event(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN LATERAL (
+            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
+            FROM venues v2
+            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
+                COALESCE(
+                    (SELECT va.parent_venue FROM venue_aliases va
+                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
+                     LIMIT 1),
+                    e.venue
+                )
+            ))
+            LIMIT 1
+        ) v ON TRUE
         WHERE e.id = $1
         "#
     )
@@ -317,7 +341,19 @@ async fn create_event(
             v.longitude      AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN LATERAL (
+            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
+            FROM venues v2
+            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
+                COALESCE(
+                    (SELECT va.parent_venue FROM venue_aliases va
+                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
+                     LIMIT 1),
+                    e.venue
+                )
+            ))
+            LIMIT 1
+        ) v ON TRUE
         WHERE e.source_url = $1
         "#
     )
@@ -463,7 +499,19 @@ async fn search_events(
                 v.longitude      AS venue_longitude,
                 v.venue_priority AS venue_priority
             FROM events e
-            LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+            LEFT JOIN LATERAL (
+            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
+            FROM venues v2
+            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
+                COALESCE(
+                    (SELECT va.parent_venue FROM venue_aliases va
+                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
+                     LIMIT 1),
+                    e.venue
+                )
+            ))
+            LIMIT 1
+        ) v ON TRUE
             WHERE {}
             ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}

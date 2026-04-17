@@ -18,14 +18,16 @@ Functions to implement:
 See backend/src/services/llm.rs for the Rust client that calls these.
 """
 
+import asyncio
 import os
 import json
 import time
 import httpx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncGenerator, Optional
 from datetime import datetime
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError
 from app.models.schemas import NormalizedEvent, GeminiChatResponse
 from app.tools.definitions import gemini_tools
 from dotenv import load_dotenv
@@ -122,10 +124,15 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
         return {"q": message}
 
 
-async def generate_chat_response(message: str, history: List[Dict], user_profile: Dict, tool_functions: Dict[str, Any] = None) -> Dict[str, Any]:
+async def generate_chat_response(
+        message: str,
+        history: List[Dict],
+        user_profile: Dict,
+        tool_functions: Dict[str, Any] = None
+) -> AsyncGenerator[str, None]:
     """
     Uses Gemini 2.0 Flash for conversation. Handles tool calling.
-    Returns a dictionary containing the text response and any tool calls to be executed.
+    Yields progress updates and finally the full response as JSON strings.
     """
 
     current_time = datetime.now().strftime("%A, %B %d, %Y")
@@ -195,6 +202,13 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     
     RESPONSE FORMATTING:
     - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
+    - **Event Limit**: Strictly limit your response to a maximum of 5 events.
+    - **Event Formatting**: ALWAYS format each event using this exact Markdown structure (use ### for title and - for details):
+      ### ✨ [Event Title](Source URL)
+      - 📍 **Venue**: [Venue Name](Venue URL)
+      - ⏰ **Time**: Time of event
+      - 💰 **Price**: Price
+      - 📝 Description
     - **No Events Found**: If the search returns nothing, try a broader search before giving up.
       If still nothing, suggest specific *evergreen* local activities relevant to their query 
       (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
@@ -202,17 +216,31 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
     """
 
     client = get_client()
-    # Initialize the chat session
-    chat = client.aio.chats.create(
-        model='gemini-2.5-flash',
-        config=types.GenerateContentConfig(
-            tools=[gemini_tools],
-            system_instruction=system_instruction,
-        ),
-        history=history
-    )
+    models_to_try = ['gemini-2.0-flash', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-flash-lite']
+    response = None
+    chat = None
 
-    response = await chat.send_message(message)
+    for model_name in models_to_try:
+        try:
+            # Initialize the chat session
+            chat = client.aio.chats.create(
+                model=model_name,
+                config=types.GenerateContentConfig(
+                    tools=[gemini_tools],
+                    system_instruction=system_instruction,
+                ),
+                history=history
+            )
+            yield json.dumps({"status": "Thinking..."})
+            response = await chat.send_message(message)
+            break # Success
+        except Exception as e:
+            print(f"Error with model {model_name}: {e}")
+            if model_name == models_to_try[-1]:
+                yield json.dumps({"message": "I'm having a lot of requests right now. Please try again later.", "status": "Error"})
+                return
+            yield json.dumps({"status": "Thinking..."})
+            await asyncio.sleep(1)
 
     # Handle multi-turn tool execution loop
     max_turns = 10
@@ -224,6 +252,17 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
         for fc in response.function_calls:
             func_name = fc.name
             func_args = dict(fc.args) if fc.args else {}
+
+            # Yield progress message based on tool
+            if func_name == "search_events":
+                q = func_args.get("q", "")
+                cat = func_args.get("category", "")
+                msg = f"Searching for {q or cat or 'events'} in Tulsa..."
+                yield json.dumps({"status": msg})
+            elif func_name == "search_places":
+                yield json.dumps({"status": "Looking for nearby spots..."})
+            else:
+                yield json.dumps({"status": f"Running {func_name}..."})
 
             if tool_functions and func_name in tool_functions:
                 # Execute the tool
@@ -238,13 +277,14 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
                 )
             else:
                 # If no handler is provided, return the tool call to the client
-                return {
+                yield json.dumps({
                     "message": "I tried to perform an action that isn't supported. Please ask something else.",
                     "tool_call": {
                         "name": func_name,
                         "args": func_args
                     }
-                }
+                })
+                return
 
         # Send all tool outputs back to Gemini
         if tool_outputs:
@@ -253,17 +293,12 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             break
 
     # After all tools are finished, request the FINAL response in structured format
+    yield json.dumps({"status": "Finishing up..."})
     if not response.function_calls:
         try:
-            # Use a separate generate_content call with the current chat history
-            # to force the final output into the desired schema.
-            # chat.history now contains the tool interactions.
             final_history = chat.get_history()
-            
-            # The last message in history is the tool output. 
-            # We ask Gemini to summarize/respond based on that history.
             response = await client.aio.models.generate_content(
-                model='gemini-3-flash-preview',
+                model='gemini-2.0-flash', # Use flash for structured output
                 contents=final_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
@@ -273,38 +308,40 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             )
         except Exception as e:
             print(f"Error requesting structured response: {e}")
-            # Fallback to normal response if structured fails or 429s again
             pass
 
     try:
         structured_response = response.parsed
         if not structured_response:
-            # Fallback to text if parsing fails (though response_schema should prevent this)
             text_response = response.text or "I checked the events but couldn't generate a response."
         else:
             # Format the structured response into the desired Markdown
             formatted_parts = []
             if structured_response.opening:
                 formatted_parts.append(structured_response.opening)
-            
-            for event in structured_response.events:
-                event_markdown = f"""*   {event.emoji} [{event.title}]({event.source_url})
-    *   📍 **Venue**: [{event.venue_name}]({event.venue_url or '#'})
-    *   ⏰ **Time**: {event.display_time}
-    *   💰 **Price**: {event.price}
-    *   📝 {event.description}"""
+
+            for event in structured_response.events[:5]:
+                emoji = event.emoji or "✨"
+                venue_url = event.venue_url or '#Source'
+                event_markdown = (
+                    f"### {emoji} [{event.title}]({event.source_url})\n"
+                    f"- 📍 **Venue**: [{event.venue_name}]({venue_url})\n"
+                    f"- ⏰ **Time**: {event.display_time}\n"
+                    f"- 💰 **Price**: {event.price}\n"
+                    f"- 📝 {event.description}"
+                )
                 formatted_parts.append(event_markdown)
-            
+
             if structured_response.closing:
                 formatted_parts.append(structured_response.closing)
-            
+
             text_response = "\n\n".join(formatted_parts)
 
     except Exception as e:
         print(f"Gemini Response Error: {e}")
         text_response = "I'm having trouble formulating a response right now."
 
-    return {"message": text_response, "tool_call": None}
+    yield json.dumps({"message": text_response, "status": "Complete"})
 
 
 async def normalize_events(raw_content: str, source_url: str, content_type: str = "html") -> List[Dict]:
@@ -374,7 +411,11 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - Output ALL start_time and end_time values with the Central Time UTC offset.
     - Use -06:00 for CST (November-March) or -05:00 for CDT (March-November).
     - Example: "2025-03-15T19:00:00-05:00" (CDT) or "2025-01-15T19:00:00-06:00" (CST).
-    - If the source gives a time in UTC or another timezone, CONVERT it to Central Time.
+    - PRESERVE EXISTING OFFSETS: If the input already has a -05:00 or -06:00 offset, copy
+      the datetime value EXACTLY as-is. Do NOT change the time value when an offset is present.
+    - If the source gives a bare UTC time (ends in Z or +00:00), subtract 5 hours for CDT
+      (March-November) or 6 hours for CST (November-March) to get Central Time, then apply
+      the correct offset. Example: "2026-04-17T01:00:00Z" → "2026-04-16T20:00:00-05:00".
     - NEVER output times without a timezone offset. NEVER use "Z" suffix.
     
     TIME INFERENCE RULES:

@@ -135,8 +135,8 @@ def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_onl
 
         if future_only and start:
             try:
-                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                if start_dt < today:
+                start_dt = _timely_to_local(start)
+                if start_dt and start_dt < today:
                     continue
             except:
                 pass
@@ -270,6 +270,22 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
     return all_events
 
 
+def _timely_to_local(dt_str: str) -> datetime | None:
+    """
+    Parse a Timely start_datetime string to a naive datetime.
+    CONFIRMED: The Timely API returns start_datetime ALREADY in local
+    America/Chicago time (e.g. "2026-04-18 21:00:00" = 9pm CDT).
+    No UTC conversion needed — just parse the string as-is.
+    """
+    if not dt_str:
+        return None
+    try:
+        from dateutil import parser as _dp
+        return _dp.parse(str(dt_str).strip()).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
 def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
     events = []
     seen = set()
@@ -281,28 +297,34 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             continue
         seen.add(title)
 
-        start = raw.get('start_datetime', '')
-        end = raw.get('end_datetime', '')
+        # start_datetime is ALREADY local CDT ("2026-04-18 21:00:00" = 9pm CDT)
+        # start_utc_datetime is the true UTC value ("2026-04-19 02:00:00")
+        start     = raw.get('start_datetime', '')
+        end       = raw.get('end_datetime', '')
+        start_utc = raw.get('start_utc_datetime', '')
+        end_utc   = raw.get('end_utc_datetime', '')
 
-        if future_only and start:
+        # Future filter: use the UTC field so we compare UTC to UTC
+        if future_only:
             try:
-                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                if start_dt < today:
+                from datetime import timezone as _tz
+                from dateutil import parser as _dp2
+                utc_str = start_utc or start
+                dt_utc = _dp2.parse(str(utc_str).strip())
+                if dt_utc.tzinfo is None:
+                    dt_utc = dt_utc.replace(tzinfo=_tz.utc)
+                if dt_utc < datetime.now(_tz.utc):
                     continue
             except:
                 pass
 
-        date_str = ''
-        if start:
-            try:
-                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
-                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
-                if end:
-                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
-                    if dt.date() == end_dt.date():
-                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
-            except:
-                date_str = start
+        # Build an explicit CDT ISO string — start_datetime is already local
+        # so we just append the offset. Gemini receives "2026-04-18T21:00:00-05:00"
+        # with an explicit offset and its PRESERVE instruction means it passes through.
+        start_local = _timely_to_local(start)
+        end_local   = _timely_to_local(end)
+        cdt = '-05:00' if (start_local and 3 <= start_local.month <= 11) else '-06:00'
+        date_str = start_local.strftime('%Y-%m-%dT%H:%M:%S') + cdt if start_local else start
 
         venue_data = raw.get('venue', {})
         venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
