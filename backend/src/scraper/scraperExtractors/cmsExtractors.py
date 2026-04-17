@@ -1305,57 +1305,136 @@ def _cc_extract_card_meta(h6_title_elem, soup_root) -> dict:
 
 def _cc_parse_homepage_cards(soup, base_url: str) -> list:
     """
-    Parse the homepage for all film cards.
+    Parse the Circle Cinema homepage for all film cards.
+    Titles are in <h3> (Now Showing) and <h4> (Special Screenings, Coming Soon).
+    <h6> tags are labels (RELEASE DATE, RATING, RUN TIME) — NOT titles.
     Returns list of dicts: {title, info_url, ticket_url, image_url,
                              description, rating, runtime, release_date}
     """
     cards = []
     seen_titles = set()
 
-    all_h6 = soup.find_all('h6')
     SKIP_TITLES = {
         'NOW SHOWING', 'FEATURE FILMS NOW SHOWING', 'SPECIAL SCREENINGS',
         'COMING SOON', 'FEATURE FILMS COMING SOON', 'COMING ATTRACTIONS',
-        'CONTACT US', 'FOLLOW US', 'FOLLOW US:', 'SIGN UP FOR NEWS & UPDATES',
-        'SIGN UP FOR NEWS AND UPDATES', 'NEWSLETTER', 'SUBSCRIBE',
-        'FILM SCHEDULE', 'RENTALS', 'WHO WE ARE', 'WHAT WE DO', 'GET INVOLVED',
-        'FILM FESTIVALS', 'TICKET HUB', 'MEMBERSHIP', 'GIFT CARDS', 'DONATE',
-        'BACK TO ALL FILMS', 'NEXT FILM',
+        'CONTACT US', 'FOLLOW US', 'SIGN UP FOR NEWS & UPDATES',
+        'NEWSLETTER', 'FILM SCHEDULE', 'RENTALS', 'WHO WE ARE', 'WHAT WE DO',
+        'GET INVOLVED', 'FILM FESTIVALS', 'TICKET HUB', 'MEMBERSHIP',
+        'GIFT CARDS', 'DONATE', 'BACK TO ALL FILMS', 'NEXT FILM',
+        'RELEASE DATE', 'RATING', 'GENRE', 'RUN TIME', 'TICKETS', 'INFO',
+        'PRIVACY POLICY', 'TERMS & CONDITIONS', 'FOLLOW US:',
     }
     LABEL_TEXTS = {'release date', 'rating', 'genre', 'run time', 'tickets', 'info'}
-    NAV_LABELS = {'info', 'tickets', 'back', 'next', 'new', 'trailer',
-                  'buy tickets', 'view trailer', 'buy tickets view trailer'}
 
-    for h6 in all_h6:
-        title = h6.get_text(strip=True).strip('\u201c\u201d"')
+    # Titles are h3 (Now Showing) and h4 (Special Screenings / Coming Soon)
+    title_elems = soup.find_all(['h3', 'h4'])
+
+    for title_el in title_elems:
+        title = title_el.get_text(strip=True).strip('\u201c\u201d"')
         if not title or len(title) < 4:
             continue
-        if title.upper() in SKIP_TITLES or title.upper().rstrip(':') in SKIP_TITLES:
+        if title.upper() in SKIP_TITLES:
             continue
         if title.lower().rstrip(':') in LABEL_TEXTS:
-            continue
-        if title.lower().strip() in NAV_LABELS:
             continue
         if title in seen_titles:
             continue
         seen_titles.add(title)
 
-        # Use _cc_extract_card_meta to get all fields
-        meta = _cc_extract_card_meta(h6, soup)
+        # Walk up to find card container
+        container = title_el
+        for _ in range(6):
+            parent = container.parent
+            if not parent or parent.name in ['body', 'html']:
+                break
+            # Stop when we have a container with multiple children (the card div)
+            if len(list(parent.children)) > 3:
+                container = parent
+                break
+            container = parent
+
+        card_text = container.get_text(' ', strip=True) if container else ''
+
+        # Release date — from h6 siblings after a "RELEASE DATE" label
+        release_date = ''
+        h6_tags = container.find_all('h6') if container else []
+        for i, h6 in enumerate(h6_tags):
+            if 'release date' in h6.get_text(strip=True).lower():
+                # Next h6 sibling has the date value
+                if i + 1 < len(h6_tags):
+                    val = h6_tags[i + 1].get_text(strip=True)
+                    if val and val not in ('\u200b', '', 'N/A'):
+                        release_date = val
+                break
+
+        # Rating
+        rating = ''
+        for i, h6 in enumerate(h6_tags):
+            if h6.get_text(strip=True).upper() == 'RATING':
+                if i + 1 < len(h6_tags):
+                    val = h6_tags[i + 1].get_text(strip=True)
+                    if val and val not in ('\u200b', '', 'N/A', 'N/A '):
+                        rating = val
+                break
+
+        # Runtime
+        runtime = ''
+        for i, h6 in enumerate(h6_tags):
+            if 'run time' in h6.get_text(strip=True).lower():
+                if i + 1 < len(h6_tags):
+                    val = h6_tags[i + 1].get_text(strip=True)
+                    if val and val not in ('\u200b', ''):
+                        runtime = val
+                break
+
+        # Description — first <p> in the card with real content
+        description = ''
+        if container:
+            for p in container.find_all('p'):
+                t = p.get_text(strip=True)
+                if t and len(t) > 20 and t != title:
+                    description = t[:300]
+                    break
+
+        # Ticket URL — easy-ware eventsByMovie link
+        ticket_url = ''
+        info_url = ''
+        if container:
+            for a in container.find_all('a', href=True):
+                href = a['href']
+                if 'easy-ware-ticketing.com/eventsByMovie' in href:
+                    ticket_url = ticket_url or href
+                elif '/movies-events/' in href or '/coming-soon/' in href or '/event-details/' in href:
+                    full = href if href.startswith('http') else f'https://www.circlecinema.org{href}'
+                    info_url = info_url or full
+
+        # Fallback info_url from title slug
+        if not info_url:
+            from urllib.parse import quote
+            slug = quote(title.lower().replace(' ', '-'), safe='-')
+            info_url = f'https://www.circlecinema.org/movies-events/{slug}'
+
+        # Image
+        image_url = ''
+        if container:
+            for img in container.find_all('img', src=True):
+                src = img.get('src', '')
+                if src and src.startswith('http'):
+                    image_url = src
+                    break
 
         cards.append({
-            'title': title,
-            'info_url': meta['info_url'],
-            'ticket_url': meta['ticket_url'],
-            'image_url': meta['image_url'],
-            'description': meta['description'],
-            'rating': meta['rating'],
-            'runtime': meta['runtime'],
-            'release_date': meta['release_date'],
+            'title':        title,
+            'info_url':     info_url,
+            'ticket_url':   ticket_url,
+            'image_url':    image_url,
+            'description':  description,
+            'rating':       rating,
+            'runtime':      runtime,
+            'release_date': release_date,
         })
 
     return cards
-
 
 async def _cc_fetch_detail_page(info_url: str) -> str:
     """Fetch a Circle Cinema film detail page. Returns page text or ''."""
@@ -1402,7 +1481,7 @@ async def extract_circle_cinema_events(
     Returns (events, was_detected).
     """
     if 'circlecinema' not in url.lower():
-        if 'circlecinema.easy-ware-ticketing.com' not in html or 'wixstatic.com' not in html:
+        if 'wixstatic.com' not in html and 'circlecinema' not in html.lower():
             return [], False
 
     print(f"[CircleCinema] Detected Circle Cinema, parsing homepage cards...")
