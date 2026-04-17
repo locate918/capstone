@@ -300,8 +300,24 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             continue
         seen.add(title)
 
-        start = raw.get('start_datetime', '')
-        end = raw.get('end_datetime', '')
+        start_raw = raw.get('start_datetime', '')
+        end_raw   = raw.get('end_datetime', '')
+
+        # The Timely API returns UTC datetimes WITHOUT a timezone suffix, even when
+        # timezone=America/Chicago is passed. Appending Z makes the full pipeline
+        # (asyncScraper future filter + Gemini normalization + transform_for_db)
+        # treat them as UTC and convert to CDT correctly.
+        def _ensure_utc(s):
+            if not s:
+                return s
+            s = str(s).strip()
+            # Already has timezone info — leave alone
+            if s.endswith('Z') or '+' in s[10:] or (len(s) > 10 and s[10:].count('-') > 0 and 'T' in s):
+                return s
+            return s + 'Z'
+
+        start = _ensure_utc(start_raw)
+        end   = _ensure_utc(end_raw)
 
         if future_only and start:
             try:
@@ -311,16 +327,7 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             except:
                 pass
 
-        date_str = ''
-        if start:
-            try:
-                # Pass the raw start_datetime string from the Timely API directly.
-                # The Gemini normalization step (in scraperRoutes.normalize_batch)
-                # handles UTC→Central conversion using its own timezone-aware prompt.
-                # Do NOT convert here — double-converting produces a +5hr offset error.
-                date_str = start
-            except:
-                date_str = start
+        date_str = start  # UTC with Z → Gemini converts to CDT correctly
 
         venue_data = raw.get('venue', {})
         venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
