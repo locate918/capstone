@@ -272,23 +272,16 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
 
 def _timely_to_local(dt_str: str) -> datetime | None:
     """
-    Convert a Timely datetime string to naive local Central time (CDT/CST).
-    The Timely API returns UTC datetimes WITHOUT a Z suffix even when
-    timezone=America/Chicago is requested. Naive strings are treated as UTC.
+    Parse a Timely start_datetime string to a naive datetime.
+    CONFIRMED: The Timely API returns start_datetime ALREADY in local
+    America/Chicago time (e.g. "2026-04-18 21:00:00" = 9pm CDT).
+    No UTC conversion needed — just parse the string as-is.
     """
     if not dt_str:
         return None
     try:
         from dateutil import parser as _dp
-        from datetime import timezone as _tz
-        dt = _dp.parse(str(dt_str).strip())
-        if dt.tzinfo is None:
-            # No tz marker — API returned UTC without Z; stamp it
-            dt = dt.replace(tzinfo=_tz.utc)
-        utc_dt = dt.astimezone(_tz.utc)
-        month = utc_dt.month
-        offset_hours = -5 if 3 <= month <= 11 else -6
-        return utc_dt.replace(tzinfo=None) + timedelta(hours=offset_hours)
+        return _dp.parse(str(dt_str).strip()).replace(tzinfo=None)
     except Exception:
         return None
 
@@ -304,19 +297,32 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             continue
         seen.add(title)
 
-        start = raw.get('start_datetime', '')
-        end = raw.get('end_datetime', '')
+        # start_datetime is ALREADY local CDT ("2026-04-18 21:00:00" = 9pm CDT)
+        # start_utc_datetime is the true UTC value ("2026-04-19 02:00:00")
+        start     = raw.get('start_datetime', '')
+        end       = raw.get('end_datetime', '')
+        start_utc = raw.get('start_utc_datetime', '')
+        end_utc   = raw.get('end_utc_datetime', '')
 
-        # Convert UTC→CDT here so Gemini receives an explicit ISO offset string
-        # ("2026-04-16T20:00:00-05:00") and has nothing left to convert.
-        # The Timely API returns UTC without Z; _timely_to_local now handles that.
+        # Future filter: use the UTC field so we compare UTC to UTC
+        if future_only:
+            try:
+                from datetime import timezone as _tz
+                from dateutil import parser as _dp2
+                utc_str = start_utc or start
+                dt_utc = _dp2.parse(str(utc_str).strip())
+                if dt_utc.tzinfo is None:
+                    dt_utc = dt_utc.replace(tzinfo=_tz.utc)
+                if dt_utc < datetime.now(_tz.utc):
+                    continue
+            except:
+                pass
+
+        # Build an explicit CDT ISO string — start_datetime is already local
+        # so we just append the offset. Gemini receives "2026-04-18T21:00:00-05:00"
+        # with an explicit offset and its PRESERVE instruction means it passes through.
         start_local = _timely_to_local(start)
         end_local   = _timely_to_local(end)
-
-        if future_only and start_local:
-            if start_local < today:
-                continue
-
         cdt = '-05:00' if (start_local and 3 <= start_local.month <= 11) else '-06:00'
         date_str = start_local.strftime('%Y-%m-%dT%H:%M:%S') + cdt if start_local else start
 

@@ -260,7 +260,7 @@ async def generate_chat_response(message: str, history: List[Dict], user_profile
             # chat.history now contains the tool interactions.
             final_history = chat.get_history()
 
-            # The last message in history is the tool output. 
+            # The last message in history is the tool output.
             # We ask Gemini to summarize/respond based on that history.
             response = await client.aio.models.generate_content(
                 model='gemini-3-flash-preview',
@@ -374,11 +374,7 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     - Output ALL start_time and end_time values with the Central Time UTC offset.
     - Use -06:00 for CST (November-March) or -05:00 for CDT (March-November).
     - Example: "2025-03-15T19:00:00-05:00" (CDT) or "2025-01-15T19:00:00-06:00" (CST).
-    - PRESERVE EXISTING OFFSETS: If the input already has a -05:00 or -06:00 offset, copy
-      the datetime value EXACTLY as-is. Do NOT change the time value when an offset is present.
-    - If the source gives a bare UTC time (ends in Z or +00:00), subtract 5 hours for CDT
-      (March-November) or 6 hours for CST (November-March) to get Central Time, then apply
-      the correct offset. Example: "2026-04-17T01:00:00Z" → "2026-04-16T20:00:00-05:00".
+    - If the source gives a time in UTC or another timezone, CONVERT it to Central Time.
     - NEVER output times without a timezone offset. NEVER use "Z" suffix.
     
     TIME INFERENCE RULES:
