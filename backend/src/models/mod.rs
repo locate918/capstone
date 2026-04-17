@@ -101,6 +101,7 @@ use uuid::Uuid;                        // Universally unique identifiers
 ///   "radius_miles": 15,
 ///   "price_max": 50.00,
 ///   "family_friendly_only": false,
+///   "has_completed_onboarding": true,
 ///   "created_at": "2026-01-17T19:34:01Z",
 ///   "updated_at": "2026-01-17T19:34:01Z"
 /// }
@@ -128,6 +129,9 @@ pub struct User {
     /// Only show family-friendly events
     pub family_friendly_only: bool,
 
+    /// Tracks if the user has completed the initial preference setup
+    pub has_completed_onboarding: bool,
+
     /// When the account was created
     pub created_at: DateTime<Utc>,
 
@@ -145,6 +149,8 @@ pub struct CreateUser {
     pub price_max: Option<f64>,
     #[serde(default)]
     pub family_friendly_only: bool,
+    #[serde(default)]
+    pub has_completed_onboarding: bool,
 }
 
 /// Request payload for updating user preferences.
@@ -154,6 +160,7 @@ pub struct UpdateUserPreferences {
     pub radius_miles: Option<i32>,
     pub price_max: Option<f64>,
     pub family_friendly_only: Option<bool>,
+    pub has_completed_onboarding: Option<bool>,
 }
 
 // =============================================================================
@@ -218,6 +225,28 @@ pub struct UserInteraction {
 pub struct CreateUserInteraction {
     pub event_id: Uuid,
     pub interaction_type: String,
+}
+
+// =============================================================================
+// USER SAVED EVENTS MODELS
+// =============================================================================
+// Saved events track which events a user has bookmarked.
+// Used for user collections and "my saved events" feature.
+
+/// Represents a user's saved event.
+///
+/// # Database Table
+/// `user_saved_events` - See migrations/001_initial.sql
+///
+/// # Uniqueness Constraint
+/// Each (user_id, event_id) pair is unique - a user can only save the same event once.
+/// Attempting to save an already-saved event returns success without duplicating.
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct UserSavedEvent {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub event_id: Uuid,
+    pub created_at: DateTime<Utc>,
 }
 
 // =============================================================================

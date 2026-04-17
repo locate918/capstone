@@ -1,17 +1,16 @@
 -- Locate918 Database Schema
--- Version: 3.0
+-- Version: 4.0
 --
--- Changelog from v2.0:
---   - events: added time_estimated, content_hash, source_priority, canonical_url
---   - events: added content_hash unique index for cross-source deduplication
---   - venues: added latitude, longitude
+-- Changelog from v3.0:
+--   - Added user_saved_events table for bookmarking events
+--   - Updated user_interactions table to support event_categories as array
 
 -- =============================================================================
 -- EVENTS TABLE
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS events (
-                                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- Basic info
     title TEXT NOT NULL,
@@ -22,15 +21,15 @@ CREATE TABLE IF NOT EXISTS events (
     venue_address TEXT,
     location TEXT,  -- General area: "Downtown Tulsa", "Broken Arrow"
 
--- Timing
+    -- Timing
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ,
     time_estimated BOOLEAN DEFAULT FALSE,  -- TRUE if start_time was guessed, not explicit
 
--- Categorization (array for multiple categories)
+    -- Categorization (array for multiple categories)
     categories TEXT[],  -- e.g., ['concerts', 'rock', 'live music']
 
--- Filtering attributes
+    -- Filtering attributes
     outdoor BOOLEAN DEFAULT FALSE,
     family_friendly BOOLEAN DEFAULT FALSE,
 
@@ -67,7 +66,7 @@ CREATE TABLE IF NOT EXISTS events (
 
     -- Prevent duplicate scrapes of the same URL
     CONSTRAINT unique_source_url UNIQUE (source_url)
-    );
+);
 
 -- Standard query indexes
 CREATE INDEX IF NOT EXISTS idx_events_start_time        ON events(start_time);
@@ -87,7 +86,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS events_content_hash_key
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
-                                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL,
     name TEXT,
 
@@ -100,7 +99,7 @@ CREATE TABLE IF NOT EXISTS users (
     -- Timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+);
 
 -- Auto-update updated_at on every write
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -126,14 +125,14 @@ CREATE TRIGGER update_events_updated_at
 -- Weight scale: -5 (hate) to +5 (love)
 
 CREATE TABLE IF NOT EXISTS user_preferences (
-                                                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category TEXT NOT NULL,
     weight INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT unique_user_category UNIQUE (user_id, category)
-    );
+);
 
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
 
@@ -143,28 +142,46 @@ CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user
 -- Implicit preferences inferred from behaviour (clicks, saves, dismisses).
 
 CREATE TABLE IF NOT EXISTS user_interactions (
-                                                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     interaction_type TEXT NOT NULL,  -- 'clicked', 'saved', 'dismissed', 'attended'
 
--- Denormalized for faster ML queries
-    event_category TEXT,
+    -- Denormalized for faster ML queries
+    event_categories TEXT[],
     event_venue TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+);
 
 CREATE INDEX IF NOT EXISTS idx_user_interactions_user_id  ON user_interactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_event_id ON user_interactions(event_id);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_type     ON user_interactions(interaction_type);
 
 -- =============================================================================
+-- USER SAVED EVENTS TABLE
+-- =============================================================================
+-- Tracks which events users have bookmarked for later review.
+
+CREATE TABLE IF NOT EXISTS user_saved_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Each user can only save each event once
+    CONSTRAINT unique_user_event_save UNIQUE (user_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_saved_events_user_id  ON user_saved_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_saved_events_event_id ON user_saved_events(event_id);
+
+-- =============================================================================
 -- VENUES TABLE
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS venues (
-                                      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
     address TEXT,
     city TEXT DEFAULT 'Tulsa',
@@ -184,4 +201,4 @@ CREATE TABLE IF NOT EXISTS venues (
     website TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+);

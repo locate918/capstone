@@ -7,18 +7,25 @@
  * - event: Event object with title, summary, location, original_url, venue_website, etc.
  * - onClick: Function called when card is clicked
  * - index: Position in list (used for staggered animation)
+ * - user: Authenticated user object
+ * - isSaved: Boolean indicating if event is in user's saved events
+ * - onSaveChange: Optional callback function when save state changes
  *
  * LINKS:
- * - "Info" button → source_url (VisitTulsa/aggregator page with event details)
  * - "Venue" button → venue_website (actual venue's website)
+ * - "Save" button → bookmark event for later (toggles save/unsave)
  */
 
-import React from 'react';
-import { MapPin, Calendar, ExternalLink, Building2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { MapPin, Calendar, Building2, Heart, Tag } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
-import { recordInteraction } from '../services/api';
+import { recordInteraction, saveEvent, unsaveEvent } from '../services/api';
 
-const EventCard = ({ event, onClick, index = 0, user }) => {
+const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveChange }) => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [saved, setSaved] = useState(isSaved);
+    const [imageError, setImageError] = useState(false);
+
     // Format date for display
     const formattedDate = event.date_iso
         ? new Date(event.date_iso).toLocaleDateString(undefined, {
@@ -27,6 +34,9 @@ const EventCard = ({ event, onClick, index = 0, user }) => {
             day: 'numeric'
         })
         : 'Date TBA';
+
+    // Get event type from vibe_tags or categories
+    const eventType = event.vibe_tags?.[0] || event.categories?.[0] || 'Event';
 
     // Helper for recording interactions
     const logClick = (type) => {
@@ -43,15 +53,6 @@ const EventCard = ({ event, onClick, index = 0, user }) => {
         }
     };
 
-    // Handle "Info" click - open source URL in new tab
-    const handleViewEvent = (e) => {
-        e.stopPropagation(); // Don't trigger card onClick
-        logClick('clicked on og post');
-        if (event.original_url) {
-            window.open(event.original_url, '_blank', 'noopener,noreferrer');
-        }
-    };
-
     // Handle "Venue" click - open venue website in new tab
     const handleVenueClick = (e) => {
         e.stopPropagation(); // Don't trigger card onClick
@@ -61,10 +62,51 @@ const EventCard = ({ event, onClick, index = 0, user }) => {
         }
     };
 
+    // Handle "Save/Unsave" click - toggle bookmark state
+    const handleToggleSaveEvent = async (e) => {
+        e.stopPropagation(); // Don't trigger card onClick
+        if (!user) {
+            console.warn("[DEBUG] Save clicked but user is missing");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            if (saved) {
+                // Unsave the event
+                await unsaveEvent(event.id);
+                console.log(`[DEBUG] Event unsaved: ${event.title}`);
+                logClick('unsaved');
+                setSaved(false);
+            } else {
+                // Save the event
+                await saveEvent(event.id);
+                console.log(`[DEBUG] Event saved: ${event.title}`);
+                logClick('saved');
+                setSaved(true);
+            }
+            // Notify parent if callback provided
+            if (onSaveChange) {
+                onSaveChange(event.id, !saved);
+            }
+        } catch (error) {
+            console.error("Failed to toggle save event:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Handle image load error
+    const handleImageError = () => {
+        console.warn(`[DEBUG] Image failed to load: ${event.imageUrl}`);
+        setImageError(true);
+    };
+
     // Check which links are available
-    const hasEventLink = Boolean(event.original_url);
     const hasVenueLink = Boolean(event.venue_website);
-    const hasAnyLink = hasEventLink || hasVenueLink;
+
+    // Determine if we have a valid image URL
+    const hasImageUrl = event.imageUrl && event.imageUrl.trim().length > 0;
 
     return (
         <div
@@ -76,19 +118,30 @@ const EventCard = ({ event, onClick, index = 0, user }) => {
             }}
         >
             {/* Image Section */}
-            <div className="h-52 relative overflow-hidden">
-                <img
-                    src={event.imageUrl}
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 ease-out"
-                />
+            <div className="h-52 relative overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+                {hasImageUrl && !imageError ? (
+                    <img
+                        src={event.imageUrl}
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 ease-out"
+                        onError={handleImageError}
+                    />
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">
+                        <img
+                            src="/assets/Logo.png"
+                            alt="Locate918"
+                            className="w-20 h-20 object-contain opacity-40"
+                        />
+                    </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent opacity-80" />
 
-                {/* Venue Badge - Show venue name, not aggregator source */}
+                {/* Event Type Badge - Show venue name for location context */}
                 {event.location && (
-                    <div className="absolute top-4 right-4">
+                    <div className="absolute top-4 right-4 max-w-[180px]">
                         <span
-                            className="text-[10px] font-bold tracking-wider bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 uppercase group-hover:border-[#d4af37]/50 transition-colors"
+                            className="text-[10px] font-bold tracking-wider bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 uppercase group-hover:border-[#d4af37]/50 transition-colors line-clamp-1"
                             style={styles.primaryText}
                         >
                             {event.location}
@@ -122,56 +175,43 @@ const EventCard = ({ event, onClick, index = 0, user }) => {
 
                 {/* Footer */}
                 <div className="mt-auto pt-5 border-t border-white/5 flex items-center justify-between group-hover:border-white/10 transition-colors">
-                    {/* Location */}
+                    {/* Event Type */}
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 truncate max-w-[40%]">
-                        <MapPin size={12} className="shrink-0" />
-                        <span className="truncate tracking-wide group-hover:text-slate-400 transition-colors">
-                            {event.location}
+                        <Tag size={12} className="shrink-0" />
+                        <span className="truncate tracking-wide group-hover:text-slate-400 transition-colors capitalize">
+                            {eventType}
                         </span>
                     </div>
 
                     {/* Action Buttons */}
-                    {hasAnyLink && (
-                        <div className="flex items-center gap-2">
-                            {/* Venue Website Button - Gold/Primary */}
-                            {hasVenueLink && (
-                                <button
-                                    onClick={handleVenueClick}
-                                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40 transition-all duration-300"
-                                    title="Visit venue website"
-                                >
-                                    <Building2 size={11} />
-                                    <span>Venue</span>
-                                </button>
-                            )}
+                    <div className="flex items-center gap-2">
+                        {/* Save Button - Heart Icon (toggles save/unsave) */}
+                        {user && (
+                            <button
+                                onClick={handleToggleSaveEvent}
+                                disabled={isLoading}
+                                className={`flex items-center justify-center text-xs font-medium px-2.5 py-1.5 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${saved
+                                        ? 'bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40 hover:bg-[#d4af37]/30'
+                                        : 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40'
+                                    }`}
+                                title={saved ? "Remove from saved" : "Save event"}
+                            >
+                                <Heart size={12} className={`${saved ? 'fill-current' : ''} ${isLoading ? "animate-pulse" : ""}`} />
+                            </button>
+                        )}
 
-                            {/* Event Info Button - Subtle/Secondary */}
-                            {hasEventLink && (
-                                <button
-                                    onClick={handleViewEvent}
-                                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition-all duration-300"
-                                    title="View event details"
-                                >
-                                    <span>Info</span>
-                                    <ExternalLink size={10} />
-                                </button>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Tags - show if no links available */}
-                    {!hasAnyLink && (
-                        <div className="flex gap-1.5">
-                            {event.vibe_tags?.slice(0, 2).map((tag, i) => (
-                                <span
-                                    key={i}
-                                    className="text-[10px] font-medium bg-white/5 text-slate-300 px-2.5 py-1 rounded border border-white/5 group-hover:bg-white/10 transition-colors"
-                                >
-                                    {tag}
-                                </span>
-                            ))}
-                        </div>
-                    )}
+                        {/* Venue Website Button - Gold/Primary */}
+                        {hasVenueLink && (
+                            <button
+                                onClick={handleVenueClick}
+                                className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40 transition-all duration-300"
+                                title="Visit venue website"
+                            >
+                                <Building2 size={11} />
+                                <span>Venue</span>
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

@@ -162,6 +162,28 @@ export const searchEvents = async (params = {}) => {
     }
 };
 
+/**
+ * Fetch personalized event recommendations based on user preference weights.
+ * Only available for authenticated users. Events are ranked by preference match.
+ */
+export const fetchRecommendedEvents = async () => {
+    if (USE_MOCKS) {
+        return getMockEvents();
+    }
+
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/recommendations?limit=2000`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const events = await response.json();
+        return transformBackendEvents(events);
+    } catch (error) {
+        console.error("Failed to fetch recommended events:", error);
+        return [];
+    }
+};
+
 // =============================================================================
 // Smart Search API (Python LLM Service :8001)
 // =============================================================================
@@ -259,7 +281,7 @@ const cleanHtml = (text) => {
     const clean = new DOMParser().parseFromString(decoded, "text/html").body.textContent || "";
     // Pass 3: trim trailing truncation artifacts (& , - , etc.)
     const cleanedText = clean.replace(/[\s&\-,;:]+$/, '').trim();
-    
+
     // Truncate to desired max length (e.g., 500 chars) and add ellipsis
     const MAX_LENGTH = 500;
     return cleanedText.length > MAX_LENGTH ? cleanedText.slice(0, MAX_LENGTH) + '…' : cleanedText;
@@ -378,18 +400,18 @@ const mapCategoriesToVibes = (categories, title = '', description = '') => {
  */
 const formatCategoryLabel = (category) => {
     const labels = {
-        music:       "Music",
-        comedy:      "Comedy",
-        art:         "Arts & Theater",
-        festival:    "Festival",
-        film:        "Film",
-        food:        "Food & Drink",
-        nightlife:   "Nightlife",
-        sports:      "Sports & Fitness",
-        family:      "Family",
+        music: "Music",
+        comedy: "Comedy",
+        art: "Arts & Theater",
+        festival: "Festival",
+        film: "Film",
+        food: "Food & Drink",
+        nightlife: "Nightlife",
+        sports: "Sports & Fitness",
+        family: "Family",
         educational: "Educational",
-        nature:      "Nature & Outdoors",
-        community:   "Community",
+        nature: "Nature & Outdoors",
+        community: "Community",
     };
     return labels[category] || category.charAt(0).toUpperCase() + category.slice(1);
 };
@@ -484,6 +506,152 @@ const getMockChatResponse = (message) => {
         conversationId: "mock-" + Date.now(),
     };
 };
+
+// =============================================================================
+// USER PREFERENCES API
+// =============================================================================
+
+/**
+ * Update user preference settings (location, radius, price, family-friendly).
+ * Called when user completes onboarding or updates their settings.
+ */
+export const updateUserPreferences = async (preferences) => {
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/preferences`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preferences),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[DEBUG] User preferences updated:', data);
+        return data;
+    } catch (error) {
+        console.error('Failed to update user preferences:', error);
+        throw error;
+    }
+};
+
+/**
+ * Add or update a user's category preference (e.g., "music": 3.0).
+ * Called when user sets their likes/dislikes for event categories.
+ */
+export const addUserPreference = async (preference) => {
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/preferences`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preference),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[DEBUG] Category preference added:', data);
+        return data;
+    } catch (error) {
+        console.error('Failed to add category preference:', error);
+        throw error;
+    }
+};
+
+// =============================================================================
+// SAVED EVENTS API
+// =============================================================================
+
+/**
+ * Saves an event to the user's bookmarks.
+ * Called when user clicks the heart/save button on an event card.
+ * Triggers a "saved" interaction which boosts preference weights by +0.4.
+ */
+export const saveEvent = async (eventId) => {
+    if (!eventId) {
+        console.warn("[DEBUG] Skipping save: missing eventId.");
+        return;
+    }
+
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/saved-events/${eventId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`[DEBUG] Event ${eventId} saved successfully.`);
+        return data;
+    } catch (error) {
+        console.error('Failed to save event:', error);
+        throw error;
+    }
+};
+/**
+ * Remove an event from the user's saved/bookmarked events.
+ * Called when user clicks the filled heart to unsave an event.
+ * Triggers an "unsaved" interaction.
+ */
+export const unsaveEvent = async (eventId) => {
+    if (!eventId) {
+        console.warn("[DEBUG] Skipping unsave: missing eventId.");
+        return;
+    }
+
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/saved-events/${eventId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        // 204 No Content has no response body, so don't try to parse JSON
+        if (response.status === 204) {
+            console.log(`[DEBUG] Event ${eventId} unsaved successfully.`);
+            return { success: true };
+        }
+
+        const data = await response.json();
+        console.log(`[DEBUG] Event ${eventId} unsaved successfully.`);
+        return data;
+    } catch (error) {
+        console.error('Failed to unsave event:', error);
+        throw error;
+    }
+};
+/**
+ * Fetch all saved events for the authenticated user.
+ * Called to display user's bookmarked events.
+ */
+export const fetchSavedEvents = async () => {
+    if (USE_MOCKS) {
+        return getMockEvents();
+    }
+
+    try {
+        const response = await authedFetch(`${RUST_BACKEND_URL}/api/users/me/saved-events`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const events = await response.json();
+        return transformBackendEvents(events);
+    } catch (error) {
+        console.error('Failed to fetch saved events:', error);
+        return [];
+    }
+};
+
 // =============================================================================
 // INTERACTION & PREFERENCE API
 // =============================================================================

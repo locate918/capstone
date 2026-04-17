@@ -7,32 +7,36 @@
  * 2. Hero Section (slideshow, shown when no search query)
  * 3. Main Content
  *    - AI Chat Widget (Tully)
- *    - Tab Selection (This Week / All Events / By Venue)
+ *    - Tab Selection (Saved Events / Recommended / This Week / All Events / By Venue)
  *    - Date Filter (From / To)
  *    - Events List + Map (two-column layout)
  *    - Pagination
  * 4. Event Modal (overlay for event details)
  * 5. Venue Selector Modal (when "By Venue" is clicked)
+ * 6. User Profile Modal (when profile button is clicked)
  *
  * STATE:
  * - events: Array of event objects from API
+ * - savedEvents: Array of saved event objects from API
+ * - recommendedEvents: Array of AI-ranked personalized events from API
  * - loading: Boolean for loading state
  * - query: Search query string
  * - selectedEvent: Event object for modal
  * - hoveredEventId: For map marker highlighting
  * - viewMode: 'list' | 'map' (mobile toggle)
  * - currentSlide: Index for hero slideshow
- * - activeTab: 'thisWeek' | 'allEvents' | 'byVenue'
+ * - activeTab: 'savedEvents' | 'recommended' | 'thisWeek' | 'allEvents' | 'byVenue'
  * - currentPage: Current pagination page (1-indexed)
  * - dateFrom: Start date filter (YYYY-MM-DD string or '')
  * - dateTo: End date filter (YYYY-MM-DD string or '')
  * - selectedVenue: Selected venue name for filtering (null = show venue selector)
  * - showVenueModal: Boolean to control venue selector modal visibility
+ * - showProfileModal: Boolean to control user profile modal visibility
  */
 
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
-import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock } from 'lucide-react';
-import { fetchEvents, smartSearch, recordInteraction } from './services/api';
+import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock, Heart } from 'lucide-react';
+import { fetchEvents, fetchRecommendedEvents, fetchSavedEvents, smartSearch, recordInteraction, updateUserPreferences, addUserPreference } from './services/api';
 import { useAuth } from './context/AuthContext';
 
 // Components
@@ -42,6 +46,8 @@ import Header from './components/Header';
 import TulsaMap from './components/TulsaMap';
 import AIChatWidget from './components/AIChatWidget';
 import AuthModal from './components/AuthModal';
+import OnboardingModal from './components/OnboardingModal';
+import UserProfileModal from './components/UserProfileModal';
 
 import './index.css';
 
@@ -271,7 +277,7 @@ const VenueImage = ({ src, alt }) => {
 
     return (
         <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#162b4a] to-[#1f3a60]">
-            {/* Real image � only rendered when there's a src to try */}
+            {/* Real image only rendered when there's a src to try */}
             {status !== 'fallback' && src && (
                 <img
                     src={src}
@@ -282,7 +288,7 @@ const VenueImage = ({ src, alt }) => {
                 />
             )}
 
-            {/* Logo fallback � only shown when there's no image or it failed */}
+            {/* Logo fallback only shown when there's no image or it failed */}
             {status === 'fallback' && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <img
@@ -417,10 +423,12 @@ const VenueSelectorModal = ({ isOpen, onClose, venues, onSelectVenue }) => {
 // =============================================================================
 
 export default function App() {
-    const { user, signOut } = useAuth();
+    const { user, signOut, loading: authLoading, refreshUser } = useAuth();
 
     // --- STATE ---
     const [events, setEvents] = useState([]);
+    const [savedEvents, setSavedEvents] = useState([]);
+    const [recommendedEvents, setRecommendedEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
     const [selectedEvent, setSelectedEvent] = useState(null);
@@ -428,7 +436,7 @@ export default function App() {
     const [viewMode, setViewMode] = useState('list');
     const [currentSlide, setCurrentSlide] = useState(0);
     const [isAuthOpen, setIsAuthOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState('thisWeek');
+    const [activeTab, setActiveTab] = useState(user ? 'savedEvents' : 'thisWeek');
     const [currentPage, setCurrentPage] = useState(1);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
@@ -436,6 +444,10 @@ export default function App() {
     const [showBetaDisclaimer, setShowBetaDisclaimer] = useState(false);
     const [showVenueModal, setShowVenueModal] = useState(false);
     const [selectedVenue, setSelectedVenue] = useState(null);
+    const [showOnboarding, setShowOnboarding] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
+
+    // --- HANDLERS ---
 
     const handleSignOut = async () => {
         const { error } = await signOut();
@@ -444,7 +456,69 @@ export default function App() {
         }
     };
 
+    const handleOpenProfile = () => {
+        setShowProfileModal(true);
+    };
+
+    const handleCloseProfile = () => {
+        setShowProfileModal(false);
+    };
+
+    const handleProfileUpdate = async (updatedData) => {
+        // Refresh user data from backend after profile update
+        await refreshUser();
+    };
+
     // --- EFFECTS ---
+
+    // Update default tab based on login status when auth finishes loading
+    useEffect(() => {
+        if (authLoading) {
+            return; // Wait for auth to load
+        }
+
+        if (!user && activeTab === 'savedEvents') {
+            setActiveTab('thisWeek');
+        }
+    }, [user?.id, authLoading]);
+
+    // Check if onboarding is needed - but ONLY AFTER we've fetched backend data
+    useEffect(() => {
+        if (authLoading) {
+            return; // Wait for auth to load
+        }
+
+        if (!user) {
+            setShowOnboarding(false);
+            return; // No user, don't show onboarding
+        }
+
+        // Don't check onboarding until we have backend data
+        if (user.backend_user === undefined) {
+            console.log('[DEBUG] Waiting for backend user data...');
+            return; // Wait for refreshUser() to fetch data
+        }
+
+        // Check the flag explicitly
+        const hasCompleted = user.user_metadata?.has_completed_onboarding === true;
+
+        console.log('[DEBUG] Onboarding check:', {
+            user_id: user.id,
+            has_completed_onboarding: hasCompleted,
+            will_show_onboarding: !hasCompleted,
+        });
+
+        setShowOnboarding(!hasCompleted);
+    }, [user?.id, user?.user_metadata?.has_completed_onboarding, user?.backend_user, authLoading]);
+
+    // Refresh user data from backend when user logs in (to get accurate has_completed_onboarding)
+    useEffect(() => {
+        if (!authLoading && user && user.backend_user === undefined) {
+            // Only call if we haven't already fetched backend data
+            console.log('[DEBUG] Auto-refreshing user on login');
+            refreshUser();
+        }
+    }, [user?.id, authLoading, refreshUser]);
 
     // Show beta disclaimer on first visit (per session)
     useEffect(() => {
@@ -477,9 +551,9 @@ export default function App() {
         setCurrentPage(1);
     }, [activeTab, query, dateFrom, dateTo, selectedVenue]);
 
-    // Clear date filter when switching to "This Week" tab
+    // Clear date filter when switching to "This Week", "Saved Events", or "Recommended" tabs
     useEffect(() => {
-        if (activeTab === 'thisWeek') {
+        if (activeTab === 'thisWeek' || activeTab === 'savedEvents' || activeTab === 'recommended') {
             setDateFrom('');
             setDateTo('');
             setShowDateFilter(false);
@@ -493,7 +567,7 @@ export default function App() {
         }
     }, [activeTab]);
 
-    // Fetch events (all or search results)
+    // Fetch events (all, search results, saved, or recommended)
     useEffect(() => {
         const loadData = async () => {
             try {
@@ -501,14 +575,31 @@ export default function App() {
                 if (query) {
                     const result = await smartSearch(query);
                     data = Array.isArray(result?.events) ? result.events : [];
+                } else if (activeTab === 'savedEvents' && user) {
+                    data = await fetchSavedEvents();
+                } else if (activeTab === 'recommended' && user) {
+                    data = await fetchRecommendedEvents();
                 } else {
                     const eventsData = await fetchEvents();
                     data = Array.isArray(eventsData) ? eventsData : [];
                 }
-                setEvents(data);
+
+                if (activeTab === 'savedEvents') {
+                    setSavedEvents(data);
+                } else if (activeTab === 'recommended') {
+                    setRecommendedEvents(data);
+                } else {
+                    setEvents(data);
+                }
             } catch (err) {
                 console.error("Failed to fetch events:", err);
-                setEvents([]);
+                if (activeTab === 'savedEvents') {
+                    setSavedEvents([]);
+                } else if (activeTab === 'recommended') {
+                    setRecommendedEvents([]);
+                } else {
+                    setEvents([]);
+                }
             } finally {
                 setLoading(false);
             }
@@ -516,16 +607,46 @@ export default function App() {
 
         setLoading(true);
         loadData();
-    }, [query]);
+    }, [query, activeTab, user]);
+
+    // =============================================================================
+    // BACKGROUND FETCH: Populate saved events for badge (independent of tab)
+    // =============================================================================
+    // Ensures savedEventsCount badge is always accurate without requiring user to
+    // click the Saved Events tab. Fetches saved events when user logs in/out.
+    useEffect(() => {
+        if (!user) {
+            // User logged out, clear saved events
+            setSavedEvents([]);
+            return;
+        }
+
+        // User is authenticated, fetch saved events in background for badge
+        const loadSavedEventsForBadge = async () => {
+            try {
+                const data = await fetchSavedEvents();
+                setSavedEvents(Array.isArray(data) ? data : []);
+                console.log('[DEBUG] Background fetch: loaded', data?.length || 0, 'saved events');
+            } catch (err) {
+                console.error('[ERROR] Failed to fetch saved events for badge:', err);
+                setSavedEvents([]);
+            }
+        };
+
+        loadSavedEventsForBadge();
+    }, [user]); // Only depends on user auth state, NOT on activeTab
 
     // --- DERIVED STATE ---
 
     // Get venues with details for the modal
     const venuesWithDetails = useMemo(() => getVenuesWithDetails(events), [events]);
 
+    // Choose source of events (saved vs recommended vs all)
+    const sourceEvents = activeTab === 'savedEvents' ? savedEvents : activeTab === 'recommended' ? recommendedEvents : events;
+
     // Client-side filtering (backup for API search)
     const filteredEvents = useMemo(() => {
-        let filtered = Array.isArray(events) ? events : [];
+        let filtered = Array.isArray(sourceEvents) ? sourceEvents : [];
 
         // Apply search filter if query exists
         if (query) {
@@ -539,15 +660,25 @@ export default function App() {
         }
 
         return filtered;
-    }, [events, query]);
+    }, [sourceEvents, query]);
 
-    // Apply tab filter (This Week vs All Events vs By Venue) and date range filter
+    // Apply tab filter (Saved Events vs Recommended vs This Week vs All Events vs By Venue) and date range filter
     const tabFilteredEvents = useMemo(() => {
         if (query) {
             // During search, apply date filter if set
             return (dateFrom || dateTo)
                 ? filterByDateRange(filteredEvents, dateFrom, dateTo)
                 : filteredEvents;
+        }
+
+        if (activeTab === 'savedEvents') {
+            // Saved Events: return all filtered (already in saved collection)
+            return filteredEvents;
+        }
+
+        if (activeTab === 'recommended') {
+            // Recommended: return all filtered (already ranked by backend)
+            return filteredEvents;
         }
 
         if (activeTab === 'thisWeek') {
@@ -591,13 +722,17 @@ export default function App() {
         return filterThisWeekEvents(featured).length;
     }, [events]);
 
+    // Count for "Saved Events" tab badge
+    const savedEventsCount = useMemo(() => savedEvents.length, [savedEvents]);
+
     // Count for unique venues
     const venueCount = useMemo(() => getUniqueVenueCount(events), [events]);
 
     // Check if date filter is active
     const hasDateFilter = dateFrom || dateTo;
 
-    // --- HANDLERS ---
+    // --- PAGE NAVIGATION HANDLERS ---
+
     const goToPage = (page) => {
         setHoveredEventId(null); // Clear hover state to prevent stale flyTo
         setCurrentPage(Math.max(1, Math.min(page, totalPages)));
@@ -625,6 +760,8 @@ export default function App() {
         setShowVenueModal(true);
     };
 
+    // --- EVENT INTERACTION HANDLERS ---
+
     const handleEventClick = (event, type = 'clicked') => {
         console.log(`[DEBUG] Event clicked: ${event.title}`);
         setSelectedEvent(event);
@@ -641,7 +778,7 @@ export default function App() {
     const handleEventClosing = () => {
         console.log(`[DEBUG] Event dismissed: ${selectedEvent.title}`);
         setSelectedEvent(null);
-        if (user) {
+        if (user && selectedEvent) {
             recordInteraction({
                 userId: user.id,
                 eventId: selectedEvent.id,
@@ -651,15 +788,77 @@ export default function App() {
         }
     };
 
+    // --- SAVE EVENT HANDLER ---
+
+    const handleSaveChange = (eventId, isSaved) => {
+        if (isSaved) {
+            // Event was saved, add to savedEvents if not already there
+            setSavedEvents(prev => {
+                if (prev.some(e => e.id === eventId)) return prev;
+                const eventToAdd = events.find(e => e.id === eventId) ||
+                    recommendedEvents.find(e => e.id === eventId);
+                return eventToAdd ? [...prev, eventToAdd] : prev;
+            });
+        } else {
+            // Event was unsaved, remove from savedEvents
+            setSavedEvents(prev => prev.filter(e => e.id !== eventId));
+        }
+    };
+
+    // --- ONBOARDING HANDLER ---
+
+    const handleOnboardingComplete = async (prefs) => {
+        console.log("Onboarding complete, submitting:", prefs);
+        try {
+            // 1. Update general preferences
+            await updateUserPreferences({
+                location_preference: prefs.location,
+                radius_miles: prefs.radius,
+                price_max: prefs.priceMax,
+                family_friendly_only: prefs.familyFriendly,
+                has_completed_onboarding: true,
+            });
+
+            // 2. Add category preferences (already have weights from onboarding)
+            for (const categoryPref of prefs.categories) {
+                await addUserPreference({
+                    category: categoryPref.category,
+                    weight: categoryPref.weight
+                });
+            }
+
+            // 3. Refresh user data in auth context
+            console.log('[DEBUG] About to call refreshUser()');
+            await refreshUser();
+            console.log('[DEBUG] refreshUser() completed');
+
+            // 4. Explicitly close the modal
+            console.log('[DEBUG] Explicitly closing onboarding modal');
+            setShowOnboarding(false);
+
+        } catch (error) {
+            console.error("Failed to save onboarding preferences:", error);
+            // Still close modal on error so user isn't stuck
+            setShowOnboarding(false);
+        }
+    };
+
     // --- RENDER ---
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
+
+            {/* ===== ONBOARDING MODAL ===== */}
+            <OnboardingModal
+                isOpen={showOnboarding}
+                onComplete={handleOnboardingComplete}
+                user={user}
+            />
 
             {/* ===== BETA DISCLAIMER MODAL ===== */}
             <BetaDisclaimer isOpen={showBetaDisclaimer} onClose={handleCloseBetaDisclaimer} />
 
             {/* ===== VENUE SELECTOR MODAL ===== */}
-.            <VenueSelectorModal
+            <VenueSelectorModal
                 isOpen={showVenueModal}
                 onClose={() => {
                     setShowVenueModal(false);
@@ -671,6 +870,14 @@ export default function App() {
                 onSelectVenue={handleSelectVenue}
             />
 
+            {/* ===== USER PROFILE MODAL ===== */}
+            <UserProfileModal
+                isOpen={showProfileModal}
+                onClose={handleCloseProfile}
+                user={user}
+                onUpdate={handleProfileUpdate}
+            />
+
             {/* ===== FIXED HEADER ===== */}
             <div className="fixed top-0 left-0 right-0 z-50 header-container shadow-sm">
                 <Header
@@ -679,6 +886,7 @@ export default function App() {
                     user={user}
                     onOpenAuth={() => setIsAuthOpen(true)}
                     onSignOut={handleSignOut}
+                    onOpenProfile={handleOpenProfile}
                 />
             </div>
 
@@ -753,7 +961,7 @@ export default function App() {
                                 className={`slide-indicator rounded-full transition-all duration-300 !min-h-0 ${index === currentSlide
                                     ? 'bg-[#D4AF37] w-5 h-1.5 sm:w-6 sm:h-2'
                                     : 'bg-white/50 hover:bg-white/80 w-1.5 h-1.5 sm:w-2 sm:h-2'
-                                }`}
+                                    }`}
                                 aria-label={`Go to slide ${index + 1}`}
                             />
                         ))}
@@ -812,59 +1020,96 @@ export default function App() {
                                 </button>
                             </div>
                         ) : (
-                            /* Tab Buttons - scrollable on mobile */
-                            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-hide">
-                                <button
-                                    onClick={() => setActiveTab('thisWeek')}
-                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'thisWeek'
-                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
-                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
-                                    }`}
-                                >
-                                    <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
-                                    <span className="hidden sm:inline">This Week in Tulsa</span>
-                                    <span className="sm:hidden">This Week</span>
-                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'thisWeek'
-                                        ? 'bg-white/20 text-white'
-                                        : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                        {thisWeekCount}
-                                    </span>
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('allEvents')}
-                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'allEvents'
-                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
-                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
-                                    }`}
-                                >
-                                    <LayoutGrid size={16} className="sm:w-[18px] sm:h-[18px]" />
-                                    All Events
-                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'allEvents'
-                                        ? 'bg-white/20 text-white'
-                                        : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                        {events.length}
-                                    </span>
-                                </button>
-                                <button
-                                    onClick={handleByVenueClick}
-                                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'byVenue'
-                                        ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
-                                        : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
-                                    }`}
-                                >
-                                    <Building2 size={16} className="sm:w-[18px] sm:h-[18px]" />
-                                    <span className="hidden sm:inline">By Venue</span>
-                                    <span className="sm:hidden">Venues</span>
-                                    <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'byVenue'
-                                        ? 'bg-white/20 text-white'
-                                        : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                        {venueCount}
-                                    </span>
-                                </button>
-                            </div>
+                            /* Tab Buttons - Two-row staggered layout */
+                            <>
+                                {/* Row 1: Personalized Tabs (User-only) */}
+                                {user && (
+                                    <div className="flex gap-2 mb-3 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto scrollbar-hide">
+                                        <button
+                                            onClick={() => setActiveTab('savedEvents')}
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'savedEvents'
+                                                ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                                : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                                }`}
+                                        >
+                                            <Heart size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                            <span className="hidden sm:inline">Saved Events</span>
+                                            <span className="sm:hidden">Saved</span>
+                                            <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'savedEvents'
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                {savedEventsCount}
+                                            </span>
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('recommended')}
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'recommended'
+                                                ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                                : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                                }`}
+                                        >
+                                            <Sparkles size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                            <span className="hidden sm:inline">Recommended for You</span>
+                                            <span className="sm:hidden">For You</span>
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Row 2: Browse Tabs (Always visible) */}
+                                <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible scrollbar-hide">
+                                    <button
+                                        onClick={() => setActiveTab('thisWeek')}
+                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'thisWeek'
+                                            ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                            : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                        <span className="hidden sm:inline">This Week in Tulsa</span>
+                                        <span className="sm:hidden">This Week</span>
+                                        <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'thisWeek'
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                            {thisWeekCount}
+                                        </span>
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('allEvents')}
+                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'allEvents'
+                                            ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                            : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        <LayoutGrid size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                        All Events
+                                        <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'allEvents'
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                            {events.length}
+                                        </span>
+                                    </button>
+                                    <button
+                                        onClick={handleByVenueClick}
+                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 ${activeTab === 'byVenue'
+                                            ? 'bg-[#D4AF37] text-white shadow-lg shadow-[#D4AF37]/30'
+                                            : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50 hover:text-slate-900'
+                                            }`}
+                                    >
+                                        <Building2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+                                        <span className="hidden sm:inline">By Venue</span>
+                                        <span className="sm:hidden">Venues</span>
+                                        <span className={`ml-1 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs rounded-full ${activeTab === 'byVenue'
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-slate-100 text-slate-500'
+                                            }`}>
+                                            {venueCount}
+                                        </span>
+                                    </button>
+                                </div>
+                            </>
                         )}
                     </div>
 
@@ -873,7 +1118,7 @@ export default function App() {
                         <button
                             onClick={() => setViewMode('list')}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-                            }`}
+                                }`}
                         >
                             <List size={14} />
                             List
@@ -881,7 +1126,7 @@ export default function App() {
                         <button
                             onClick={() => setViewMode('map')}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold transition-all ${viewMode === 'map' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-900'
-                            }`}
+                                }`}
                         >
                             <MapIcon size={14} />
                             Map
@@ -898,7 +1143,7 @@ export default function App() {
                             className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all mb-3 ${hasDateFilter
                                 ? 'bg-[#D4AF37] text-white'
                                 : 'bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37]/50'
-                            }`}
+                                }`}
                         >
                             <Filter size={14} className="sm:w-4 sm:h-4" />
                             {hasDateFilter ? 'Date Filter Active' : 'Filter by Date'}
@@ -993,6 +1238,8 @@ export default function App() {
                                                     index={index}
                                                     onClick={() => handleEventClick(event, 'clicked')}
                                                     user={user}
+                                                    isSaved={savedEvents.some(e => e.id === event.id)}
+                                                    onSaveChange={handleSaveChange}
                                                 />
                                             </div>
                                         ))}
@@ -1008,7 +1255,7 @@ export default function App() {
                                                 className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === 1
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                }`}
+                                                    }`}
                                             >
                                                 <ChevronLeft size={16} className="sm:w-[18px] sm:h-[18px]" />
                                                 <span className="hidden sm:inline">Prev</span>
@@ -1039,7 +1286,7 @@ export default function App() {
                                                             className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === page
                                                                 ? 'bg-[#D4AF37] text-white shadow-lg'
                                                                 : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {page}
                                                         </button>
@@ -1054,7 +1301,7 @@ export default function App() {
                                                 className={`flex items-center gap-1 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${currentPage === totalPages
                                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                                     : 'bg-white text-slate-700 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37]'
-                                                }`}
+                                                    }`}
                                             >
                                                 <span className="hidden sm:inline">Next</span>
                                                 <ChevronRight size={16} className="sm:w-[18px] sm:h-[18px]" />
@@ -1071,20 +1318,28 @@ export default function App() {
                                     <h3 className="text-slate-900 font-serif text-xl sm:text-2xl mb-2">
                                         {hasDateFilter
                                             ? 'No events in this date range'
-                                            : activeTab === 'thisWeek' && !query
-                                                ? 'No events this week'
-                                                : activeTab === 'byVenue' && selectedVenue
-                                                    ? `No upcoming events at ${selectedVenue}`
-                                                    : 'No experiences found'}
+                                            : activeTab === 'savedEvents'
+                                                ? 'No saved events'
+                                                : activeTab === 'recommended'
+                                                    ? 'No recommendations'
+                                                    : activeTab === 'thisWeek' && !query
+                                                        ? 'No events this week'
+                                                        : activeTab === 'byVenue' && selectedVenue
+                                                            ? `No upcoming events at ${selectedVenue}`
+                                                            : 'No experiences found'}
                                     </h3>
                                     <p className="text-slate-500 mb-4 sm:mb-6 text-sm sm:text-base">
                                         {hasDateFilter
                                             ? 'Try adjusting your date range.'
-                                            : activeTab === 'thisWeek' && !query
-                                                ? 'Check out all upcoming events instead.'
-                                                : activeTab === 'byVenue' && selectedVenue
-                                                    ? 'Try selecting a different venue.'
-                                                    : 'Try adjusting your search criteria.'}
+                                            : activeTab === 'savedEvents'
+                                                ? 'Start bookmarking events to see them here!'
+                                                : activeTab === 'recommended'
+                                                    ? 'Complete your onboarding to get personalized recommendations.'
+                                                    : activeTab === 'thisWeek' && !query
+                                                        ? 'Check out all upcoming events instead.'
+                                                        : activeTab === 'byVenue' && selectedVenue
+                                                            ? 'Try selecting a different venue.'
+                                                            : 'Try adjusting your search criteria.'}
                                     </p>
                                     <button
                                         onClick={() => {
@@ -1092,6 +1347,10 @@ export default function App() {
                                                 clearDateFilter();
                                             } else if (query) {
                                                 setQuery('');
+                                            } else if (activeTab === 'savedEvents') {
+                                                setActiveTab('allEvents');
+                                            } else if (activeTab === 'recommended') {
+                                                setActiveTab('allEvents');
                                             } else if (activeTab === 'byVenue' && selectedVenue) {
                                                 handleClearVenue();
                                             } else {
@@ -1102,11 +1361,15 @@ export default function App() {
                                     >
                                         {hasDateFilter
                                             ? 'Clear Date Filter'
-                                            : activeTab === 'thisWeek' && !query
-                                                ? 'View All Events'
-                                                : activeTab === 'byVenue' && selectedVenue
-                                                    ? 'Choose Different Venue'
-                                                    : 'Clear Filters'}
+                                            : activeTab === 'savedEvents'
+                                                ? 'Browse All Events'
+                                                : activeTab === 'recommended'
+                                                    ? 'Browse All Events'
+                                                    : activeTab === 'thisWeek' && !query
+                                                        ? 'View All Events'
+                                                        : activeTab === 'byVenue' && selectedVenue
+                                                            ? 'Choose Different Venue'
+                                                            : 'Clear Filters'}
                                     </button>
                                 </div>
                             )}
@@ -1134,6 +1397,8 @@ export default function App() {
 
             {/* ===== EVENT MODAL ===== */}
             <EventModal event={selectedEvent} onClose={() => handleEventClosing()} user={user} />
+
+            {/* ===== AUTH MODAL ===== */}
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
         </div>
     );

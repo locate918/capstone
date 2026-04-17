@@ -19,6 +19,7 @@ async def get_user_profile(user_id: str, auth_header: str):
                 "id": user_id,
                 "location_preference": "Tulsa",
                 "family_friendly_only": False,
+                "has_completed_onboarding": False,
                 "email": "guest@locate918.com"
             },
             "preferences": [],
@@ -43,6 +44,7 @@ async def get_user_profile(user_id: str, auth_header: str):
             "id": user_id,
             "location_preference": "Tulsa",
             "family_friendly_only": False,
+            "has_completed_onboarding": False,
             "email": "guest@locate918.com"
         },
         "preferences": [],

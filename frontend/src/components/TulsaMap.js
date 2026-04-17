@@ -180,12 +180,23 @@ const getCategoryIcon = (tags, isHovered = false) => {
 };
 
 // =============================================================================
-// MAP CONTROLLER
+// MAP CONTROLLER (WITH HOVER TIMER)
 // =============================================================================
 
 const MapController = ({ hoveredEventId, events, onMapReady }) => {
     const map = useMap();
     const animationRef = useRef(null);
+    const timeoutRef = useRef(null);
+
+    // ========================================
+    // HOVER TIMER CONFIGURATION
+    // ========================================
+    // Duration (in milliseconds) the user must hover before the map centers.
+    // Adjust this value to change the responsiveness:
+    // - 300ms: Quick, responsive
+    // - 500ms: Balanced (default) — allows for natural browsing without snapping
+    // - 800ms: Relaxed, requires intentional hover
+    const HOVER_DELAY_MS = 500;
 
     useEffect(() => {
         if (onMapReady) {
@@ -206,15 +217,38 @@ const MapController = ({ hoveredEventId, events, onMapReady }) => {
     }, [map, onMapReady]);
 
     useEffect(() => {
+        // ========================================
+        // CLEANUP PREVIOUS ANIMATION
+        // ========================================
         if (animationRef.current) {
             cancelAnimationFrame(animationRef.current);
             animationRef.current = null;
         }
 
+        // ========================================
+        // CLEANUP PREVIOUS TIMEOUT (CRITICAL!)
+        // ========================================
+        // This prevents interim snaps when the user hovers over multiple cards quickly.
+        // If the user moves to a different card before the timeout fires, we cancel
+        // the pending map movement and start a fresh timer.
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+
+        // ========================================
+        // EARLY EXIT IF NO HOVER
+        // ========================================
         if (!hoveredEventId) return;
 
+        // ========================================
+        // FIND HOVERED EVENT
+        // ========================================
         const hoveredEvent = events.find(e => e.id === hoveredEventId);
 
+        // ========================================
+        // VALIDATE COORDINATES
+        // ========================================
         if (
             hoveredEvent?.coordinates &&
             typeof hoveredEvent.coordinates.lat === 'number' &&
@@ -224,25 +258,50 @@ const MapController = ({ hoveredEventId, events, onMapReady }) => {
             hoveredEvent.coordinates.lat !== 0 &&
             hoveredEvent.coordinates.lng !== 0
         ) {
-            animationRef.current = requestAnimationFrame(() => {
-                try {
-                    map.setView(
-                        [hoveredEvent.coordinates.lat, hoveredEvent.coordinates.lng],
-                        15,
-                        { animate: true, duration: 0.3 }
-                    );
-                } catch (error) {
-                    // Silently ignore
-                }
-            });
+            // ========================================
+            // SET DEBOUNCE TIMER
+            // ========================================
+            // Wait HOVER_DELAY_MS before centering the map. This ensures:
+            // 1. Accidental hovers while scrolling don't trigger map movement
+            // 2. The map only moves when the user intentionally hovers for sustained duration
+            // 3. Rapid card hopping is smooth (each new hover cancels the previous timeout)
+            timeoutRef.current = setTimeout(() => {
+                animationRef.current = requestAnimationFrame(() => {
+                    try {
+                        // ========================================
+                        // CENTER MAP ON HOVERED PIN
+                        // ========================================
+                        // Smooth pan animation (duration: 0.3s) centers the map on the
+                        // hovered event's coordinates at zoom level 15.
+                        map.setView(
+                            [hoveredEvent.coordinates.lat, hoveredEvent.coordinates.lng],
+                            15,
+                            { animate: true, duration: 0.3 }
+                        );
+                    } catch (error) {
+                        // Silently ignore errors (stale event refs, etc.)
+                    }
+                });
+            }, HOVER_DELAY_MS);
         }
 
+        // ========================================
+        // CLEANUP FUNCTION
+        // ========================================
+        // Called when:
+        // 1. User stops hovering (hoveredEventId becomes null)
+        // 2. User hovers a different card (hoveredEventId changes)
+        // 3. Component unmounts
+        // Ensures both the timeout and animation frame are cleared.
         return () => {
             if (animationRef.current) {
                 cancelAnimationFrame(animationRef.current);
             }
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
         };
-    }, [hoveredEventId, events, map]);
+    }, [hoveredEventId, events, map, HOVER_DELAY_MS]);
 
     return null;
 };
@@ -568,7 +627,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                                         </h4>
                                         <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
                                             <Calendar size={12} />
-                                            {event.date || 'Date TBD'}
+                                            {formatEventDate(event.date_iso)}
                                         </p>
                                         {event.location && (
                                             <p className="text-xs text-[#D4AF37] mt-0.5 line-clamp-1">

@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { Search, Filter, ChevronDown, User, Bell, LogOut, Menu, X } from 'lucide-react';
 import headerImage from '../assets/header_bg.png';
+import { Settings } from 'lucide-react';
 
 // =============================================================================
 // CONFIGURATION
@@ -32,7 +33,7 @@ const CATEGORIES = [
 // COMPONENT
 // =============================================================================
 
-const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
+const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile }) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -240,6 +241,13 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut }) => {
                                     <span className="hidden lg:inline text-xs text-slate-600 max-w-[180px] truncate">
                                         {user.email}
                                     </span>
+                                    <button
+                                        onClick={onOpenProfile}
+                                        className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-slate-700 px-3 py-3 rounded-xl font-medium text-sm transition-all"
+                                        title="View Profile"
+                                    >
+                                        <Settings size={14} />
+                                    </button>
                                     <button
                                         onClick={onSignOut}
                                         className="flex items-center gap-2 bg-[#162b4a] hover:bg-[#1f3a60] text-white px-6 py-3 rounded-xl font-medium text-sm shadow-lg shadow-[#162b4a]/20 transition-all hover:scale-105 active:scale-95"
