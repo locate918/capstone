@@ -12,10 +12,16 @@ FIX: BOK Center multi-day events (e.g., "Mar 6-7") now preserved correctly.
 import re
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone as _tz
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9 fallback
+    from backports.zoneinfo import ZoneInfo
 from urllib.parse import urlparse, urljoin
 import httpx
 from bs4 import BeautifulSoup
+
+_CENTRAL = ZoneInfo("America/Chicago")
 
 from scraperUtils import (
     HEADERS,
@@ -272,10 +278,8 @@ async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: i
 
 def _timely_to_local(dt_str: str) -> datetime | None:
     """
-    Parse a Timely start_datetime string to a naive datetime.
-    CONFIRMED: The Timely API returns start_datetime ALREADY in local
-    America/Chicago time (e.g. "2026-04-18 21:00:00" = 9pm CDT).
-    No UTC conversion needed — just parse the string as-is.
+    Parse an arbitrary datetime string to a naive datetime (TZ stripped).
+    Used by the EventCalendarApp future-filter for same-day comparisons.
     """
     if not dt_str:
         return None
@@ -286,10 +290,51 @@ def _timely_to_local(dt_str: str) -> datetime | None:
         return None
 
 
+def _timely_to_central_iso(raw: dict, field_local: str, field_utc: str) -> str:
+    """
+    Build a correct ISO-8601 string in America/Chicago time from a Timely event.
+
+    Uses `start_utc_datetime` (or `end_utc_datetime`) as the source of truth
+    because it's unambiguous, then converts to Central with the proper
+    DST-aware offset via zoneinfo. Falls back to the local field only if the
+    UTC field is missing, and in that case trusts it as already-Central.
+
+    This fixes the one-day-off bug that happened when Timely's `start_datetime`
+    was assumed to be local but actually arrived as UTC — the old code would
+    re-label a UTC value with a -05:00 offset and shift the day forward.
+    """
+    utc_str = raw.get(field_utc) or ''
+    if utc_str:
+        try:
+            from dateutil import parser as _dp
+            dt = _dp.parse(str(utc_str).strip())
+            # Naive "utc" field → treat as UTC; aware → respect it
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            return dt.astimezone(_CENTRAL).isoformat()
+        except Exception:
+            pass
+
+    # Fallback: no UTC field, trust the local field and attach Central offset
+    local_str = raw.get(field_local) or ''
+    if not local_str:
+        return ''
+    try:
+        from dateutil import parser as _dp
+        dt = _dp.parse(str(local_str).strip())
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_CENTRAL)
+        else:
+            dt = dt.astimezone(_CENTRAL)
+        return dt.isoformat()
+    except Exception:
+        return str(local_str)
+
+
 def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
     events = []
     seen = set()
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc = datetime.now(_tz.utc)
 
     for raw in raw_events:
         title = raw.get('title', '').strip()
@@ -297,34 +342,36 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
             continue
         seen.add(title)
 
-        # start_datetime is ALREADY local CDT ("2026-04-18 21:00:00" = 9pm CDT)
-        # start_utc_datetime is the true UTC value ("2026-04-19 02:00:00")
-        start     = raw.get('start_datetime', '')
-        end       = raw.get('end_datetime', '')
-        start_utc = raw.get('start_utc_datetime', '')
-        end_utc   = raw.get('end_utc_datetime', '')
+        # Diagnostic: log the raw fields so we can verify Timely's format.
+        # Remove once the day-shift regression is confirmed fixed.
+        print(
+            f"[TimelyDebug] title={title!r} "
+            f"start_datetime={raw.get('start_datetime')!r} "
+            f"start_utc_datetime={raw.get('start_utc_datetime')!r}"
+        )
 
-        # Future filter: use the UTC field so we compare UTC to UTC
+        # Future filter — compare UTC to UTC so we don't care about local offsets.
         if future_only:
             try:
-                from datetime import timezone as _tz
                 from dateutil import parser as _dp2
-                utc_str = start_utc or start
-                dt_utc = _dp2.parse(str(utc_str).strip())
-                if dt_utc.tzinfo is None:
-                    dt_utc = dt_utc.replace(tzinfo=_tz.utc)
-                if dt_utc < datetime.now(_tz.utc):
-                    continue
-            except:
+                utc_str = raw.get('start_utc_datetime') or raw.get('start_datetime') or ''
+                if utc_str:
+                    dt_utc = _dp2.parse(str(utc_str).strip())
+                    if dt_utc.tzinfo is None:
+                        dt_utc = dt_utc.replace(tzinfo=_tz.utc)
+                    if dt_utc < now_utc:
+                        continue
+            except Exception:
                 pass
 
-        # Build an explicit CDT ISO string — start_datetime is already local
-        # so we just append the offset. Gemini receives "2026-04-18T21:00:00-05:00"
-        # with an explicit offset and its PRESERVE instruction means it passes through.
-        start_local = _timely_to_local(start)
-        end_local   = _timely_to_local(end)
-        cdt = '-05:00' if (start_local and 3 <= start_local.month <= 11) else '-06:00'
-        date_str = start_local.strftime('%Y-%m-%dT%H:%M:%S') + cdt if start_local else start
+        # Build ISO strings in Central time from the UTC source of truth.
+        # zoneinfo handles DST boundaries correctly (previous code hard-coded
+        # -05:00 for all of March–November, which is wrong in early March and
+        # late November — and, more importantly, it re-labeled a UTC value as
+        # local when the "CONFIRMED" comment turned out to be wrong, shifting
+        # the displayed day forward by one.)
+        date_str = _timely_to_central_iso(raw, 'start_datetime', 'start_utc_datetime')
+        end_str  = _timely_to_central_iso(raw, 'end_datetime',   'end_utc_datetime')
 
         venue_data = raw.get('venue', {})
         venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
@@ -342,7 +389,7 @@ def parse_timely_events(raw_events: list, source_name: str, future_only: bool = 
         events.append({
             'title': title,
             'date': date_str,
-            'end_date': end,
+            'end_date': end_str,
             'venue': venue,
             'description': desc,
             'source_url': raw.get('url', '') or raw.get('canonical_url', ''),
