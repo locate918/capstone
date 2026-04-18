@@ -1,6 +1,5 @@
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import math
+from typing import List, Dict, Any
+
 
 def get_interaction_weight(interaction_type: str) -> float:
     """Returns the weight for a given interaction type."""
@@ -12,10 +11,11 @@ def get_interaction_weight(interaction_type: str) -> float:
     }
     return weights.get(interaction_type, 0)
 
+
 def score_categories_from_interaction(
-    user_id: str,
-    event_categories: List[str],
-    interaction_type: str,
+        user_id: str,
+        event_categories: List[str],
+        interaction_type: str,
 ) -> Dict[str, float]:
     """
     Calculates the weight deltas for categories affected by an interaction.
@@ -30,9 +30,10 @@ def score_categories_from_interaction(
         updated_categories[category] = round(weight, 2)
     return updated_categories
 
+
 def score_all_categories(
-    user_interactions: List[Dict[str, Any]],
-    user_preferences: Dict[str, float],
+        user_interactions: List[Dict[str, Any]],
+        user_preferences: Dict[str, float],
 ) -> dict[str, float]:
     """
     Updates user category preferences based on all of their interactions.
@@ -44,11 +45,11 @@ def score_all_categories(
             weight = get_interaction_weight(interaction_type)
             for category in event_categories:
                 user_preferences[category] = user_preferences.get(category, 0) + weight
-                
+
     # Round all calculated weights to 2 decimal places to fix floating point math artifacts
     for category in user_preferences:
         user_preferences[category] = round(user_preferences[category], 2)
-        
+
     return user_preferences
 
 
@@ -82,10 +83,10 @@ def rank_events(events: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> L
     """
     if not user_profile or not events:
         return events
-        
+
     for event in events:
         event["relevance_score"] = calculate_relevance_score(event, user_profile)
-        
+
     # Sort by relevance_score descending
     ranked = sorted(events, key=lambda x: x.get("relevance_score", 0.0), reverse=True)
     return ranked
