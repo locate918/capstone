@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+
+const RUST_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:3000";
 
 const AuthContext = createContext(null);
 
@@ -40,7 +42,7 @@ export function AuthProvider({ children }) {
      * Called after onboarding completes to refresh the has_completed_onboarding flag.
      * Merges backend user data with Supabase auth user.
      */
-    const refreshUser = async () => {
+    const refreshUser = useCallback(async () => {
         if (!session?.user) {
             console.warn("[DEBUG] No active session to refresh user");
             return;
@@ -48,7 +50,7 @@ export function AuthProvider({ children }) {
 
         try {
             const token = session.access_token;
-            const response = await fetch("http://localhost:3000/api/users/me", {
+            const response = await fetch(`${RUST_BACKEND_URL}/api/users/me`, {
                 method: "GET",
                 headers: {
                     "Authorization": `Bearer ${token}`,
@@ -82,7 +84,7 @@ export function AuthProvider({ children }) {
         } catch (error) {
             console.error("Failed to refresh user:", error);
         }
-    };
+    }, [session]);
 
     // Only initialize user when session first loads, DON'T run on user changes
     useEffect(() => {
@@ -138,7 +140,7 @@ export function AuthProvider({ children }) {
                 return supabase.auth.signOut();
             },
         }),
-        [session, user, loading]
+        [session, user, loading, refreshUser]
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
