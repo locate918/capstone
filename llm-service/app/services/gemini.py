@@ -19,18 +19,19 @@ See backend/src/services/llm.rs for the Rust client that calls these.
 """
 
 import asyncio
-import os
 import json
+import os
 import time
-import httpx
-from typing import List, Dict, Any, AsyncGenerator, Optional
 from datetime import datetime
+from typing import List, Dict, Any, AsyncGenerator
+
+import httpx
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError
+
 from app.models.schemas import NormalizedEvent, GeminiChatResponse
 from app.tools.definitions import gemini_tools
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -233,11 +234,12 @@ async def generate_chat_response(
             )
             yield json.dumps({"status": "Thinking..."})
             response = await chat.send_message(message)
-            break # Success
+            break  # Success
         except Exception as e:
             print(f"Error with model {model_name}: {e}")
             if model_name == models_to_try[-1]:
-                yield json.dumps({"message": "I'm having a lot of requests right now. Please try again later.", "status": "Error"})
+                yield json.dumps(
+                    {"message": "I'm having a lot of requests right now. Please try again later.", "status": "Error"})
                 return
             yield json.dumps({"status": "Thinking..."})
             await asyncio.sleep(1)
@@ -298,7 +300,7 @@ async def generate_chat_response(
         try:
             final_history = chat.get_history()
             response = await client.aio.models.generate_content(
-                model='gemini-2.0-flash', # Use flash for structured output
+                model='gemini-2.0-flash',  # Use flash for structured output
                 contents=final_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
@@ -386,7 +388,8 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
                         print(f"DEBUG: Fetching missing description from {target_url}...")
                         async with httpx.AsyncClient() as client:
                             try:
-                                response = await client.get(target_url, follow_redirects=True, timeout=10.0, headers={"User-Agent": "Locate918-Bot/1.0"})
+                                response = await client.get(target_url, follow_redirects=True, timeout=10.0,
+                                                            headers={"User-Agent": "Locate918-Bot/1.0"})
                                 if response.status_code == 200:
                                     raw_content = response.text
                                     content_type = "html"  # Switch to HTML extraction mode

@@ -98,7 +98,7 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
         onClick={() => setIsOpen(true)}
       >
         <div className="flex items-center gap-6">
-          <div className="w-24 h-24 rounded-full overflow-hidden shadow-lg border-2 border-[#D4AF37] group-hover:scale-110 transition-transform duration-300 bg-slate-900">
+          <div className="w-24 h-24 rounded-full overflow-hidden shadow-lg border-2 border-[#D4AF37] group-hover:scale-110 transition-transform duration-300 bg-slate-900 transform-gpu will-change-transform" style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
             <img 
               src={TULLY_AVATAR} 
               alt="Tully" 

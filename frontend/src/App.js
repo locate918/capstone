@@ -48,6 +48,7 @@ import AIChatWidget from './components/AIChatWidget';
 import AuthModal from './components/AuthModal';
 import OnboardingModal from './components/OnboardingModal';
 import UserProfileModal from './components/UserProfileModal';
+import Footer from './components/Footer';
 
 import './index.css';
 
@@ -1400,6 +1401,8 @@ export default function App() {
 
             {/* ===== AUTH MODAL ===== */}
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+            {/* ===== FOOTER ===== */}
+            <Footer />
         </div>
     );
 }

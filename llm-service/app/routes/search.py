@@ -1,11 +1,14 @@
 import os
+
 import httpx
 from fastapi import APIRouter, HTTPException, Header
+
 from app.models.schemas import SearchRequest, SearchResponse
-from app.services import gemini, ranking
+from app.services import gemini
 
 router = APIRouter()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:3000")
+
 
 async def get_user_profile(user_id: str, auth_header: str):
     """
@@ -31,7 +34,8 @@ async def get_user_profile(user_id: str, auth_header: str):
             response = await client.get(f"{BACKEND_URL}/api/users/me/profile", headers=headers)
             if response.status_code == 200:
                 profile_data = response.json()
-                print(f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
+                print(
+                    f"DEBUG: Loaded profile for user {user_id} ({profile_data.get('user', {}).get('email', 'unknown')})")
                 return profile_data
         except Exception as e:
             print(f"DEBUG: Failed to load profile for {user_id}: {e}")
@@ -50,6 +54,7 @@ async def get_user_profile(user_id: str, auth_header: str):
         "preferences": [],
         "recent_interactions": []
     }
+
 
 @router.post("/search", response_model=SearchResponse)
 async def search_intent(request: SearchRequest, authorization: str = Header(None, alias="Authorization")):
@@ -75,12 +80,12 @@ async def search_intent(request: SearchRequest, authorization: str = Header(None
         # 3. Query the Rust Backend
         clean_params = {k: v for k, v in params.items() if v is not None}
         events = []
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{BACKEND_URL}/api/events/search", params=clean_params)
             if response.status_code == 200:
                 events = response.json()
-            
+
             # FALLBACK: If smart search returns nothing, but we have a 'q', try searching just with 'q'.
             if not events and params.get("q"):
                 fallback_params = {"q": params["q"]}
