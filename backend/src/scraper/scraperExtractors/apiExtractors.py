@@ -13,15 +13,12 @@ import re
 import json
 import asyncio
 from datetime import datetime, timezone as _tz
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # Python < 3.9 fallback
-    from backports.zoneinfo import ZoneInfo
+import pytz
 from urllib.parse import urlparse, urljoin
 import httpx
 from bs4 import BeautifulSoup
 
-_CENTRAL = ZoneInfo("America/Chicago")
+_CENTRAL = pytz.timezone("America/Chicago")
 
 from scraperUtils import (
     HEADERS,
@@ -323,7 +320,9 @@ def _timely_to_central_iso(raw: dict, field_local: str, field_utc: str) -> str:
         from dateutil import parser as _dp
         dt = _dp.parse(str(local_str).strip())
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=_CENTRAL)
+            # pytz requires .localize() to attach a tz correctly — using
+            # .replace(tzinfo=...) with pytz gives the wrong "LMT" offset.
+            dt = _CENTRAL.localize(dt)
         else:
             dt = dt.astimezone(_CENTRAL)
         return dt.isoformat()
