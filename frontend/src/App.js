@@ -483,6 +483,7 @@ export default function App() {
     const [recommendedEvents, setRecommendedEvents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [query, setQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
     const [selectedEvent, setSelectedEvent] = useState(null);
     const [hoveredEventId, setHoveredEventId] = useState(null);
     const [viewMode, setViewMode] = useState('list');
@@ -540,7 +541,7 @@ export default function App() {
         if (!user && activeTab === 'savedEvents') {
             setActiveTab('thisWeek');
         }
-    }, [user?.id, authLoading]);
+    }, [user, activeTab, authLoading]);
 
     // Check if onboarding is needed - but ONLY AFTER we've fetched backend data
     useEffect(() => {
@@ -569,7 +570,7 @@ export default function App() {
         });
 
         setShowOnboarding(!hasCompleted);
-    }, [user?.id, user?.user_metadata?.has_completed_onboarding, user?.backend_user, authLoading]);
+    }, [user, user?.user_metadata?.has_completed_onboarding, user?.backend_user, authLoading]);
 
     // Refresh user data from backend when user logs in (to get accurate has_completed_onboarding)
     useEffect(() => {
@@ -578,7 +579,7 @@ export default function App() {
             console.log('[DEBUG] Auto-refreshing user on login');
             refreshUser();
         }
-    }, [user?.id, authLoading, refreshUser]);
+    }, [user, authLoading, refreshUser]);
 
     // Show beta disclaimer on first visit (per session)
     useEffect(() => {
@@ -601,15 +602,26 @@ export default function App() {
         return () => clearInterval(timer);
     }, []);
 
+    // Debounce the search query to prevent excessive API calls while typing
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedQuery(query);
+        }, 500); // 500ms delay
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [query]);
+
     // Scroll to top when search query changes
     useLayoutEffect(() => {
         window.scrollTo({ top: 0, behavior: 'auto' });
-    }, [query]);
+    }, [debouncedQuery]);
 
     // Reset to page 1 when tab changes, query changes, or date filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, query, dateFrom, dateTo, selectedVenue]);
+    }, [activeTab, debouncedQuery, dateFrom, dateTo, selectedVenue]);
 
     // Clear date filter when switching to "This Week", "Saved Events", or "Recommended" tabs
     useEffect(() => {
@@ -631,29 +643,25 @@ export default function App() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                let data;
-                if (query) {
-                    const result = await smartSearch(query);
-                    data = Array.isArray(result?.events) ? result.events : [];
+                if (debouncedQuery) {
+                    const useSmartSearch = user?.backend_user?.use_smart_search !== false;
+                    const result = await smartSearch(debouncedQuery, useSmartSearch);
+                    setEvents(Array.isArray(result?.events) ? result.events : []);
                 } else if (activeTab === 'savedEvents' && user) {
-                    data = await fetchSavedEvents();
+                    const data = await fetchSavedEvents();
+                    setSavedEvents(Array.isArray(data) ? data : []);
                 } else if (activeTab === 'recommended' && user) {
-                    data = await fetchRecommendedEvents();
+                    const data = await fetchRecommendedEvents();
+                    setRecommendedEvents(Array.isArray(data) ? data : []);
                 } else {
                     const eventsData = await fetchEvents();
-                    data = Array.isArray(eventsData) ? eventsData : [];
-                }
-
-                if (activeTab === 'savedEvents') {
-                    setSavedEvents(data);
-                } else if (activeTab === 'recommended') {
-                    setRecommendedEvents(data);
-                } else {
-                    setEvents(data);
+                    setEvents(Array.isArray(eventsData) ? eventsData : []);
                 }
             } catch (err) {
                 console.error("Failed to fetch events:", err);
-                if (activeTab === 'savedEvents') {
+                if (debouncedQuery) {
+                    setEvents([]);
+                } else if (activeTab === 'savedEvents') {
                     setSavedEvents([]);
                 } else if (activeTab === 'recommended') {
                     setRecommendedEvents([]);
@@ -666,9 +674,9 @@ export default function App() {
         };
 
         setLoading(true);
-        setLoadingCopy(getLoadingCopy({ query, activeTab, selectedVenue }));
+        setLoadingCopy(getLoadingCopy({ query: debouncedQuery, activeTab, selectedVenue }));
         loadData();
-    }, [query, activeTab, selectedVenue, user]);
+    }, [debouncedQuery, activeTab, selectedVenue, user]);
 
     useEffect(() => {
         if (!loading || authLoading) {
@@ -716,29 +724,16 @@ export default function App() {
     const venuesWithDetails = useMemo(() => getVenuesWithDetails(events), [events]);
 
     // Choose source of events (saved vs recommended vs all)
-    const sourceEvents = activeTab === 'savedEvents' ? savedEvents : activeTab === 'recommended' ? recommendedEvents : events;
+    const sourceEvents = debouncedQuery ? events : activeTab === 'savedEvents' ? savedEvents : activeTab === 'recommended' ? recommendedEvents : events;
 
-    // Client-side filtering (backup for API search)
     const filteredEvents = useMemo(() => {
-        let filtered = Array.isArray(sourceEvents) ? sourceEvents : [];
-
-        // Apply search filter if query exists
-        if (query) {
-            const searchStr = query.toLowerCase();
-            filtered = filtered.filter(e =>
-                e.title?.toLowerCase().includes(searchStr) ||
-                e.vibe_tags?.some(v => v.toLowerCase().includes(searchStr)) ||
-                e.summary?.toLowerCase().includes(searchStr) ||
-                e.ai_analysis?.crowd_type?.toLowerCase().includes(searchStr)
-            );
-        }
-
-        return filtered;
-    }, [sourceEvents, query]);
+        // handles natural language search explicitly.
+        return Array.isArray(sourceEvents) ? sourceEvents : [];
+    }, [sourceEvents]);
 
     // Apply tab filter (Saved Events vs Recommended vs This Week vs All Events vs By Venue) and date range filter
     const tabFilteredEvents = useMemo(() => {
-        if (query) {
+        if (debouncedQuery) {
             // During search, apply date filter if set
             return (dateFrom || dateTo)
                 ? filterByDateRange(filteredEvents, dateFrom, dateTo)
@@ -781,7 +776,7 @@ export default function App() {
         return (dateFrom || dateTo)
             ? filterByDateRange(filteredEvents, dateFrom, dateTo)
             : filteredEvents;
-    }, [filteredEvents, activeTab, query, dateFrom, dateTo, selectedVenue]);
+    }, [filteredEvents, activeTab, debouncedQuery, dateFrom, dateTo, selectedVenue]);
 
     // Pagination calculations
     const totalPages = Math.ceil(tabFilteredEvents.length / EVENTS_PER_PAGE);
@@ -967,12 +962,12 @@ export default function App() {
                     onOpenAuth={() => setIsAuthOpen(true)}
                     onSignOut={handleSignOut}
                     onOpenProfile={handleOpenProfile}
-                    isSearching={Boolean(query) && loading}
+                    isSearching={Boolean(query) && (loading || query !== debouncedQuery)}
                 />
             </div>
 
             {/* ===== HERO SECTION (shown when no search query) ===== */}
-            {!query && (
+            {!debouncedQuery && (
                 <section className="relative h-[50vh] sm:h-[55vh] md:h-[65vh] min-h-[280px] sm:min-h-[350px] md:min-h-[400px] flex items-center justify-center overflow-hidden mt-[100px] md:mt-[172px] lg:mt-[204px] xl:mt-[220px]">
                     {/* Slideshow Background */}
                     <div className="absolute inset-0 z-0">
@@ -1051,20 +1046,20 @@ export default function App() {
             )}
 
             {/* ===== MAIN CONTENT ===== */}
-            <main id="events-section" className={`max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10 transition-all duration-300 ${query ? 'pt-[145px] md:pt-[230px] lg:pt-[235px] xl:pt-[275px]' : 'pt-6 sm:pt-12'}`}>
+            <main id="events-section" className={`max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10 transition-all duration-300 ${debouncedQuery ? 'pt-[145px] md:pt-[230px] lg:pt-[235px] xl:pt-[275px]' : 'pt-6 sm:pt-12'}`}>
 
                 {/* AI Chat Widget (only on home page) */}
-                {!query && <AIChatWidget userId={user?.id} />}
+                {!debouncedQuery && <AIChatWidget userId={user?.id} />}
 
                 {/* Results Header */}
                 <div className="flex flex-col gap-4 mb-6 sm:mb-8 pb-4 sm:pb-6 border-b border-slate-200/60 animate-fade-up delay-300">
                     <div className="flex flex-col gap-1 w-full">
-                        {query ? (
+                        {debouncedQuery ? (
                             <>
                                 <div className="flex items-center justify-between gap-4">
                                     <div>
                                         <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
-                                            Results: "{query}"
+                                            Results: "{debouncedQuery}"
                                         </h2>
                                         <span className="text-xs text-slate-500 font-medium tracking-wide uppercase">
                                             {filteredEvents.length} Experiences Found

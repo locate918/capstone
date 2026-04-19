@@ -118,11 +118,11 @@ async fn get_saved_events(
             v.latitude     AS venue_latitude,
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
-        FROM user_saved_events use
-        JOIN events e ON use.event_id = e.id
+        FROM user_saved_events se
+        JOIN events e ON se.event_id = e.id
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
-        WHERE use.user_id = $1
-        ORDER BY use.created_at DESC
+        WHERE se.user_id = $1
+        ORDER BY se.created_at DESC
         "#,
     )
     .bind(user_id)
@@ -522,8 +522,8 @@ async fn get_current_user(
     let user = sqlx::query_as::<_, User>(
         r#"
         SELECT id, email, name, location_preference, radius_miles,
-               price_max, family_friendly_only, has_completed_onboarding,
-               created_at, updated_at
+               price_max, family_friendly_only, use_smart_search, 
+               has_completed_onboarding, created_at, updated_at
         FROM users
         WHERE id = $1
         "#,
@@ -571,8 +571,8 @@ async fn get_my_profile(
     let user = sqlx::query_as::<_, User>(
         r#"
         SELECT id, email, name, location_preference, radius_miles,
-               price_max, family_friendly_only, has_completed_onboarding,
-               created_at, updated_at
+               price_max, family_friendly_only, use_smart_search, 
+               has_completed_onboarding, created_at, updated_at
         FROM users
         WHERE id = $1
         "#,
@@ -748,7 +748,8 @@ async fn update_my_preferences(
 ) -> Result<Json<User>, StatusCode> {
     // DEBUG: Log the incoming payload
     println!(
-        "[DEBUG] update_my_preferences payload received: has_completed_onboarding={:?}",
+        "[DEBUG] update_my_preferences payload received: use_smart_search={:?}, has_completed_onboarding={:?}",
+        payload.use_smart_search,
         payload.has_completed_onboarding
     );
 
@@ -760,15 +761,19 @@ async fn update_my_preferences(
             radius_miles = COALESCE($3, radius_miles),
             price_max = COALESCE($4, price_max),
             family_friendly_only = COALESCE($5, family_friendly_only),
-            has_completed_onboarding = CASE 
+            use_smart_search = CASE 
                 WHEN $6::boolean IS NOT NULL THEN $6::boolean
+                ELSE use_smart_search
+            END,
+            has_completed_onboarding = CASE 
+                WHEN $7::boolean IS NOT NULL THEN $7::boolean
                 ELSE has_completed_onboarding
             END,
             updated_at = NOW()
         WHERE id = $1
         RETURNING id, email, name, location_preference, radius_miles,
-                  price_max, family_friendly_only, has_completed_onboarding,
-                  created_at, updated_at
+                  price_max, family_friendly_only, use_smart_search, 
+                  has_completed_onboarding, created_at, updated_at
         "#,
     )
     .bind(auth.user_id)
@@ -776,6 +781,7 @@ async fn update_my_preferences(
     .bind(&payload.radius_miles)
     .bind(&payload.price_max)
     .bind(&payload.family_friendly_only)
+    .bind(&payload.use_smart_search)
     .bind(&payload.has_completed_onboarding)
     .fetch_optional(&pool)
     .await
