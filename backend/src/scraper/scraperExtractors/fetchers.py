@@ -195,9 +195,24 @@ async def fetch_with_playwright(url: str) -> str:
             # Tulsa PAC / Ticketmaster Account Manager — Drupal shell + React SPA
             # (nam-frontend.ppub-tmaws.io). The shell loads fast but React has
             # to fetch ~5 APIs (venues, events, members, efs, promocodes) and
-            # hydrate before the event list appears. Generic 5-10s wait isn't
-            # enough; we've seen 148KB shells with zero cards. Wait up to 45s
-            # for the actual <ul> to contain children.
+            # hydrate before the event list appears.
+            #
+            # CRITICAL: TM's bot detection blocks React hydration if request
+            # headers look scraper-ish. Our global HEADERS ships a UA of
+            # "Locate918 Event Aggregator (educational project)" which is
+            # instant red flag. Override with a realistic Chrome UA for the
+            # entire page+XHR session BEFORE navigation, otherwise the API
+            # calls React makes will silently fail and the DOM stays empty.
+            await page.set_extra_http_headers({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            })
+
             try:
                 await page.goto(url, wait_until="networkidle", timeout=60000)
             except:
@@ -206,29 +221,41 @@ async def fetch_with_playwright(url: str) -> str:
                 except:
                     await page.goto(url, timeout=30000)
 
-            # Wait for the React app to render at least one event card.
-            # The styled-components class names are hash-suffixed but the
-            # "StyledListWrapper" / "StyledWrapper" prefixes are stable.
+            # Wait for the React app to render at least one event row.
+            # data-testid="efs_view_detail_btn" is the most stable signal per
+            # Chrome-Claude's recon: hardcoded in the React component (not a
+            # hashed styled-components class), appears once per event row,
+            # only exists after the full render cascade completes.
+            render_succeeded = False
             try:
-                await page.wait_for_function(
-                    """() => {
-                        const ul = document.querySelector('ul[class*="StyledListWrapper"]');
-                        return ul && ul.children && ul.children.length > 0;
-                    }""",
+                await page.wait_for_selector(
+                    '[data-testid="efs_view_detail_btn"]',
                     timeout=45000,
                 )
+                render_succeeded = True
+                print("[TulsaPAC] Event rows detected — React render complete")
             except Exception:
-                print("[TulsaPAC] React didn't render event cards within 45s — continuing anyway")
+                # Diagnostic: count any partial DOM activity so future runs
+                # can tell "bot detection" (0 rows, shell size) from other
+                # issues (partial render, network timeout, etc).
+                try:
+                    row_count = await page.evaluate(
+                        '() => document.querySelectorAll(\'[data-testid="efs_view_detail_btn"]\').length'
+                    )
+                except Exception:
+                    row_count = -1
+                html_size_partial = len(await page.content()) / 1024
+                print(f"[TulsaPAC] React render timeout after 45s — "
+                      f"{row_count} event rows in DOM, {html_size_partial:.1f}KB HTML. "
+                      f"Likely bot detection; the extractor will fall back to the admin API.")
 
-            # Brief settle for any trailing hydration
-            await page.wait_for_timeout(1500)
-
-            # Scroll to force any virtualized rows into the DOM (TPAC doesn't
-            # virtualize today, but cheap insurance if they change it).
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(1000)
-            await page.evaluate("window.scrollTo(0, 0)")
-            await page.wait_for_timeout(500)
+            if render_succeeded:
+                # Settle + bottom-scroll to flush any trailing rows
+                await page.wait_for_timeout(1500)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(1000)
+                await page.evaluate("window.scrollTo(0, 0)")
+                await page.wait_for_timeout(500)
 
             html_size = len(await page.content())
             print(f"[TulsaPAC] Page rendered: {html_size/1024:.1f}KB")
