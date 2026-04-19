@@ -1948,35 +1948,158 @@ _TPAC_CATEGORY_MAP = {
 
 async def extract_tulsapac_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
-    Extractor for Tulsa Performing Arts Center (Tulsa PAC).
-    Uses the public Ticketmaster Account Manager JSON API — no auth, no Playwright.
+    Extractor for Tulsa Performing Arts Center (am.ticketmaster.com/tulsapac).
 
-    Endpoints:
-      GET https://am.ticketmaster.com/tulsapac/api/admin/v2/venues?_format=json
-          -> dict of venue_id -> {name, address, geoLocation}
+    Two paths:
 
-      GET https://am.ticketmaster.com/tulsapac/api/admin/v2/events?_format=json&epoch=upcoming&page=0
-      GET https://am.ticketmaster.com/tulsapac/api/admin/v2/events?_format=json&epoch=upcoming&page=1
-          -> {events: {id: {...}}, page: {size, totalElements, totalPages, number}}
+    1. PRIMARY — Parse Playwright-rendered DOM. The /buy page is a React SPA
+       that renders ~134 performance cards into a <ul> list. We read every
+       card's title, full date+time, thumbnail, and ISM ticket link directly.
+       This matches exactly what a user sees on the page.
 
-    The API returns individual *performances* (305 total), not productions.
-    We deduplicate by show name, keeping the earliest upcoming performance per
-    production — so a 6-night run of "Juliet and Her Romeo" becomes one event
-    with the first night's date.
+    2. FALLBACK — Admin events JSON API. Returns only ~11 performances for
+       anonymous callers (access-filtered) but with full venue.id joins to
+       the /venues endpoint. Used when the HTML wasn't Playwright-rendered.
 
-    Event URL: https://am.ticketmaster.com/tulsapac/event/{id}
+    The public marketing site (tulsapac.com) has no real event data — only a
+    9-slide hand-curated carousel — so any URL in the tulsapac domain
+    triggers this extractor, which ignores the marketing-site HTML and pulls
+    from the AM source of truth.
     """
-    # Accept either the public marketing site (tulsapac.com) or the
-    # Ticketmaster Account Manager subdomain. The marketing site HTML has no
-    # real event data — only a 9-slide featured carousel. The AM API is the
-    # authoritative source regardless of which URL the user configures.
     url_l = url.lower()
     if 'am.ticketmaster.com/tulsapac' not in url_l and 'tulsapac.com' not in url_l:
         return [], False
 
-    print(f"[TulsaPAC] Detected Tulsa PAC — using Ticketmaster AM JSON API...")
-
     base = 'https://am.ticketmaster.com/tulsapac'
+
+    # ── 1. Primary path: parse the Playwright-rendered DOM ──────────────
+    if html and 'StyledListWrapper' in html:
+        print(f"[TulsaPAC] Detected rendered DOM — parsing event cards")
+        dom_events = _tpac_parse_dom(html, base, source_name, future_only)
+        if dom_events:
+            print(f"[TulsaPAC] {len(dom_events)} events parsed from DOM")
+            return dom_events, True
+        print(f"[TulsaPAC] DOM contained StyledListWrapper but parse returned 0 — falling back to API")
+
+    # ── 2. Fallback path: admin JSON API ────────────────────────────────
+    print(f"[TulsaPAC] Using Ticketmaster AM admin JSON API (anon access — returns reduced event set)")
+    return await _tpac_admin_api(base, source_name, future_only)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# DOM parsing helpers
+# ──────────────────────────────────────────────────────────────────────
+
+# "Fri • Apr 24, 2026 • 07:30 PM" — the bullet is unicode U+2022 but we
+# normalize anything list-separator-ish (bullet, middle-dot, pipe, em/en-dash).
+_TPAC_SEPARATORS_RE = re.compile(r'[\u2022\u00B7\u2013\u2014\|·•]+')
+_TPAC_WEEKDAY_RE    = re.compile(r'^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+', re.IGNORECASE)
+
+
+def _tpac_parse_dt_text(text: str):
+    """
+    Parse the card's date+time string → naive local datetime.
+    Accepts "Fri • Apr 24, 2026 • 07:30 PM" and minor variants.
+    """
+    if not text:
+        return None
+    cleaned = _TPAC_SEPARATORS_RE.sub(' ', text)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = _TPAC_WEEKDAY_RE.sub('', cleaned)  # "Apr 24, 2026 07:30 PM"
+
+    for fmt in ('%b %d, %Y %I:%M %p', '%B %d, %Y %I:%M %p',
+                '%b %d %Y %I:%M %p',  '%B %d %Y %I:%M %p'):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+
+    # Last resort — dateutil fuzzy
+    try:
+        from dateutil import parser as _dp
+        return _dp.parse(cleaned, fuzzy=True).replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _tpac_parse_dom(html: str, base: str, source_name: str, future_only: bool) -> list:
+    soup  = BeautifulSoup(html, 'html.parser')
+    # Stable anchor: the <ul> is emitted by a styled-components-generated
+    # class name like "target-plans__StyledListWrapper-kXSLxq". Partial
+    # match survives hash rotations.
+    cards = soup.select('ul[class*="StyledListWrapper"] > li[class*="StyledWrapper"]')
+
+    today  = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    events = []
+
+    for card in cards:
+        # Title. The <div class="text text--primary"> is the inner label; the
+        # outer wrapper also gets text--primary elsewhere, so we scope to the
+        # StyledTitle block first.
+        title_block = card.select_one('[class*="StyledTitle"]')
+        if title_block is None:
+            continue
+        title_el = title_block.select_one('.text--primary') or title_block
+        title = title_el.get_text(strip=True)
+        if not title or len(title) < 2:
+            continue
+
+        dt_el = card.select_one('[class*="StyledDateTimeWrapper"]')
+        if dt_el is None:
+            continue
+        start_dt = _tpac_parse_dt_text(dt_el.get_text(' ', strip=True))
+        if start_dt is None:
+            continue
+
+        if future_only and start_dt.date() < today.date():
+            continue
+
+        # Ticket link: ISM seat map link ("Select" button in DOM).
+        # Hrefs from the React app are typically absolute-from-root
+        # ("/tulsapac/buy/ism/…"), so we join against scheme+host only —
+        # NOT the /tulsapac base, or we'd double the path segment.
+        link_el   = card.select_one('a[href*="/buy/ism/"], a[href*="/buy/"]')
+        href      = link_el.get('href', '') if link_el else ''
+        if href.startswith('http'):
+            event_url = href
+        elif href:
+            event_url = urljoin('https://am.ticketmaster.com', href)
+        else:
+            event_url = f'{base}/buy'
+
+        img_el    = card.select_one('img[src]')
+        image_url = img_el.get('src', '') if img_el else ''
+
+        events.append({
+            'title':           title,
+            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_time':        '',
+            'venue':           'Tulsa Performing Arts Center',
+            'venue_address':   '110 E 2nd St, Tulsa, OK 74103',
+            'description':     '',
+            'source_url':      event_url,
+            'image_url':       image_url,
+            'source_name':     source_name or 'Tulsa PAC',
+            'categories':      ['Arts', 'Performance'],
+            'outdoor':         False,
+            'family_friendly': None,
+        })
+
+    events.sort(key=lambda e: e.get('start_time') or '9999')
+    return events
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Admin API fallback (same logic as the prior version, now a helper)
+# ──────────────────────────────────────────────────────────────────────
+
+async def _tpac_admin_api(base: str, source_name: str, future_only: bool) -> tuple[list, bool]:
+    """
+    Fallback: fetches events via the Ticketmaster AM admin JSON API.
+    Returns only ~11 events for anonymous callers but has full venue data.
+    Preferred path is DOM parse; this exists so the extractor still returns
+    *something* if Playwright rendering fails.
+    """
     req_headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept':     'application/json',
@@ -1985,8 +2108,7 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
     }
 
     async with httpx.AsyncClient(headers=req_headers, timeout=30, follow_redirects=True) as client:
-
-        # ── 1. Fetch venue lookup table ──
+        # ── Venue lookup table ──
         venue_map = {}
         try:
             vresp = await client.get(f'{base}/api/admin/v2/venues?_format=json')
@@ -2008,10 +2130,9 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
         except Exception as e:
             print(f"[TulsaPAC] Venue fetch error: {e}")
 
-        # ── 2. Fetch all event pages ──
+        # ── Events pagination ──
         all_performances = {}
-
-        for page_num in range(10):  # safety cap — currently 2 pages
+        for page_num in range(10):
             try:
                 eresp = await client.get(
                     f'{base}/api/admin/v2/events',
@@ -2046,7 +2167,6 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
         print(f"[TulsaPAC] No performances returned from API")
         return [], True
 
-    # ── 3. Deduplicate — one event per unique show name, earliest date ──
     now    = datetime.now()
     cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -2065,16 +2185,14 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
 
     events = []
     for name, perfs in groups.items():
-        # Sort performances ascending by date
         perfs.sort(key=lambda p: ((p.get('date') or {}).get('date') or '9999-99-99'))
         earliest = perfs[0]
 
         date_block = earliest.get('date') or {}
         dt_str     = date_block.get('datetime') or date_block.get('date') or ''
         date_only  = date_block.get('date') or ''
-        duration   = date_block.get('duration')  # minutes
+        duration   = date_block.get('duration')
 
-        # Future filter
         if future_only and (dt_str or date_only):
             try:
                 from dateutil import parser as _dp
@@ -2084,7 +2202,6 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
             except Exception:
                 pass
 
-        # Compute end_time from duration
         end_time_str = ''
         if dt_str and duration:
             try:
@@ -2095,15 +2212,13 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
             except Exception:
                 pass
 
-        # Venue
         venue_id      = (earliest.get('venue') or {}).get('id')
         venue_obj     = venue_map.get(venue_id, {})
         venue_name    = venue_obj.get('name', 'Tulsa Performing Arts Center')
-        venue_address = venue_obj.get('address', '110 East 2nd Street, Tulsa, OK 74103')
+        venue_address = venue_obj.get('address', '110 E 2nd St, Tulsa, OK 74103')
         lat = venue_obj.get('lat')
         lng = venue_obj.get('lng')
 
-        # Categories
         major = (earliest.get('majorCategory') or '').strip()
         minor = (earliest.get('minorCategory') or '').strip()
         cats  = []
@@ -2115,15 +2230,12 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
         if not cats:
             cats = ['Arts', 'Performance']
 
-        # Image
         imgs      = earliest.get('imagesLinks') or {}
         image_url = imgs.get('desktop') or imgs.get('mobile') or ''
 
-        # Event URL
         event_id  = earliest.get('id')
         event_url = f'{base}/event/{event_id}' if event_id else f'{base}/buy'
 
-        # Description: note multi-performance runs
         perf_count  = len(perfs)
         description = f"{perf_count} performance{'s' if perf_count > 1 else ''}" if perf_count > 1 else ''
 
@@ -2149,7 +2261,7 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
 
     events.sort(key=lambda e: e.get('start_time') or '9999')
 
-    print(f"[TulsaPAC] {len(all_performances)} performances -> {len(events)} unique productions")
+    print(f"[TulsaPAC/API] {len(all_performances)} performances -> {len(events)} unique productions")
     return events, True
 
 
