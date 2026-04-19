@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 function GoogleIcon() {
@@ -37,6 +37,7 @@ export default function AuthModal({ isOpen, onClose }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [submittingLabel, setSubmittingLabel] = useState("");
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
     const passwordChecks = getPasswordChecks(password);
@@ -48,6 +49,7 @@ export default function AuthModal({ isOpen, onClose }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSubmitting(true);
+        setSubmittingLabel(mode === "signin" ? "Signing you in..." : "Creating your account...");
         setError("");
         setMessage("");
 
@@ -105,6 +107,7 @@ export default function AuthModal({ isOpen, onClose }) {
             }
         } finally {
             setSubmitting(false);
+            setSubmittingLabel("");
         }
     };
 
@@ -112,21 +115,38 @@ export default function AuthModal({ isOpen, onClose }) {
         setError("");
         setMessage("");
         setSubmitting(true);
+        setSubmittingLabel("Redirecting to Google...");
         const { error: oauthError } = await signInWithGoogle();
         if (oauthError) {
             setError(oauthError.message);
             setSubmitting(false);
+            setSubmittingLabel("");
         }
     };
 
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center px-4">
-            <button className="absolute inset-0 bg-black/45" onClick={onClose} aria-label="Close auth dialog" />
+            <button
+                className="absolute inset-0 bg-black/45"
+                onClick={submitting ? undefined : onClose}
+                aria-label="Close auth dialog"
+                disabled={submitting}
+            />
             <div className="relative w-full max-w-md rounded-2xl bg-[#f8f1e0] border border-[#162b4a]/20 shadow-2xl p-6">
+                {submitting && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-[#f8f1e0]/95 backdrop-blur-sm">
+                        <Loader2 size={28} className="animate-spin text-[#162b4a]" />
+                        <div className="text-center">
+                            <p className="text-base font-semibold text-slate-900">{submittingLabel || "Please wait..."}</p>
+                            <p className="text-sm text-slate-500">We&apos;re contacting the authentication service.</p>
+                        </div>
+                    </div>
+                )}
                 <button
                     className="absolute top-4 right-4 text-slate-500 hover:text-slate-900 transition-colors"
-                    onClick={onClose}
+                    onClick={submitting ? undefined : onClose}
                     aria-label="Close"
+                    disabled={submitting}
                 >
                     <X size={18} />
                 </button>
@@ -195,7 +215,7 @@ export default function AuthModal({ isOpen, onClose }) {
                         disabled={submitting || (mode === "signup" && !passwordValid)}
                         className="w-full rounded-xl bg-[#162b4a] text-white py-3 text-sm font-semibold hover:bg-[#1f3a60] transition-colors disabled:opacity-60"
                     >
-                        {submitting ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
+                        {submitting ? submittingLabel || "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
                     </button>
                 </form>
 
@@ -210,6 +230,7 @@ export default function AuthModal({ isOpen, onClose }) {
 
                 <button
                     onClick={() => {
+                        if (submitting) return;
                         setMode(mode === "signin" ? "signup" : "signin");
                         setError("");
                         setMessage("");

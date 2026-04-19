@@ -37,17 +37,17 @@
 // Each submodule handles a specific resource/feature area.
 // The actual route handlers are defined in these files.
 
+mod chat; // LLM-powered natural language chat (Ben - AI Engineer)
 pub mod events; // Event-related endpoints (CRUD + search)
-mod chat;    // LLM-powered natural language chat (Ben - AI Engineer)
-mod users;   // User management, preferences, and interactions
-mod venues;  // Venue registry for source URL lookups
+mod users; // User management, preferences, and interactions
+mod venues; // Venue registry for source URL lookups
 
 // =============================================================================
 // IMPORTS
 // =============================================================================
 
-use axum::Router;   // Axum's router type for building route trees
-use sqlx::PgPool;   // PostgreSQL connection pool type (passed as state)
+use axum::Router; // Axum's router type for building route trees
+use sqlx::PgPool; // PostgreSQL connection pool type (passed as state)
 
 // =============================================================================
 // ROUTE FACTORY
@@ -87,7 +87,6 @@ pub fn create_routes() -> Router<PgPool> {
         // All event-related endpoints: listing, creating, searching events.
         // Owner: Will (Coordinator/Backend Lead)
         .nest("/events", events::routes())
-
         // ---------------------------------------------------------------------
         // Users Routes
         // ---------------------------------------------------------------------
@@ -95,7 +94,6 @@ pub fn create_routes() -> Router<PgPool> {
         // These power the personalization system for LLM recommendations.
         // Owner: Will (Coordinator/Backend Lead)
         .nest("/users", users::routes())
-
         // ---------------------------------------------------------------------
         // Venues Routes
         // ---------------------------------------------------------------------

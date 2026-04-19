@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react';
-import { Search, Filter, ChevronDown, User, Bell, LogOut, Menu, X } from 'lucide-react';
+import { Search, Filter, ChevronDown, User, Bell, LogOut, Menu, X, Loader2 } from 'lucide-react';
 import headerImage from '../assets/header_bg.png';
 import { Settings } from 'lucide-react';
 
@@ -33,7 +33,7 @@ const CATEGORIES = [
 // COMPONENT
 // =============================================================================
 
-const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile }) => {
+const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile, isSearching = false }) => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -217,12 +217,16 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile })
                             {/* Search Input - Full width on mobile */}
                             <div className="relative group w-full">
                                 <div className="absolute inset-y-0 left-3 md:left-4 flex items-center pointer-events-none">
-                                    <Search className="text-slate-400 group-focus-within:text-[#d4af37] transition-colors duration-300" size={18} />
+                                    {isSearching ? (
+                                        <Loader2 className="animate-spin text-[#d4af37]" size={18} />
+                                    ) : (
+                                        <Search className="text-slate-400 group-focus-within:text-[#d4af37] transition-colors duration-300" size={18} />
+                                    )}
                                 </div>
                                 <input
                                     type="text"
                                     className="w-full bg-[#162b4a] hover:bg-[#1f3a60] focus:bg-[#162b4a] border border-[#162b4a] focus:border-[#d4af37] rounded-xl py-3 md:py-4 pl-10 md:pl-12 pr-4 text-sm text-white placeholder-slate-400 outline-none transition-all duration-300 shadow-lg focus:shadow-[0_0_20px_-5px_rgba(212,175,55,0.4)]"
-                                    placeholder="Search events..."
+                                    placeholder={isSearching ? "Searching events..." : "Search events..."}
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                 />

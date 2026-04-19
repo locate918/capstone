@@ -31,7 +31,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post, delete},
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -40,8 +40,8 @@ use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::models::{
-    CreateUserInteraction, CreateUserPreference, UpdateUserPreferences,
-    User, UserInteraction, UserInteractionWithEvent, UserPreference, UserProfile, UserSavedEvent,
+    CreateUserInteraction, CreateUserPreference, UpdateUserPreferences, User, UserInteraction,
+    UserInteractionWithEvent, UserPreference, UserProfile, UserSavedEvent,
 };
 
 // Reuse Event struct from events module
@@ -70,11 +70,11 @@ pub fn routes() -> Router<PgPool> {
             "/me/interactions",
             get(get_my_interactions).post(add_my_interaction),
         )
+        .route("/me/saved-events", get(get_saved_events))
         .route(
-            "/me/saved-events",
-            get(get_saved_events),
+            "/me/saved-events/:eventId",
+            post(save_event).delete(unsave_event),
         )
-        .route("/me/saved-events/:eventId", post(save_event).delete(unsave_event))
         .route("/me/recommendations", get(get_my_recommendations))
 }
 
@@ -125,13 +125,13 @@ async fn get_saved_events(
         ORDER BY use.created_at DESC
         "#,
     )
-        .bind(user_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error fetching saved events: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching saved events: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     println!(
         "[DEBUG] Found {} saved events for user {}",
@@ -165,32 +165,30 @@ async fn save_event(
     let now = chrono::Utc::now();
 
     // Verify the event exists
-    let event_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)"
-    )
-        .bind(&event_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let event_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)")
+            .bind(&event_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     if !event_exists {
         return Err(StatusCode::NOT_FOUND);
     }
 
     // Verify the user exists
-    let user_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)"
-    )
-        .bind(auth.user_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let user_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(auth.user_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     if !user_exists {
         return Err(StatusCode::FORBIDDEN);
@@ -206,22 +204,23 @@ async fn save_event(
         RETURNING id, user_id, event_id, created_at
         "#,
     )
-        .bind(&id)
-        .bind(auth.user_id)
-        .bind(&event_id)
-        .bind(&now)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&id)
+    .bind(auth.user_id)
+    .bind(&event_id)
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Record the "saved" interaction for weight updates
     // Fetch event details for denormalization
-    let (event_categories, event_venue) = sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
-        "SELECT categories, venue FROM events WHERE id = $1"
-    )
+    let (event_categories, event_venue) =
+        sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
+            "SELECT categories, venue FROM events WHERE id = $1",
+        )
         .bind(&event_id)
         .fetch_optional(&pool)
         .await
@@ -283,25 +282,23 @@ async fn unsave_event(
 
     // Verify the saved event exists before attempting deletion
     let saved_event_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM user_saved_events WHERE user_id = $1 AND event_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM user_saved_events WHERE user_id = $1 AND event_id = $2)",
     )
-        .bind(user_id)
-        .bind(&event_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(user_id)
+    .bind(&event_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     if !saved_event_exists {
         return Err(StatusCode::NOT_FOUND);
     }
 
     // Delete the saved event
-    sqlx::query(
-        "DELETE FROM user_saved_events WHERE user_id = $1 AND event_id = $2"
-    )
+    sqlx::query("DELETE FROM user_saved_events WHERE user_id = $1 AND event_id = $2")
         .bind(user_id)
         .bind(&event_id)
         .execute(&pool)
@@ -316,9 +313,10 @@ async fn unsave_event(
     let now = chrono::Utc::now();
 
     // Fetch event details for denormalization
-    let (event_categories, event_venue) = sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
-        "SELECT categories, venue FROM events WHERE id = $1"
-    )
+    let (event_categories, event_venue) =
+        sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
+            "SELECT categories, venue FROM events WHERE id = $1",
+        )
         .bind(&event_id)
         .fetch_optional(&pool)
         .await
@@ -393,13 +391,13 @@ async fn get_my_recommendations(
     let preferences = sqlx::query_as::<_, (String, f64)>(
         "SELECT category, weight FROM user_preferences WHERE user_id = $1",
     )
-        .bind(user_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error fetching preferences: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching preferences: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Debug: Log fetched preferences
     println!("[DEBUG] Total preferences found: {}", preferences.len());
@@ -431,7 +429,7 @@ async fn get_my_recommendations(
             eprintln!("Database error fetching sample events: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
+
     println!("[DEBUG] Sample events (first 5, within 2 months):");
     for (title, cats) in &sample_events {
         println!("[DEBUG]   - '{}': categories={:?}", title, cats);
@@ -478,14 +476,14 @@ async fn get_my_recommendations(
         LIMIT $2
         "#,
     )
-        .bind(user_id)
-        .bind(limit)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error fetching recommendations: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching recommendations: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     println!(
         "[DEBUG] Returning {} recommendations for user {} (within 2 months)",
@@ -530,13 +528,13 @@ async fn get_current_user(
         WHERE id = $1
         "#,
     )
-        .bind(auth.user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(auth.user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     match user {
         Some(u) => Ok(Json(u)),
@@ -579,14 +577,14 @@ async fn get_my_profile(
         WHERE id = $1
         "#,
     )
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    .bind(user_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?
+    .ok_or(StatusCode::NOT_FOUND)?;
 
     // Fetch preferences
     let preferences = sqlx::query_as::<_, UserPreference>(
@@ -618,13 +616,13 @@ async fn get_my_profile(
         LIMIT 20
         "#,
     )
-        .bind(user_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(UserProfile {
         user,
@@ -683,14 +681,15 @@ async fn add_my_preference(
     let now = chrono::Utc::now();
 
     // Ensure the user exists in public.users to avoid foreign key constraint error
-    let user_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
-        .bind(auth.user_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let user_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(auth.user_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     if !user_exists {
         eprintln!(
@@ -772,19 +771,19 @@ async fn update_my_preferences(
                   created_at, updated_at
         "#,
     )
-        .bind(auth.user_id)
-        .bind(&payload.location_preference)
-        .bind(&payload.radius_miles)
-        .bind(&payload.price_max)
-        .bind(&payload.family_friendly_only)
-        .bind(&payload.has_completed_onboarding)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    .bind(auth.user_id)
+    .bind(&payload.location_preference)
+    .bind(&payload.radius_miles)
+    .bind(&payload.price_max)
+    .bind(&payload.family_friendly_only)
+    .bind(&payload.has_completed_onboarding)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?
+    .ok_or(StatusCode::NOT_FOUND)?;
 
     // DEBUG: User preferences updated (settings) with onboarding status
     println!(
@@ -816,13 +815,13 @@ async fn get_my_interactions(
         LIMIT 100
         "#,
     )
-        .bind(auth.user_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(auth.user_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(interactions))
 }
@@ -849,25 +848,26 @@ async fn add_my_interaction(
     let event = sqlx::query_as::<_, (Option<Vec<String>>, Option<String>)>(
         "SELECT categories, venue FROM events WHERE id = $1",
     )
-        .bind(&payload.event_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&payload.event_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let (event_categories, event_venue) = event.unwrap_or((None, None));
 
     // Ensure the user exists in public.users to avoid foreign key constraint error
-    let user_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
-        .bind(auth.user_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let user_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(auth.user_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     if !user_exists {
         eprintln!(

@@ -34,6 +34,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
         run: |
@@ -65,7 +67,8 @@ jobs:
           BACKEND_HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
         run: |
           for i in {1..30}; do
-            curl -fsS "$BACKEND_HEALTHCHECK_URL" && exit 0
+            response="$(curl -fsS "$BACKEND_HEALTHCHECK_URL")" && \
+            python -c "import json,sys; payload=json.loads(sys.argv[1]); assert payload.get('status') == 'ok'; assert payload.get('service') == 'backend'" "$response" && exit 0
             echo "Backend not ready yet ($i/30)..."
             sleep 10
           done
@@ -77,7 +80,8 @@ jobs:
           LLM_HEALTHCHECK_URL: ${{ secrets.LLM_HEALTHCHECK_URL }}
         run: |
           for i in {1..30}; do
-            curl -fsS "$LLM_HEALTHCHECK_URL" && exit 0
+            response="$(curl -fsS "$LLM_HEALTHCHECK_URL")" && \
+            python -c "import json,sys; payload=json.loads(sys.argv[1]); assert payload.get('status') == 'ok'; assert payload.get('service') == 'llm-service'" "$response" && exit 0
             echo "LLM service not ready yet ($i/30)..."
             sleep 10
           done
@@ -89,9 +93,32 @@ jobs:
           FRONTEND_HEALTHCHECK_URL: ${{ secrets.FRONTEND_HEALTHCHECK_URL }}
         run: |
           for i in {1..30}; do
-            curl -fsS "$FRONTEND_HEALTHCHECK_URL" && exit 0
+            response="$(curl -fsS "$FRONTEND_HEALTHCHECK_URL")" && \
+            echo "$response" | grep -q "Locate918" && exit 0
             echo "Frontend not ready yet ($i/30)..."
             sleep 10
           done
           echo "Frontend health check failed"
           exit 1
+
+      - name: Smoke test backend events endpoint
+        env:
+          BACKEND_EVENTS_URL: ${{ secrets.BACKEND_EVENTS_URL }}
+        run: |
+          if [ -z "$BACKEND_EVENTS_URL" ]; then
+            echo "BACKEND_EVENTS_URL not set; skipping backend events smoke test."
+            exit 0
+          fi
+          response="$(curl -fsS "$BACKEND_EVENTS_URL")"
+          python -c "import json,sys; payload=json.loads(sys.argv[1]); assert isinstance(payload, list)" "$response"
+
+      - name: Smoke test LLM search endpoint
+        env:
+          LLM_SEARCH_URL: ${{ secrets.LLM_SEARCH_URL }}
+        run: |
+          if [ -z "$LLM_SEARCH_URL" ]; then
+            echo "LLM_SEARCH_URL not set; skipping LLM search smoke test."
+            exit 0
+          fi
+          response="$(curl -fsS -X POST "$LLM_SEARCH_URL" -H 'Content-Type: application/json' -d '{"query":"family events this weekend"}')"
+          python -c "import json,sys; payload=json.loads(sys.argv[1]); assert 'events' in payload" "$response"

@@ -113,6 +113,7 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
 /// Use this for endpoints that work for both anonymous and authenticated users
 /// (e.g., chat that optionally personalizes if logged in).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct OptionalAuthUser {
     /// The user's UUID, or None if not authenticated
     pub user_id: Option<Uuid>,

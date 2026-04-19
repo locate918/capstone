@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -5,6 +7,8 @@ from fastapi.responses import JSONResponse
 from app.routes import chat, search, normalize, interactions
 
 app = FastAPI()
+SERVICE_VERSION = os.getenv("APP_VERSION", "0.1.0")
+SERVICE_GIT_SHA = os.getenv("GITHUB_SHA", "dev")
 
 
 app.add_middleware(
@@ -41,4 +45,19 @@ app.include_router(interactions.router, prefix="/api")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "llm-service",
+        "version": SERVICE_VERSION,
+        "git_sha": SERVICE_GIT_SHA,
+    }
+
+
+@app.get("/version")
+async def version_check():
+    return {
+        "status": "ok",
+        "service": "llm-service",
+        "version": SERVICE_VERSION,
+        "git_sha": SERVICE_GIT_SHA,
+    }
