@@ -844,10 +844,16 @@ _CS_JUNK_TITLE_RE = re.compile(
 
 
 def _cs_scan_for_date(text: str, today: datetime) -> datetime | None:
-    """Find the first plausible month-day-year match in a blob of text.
-    Handles missing year by defaulting to this year, rolling forward if the
-    date has already passed (so "JULY 20" in late April becomes this July)."""
+    """Find the most reliable month-day-year match in a blob of text.
+
+    Prefers matches with an explicit year over those without. For year-less
+    matches, defaults to this year, rolling forward if already past (so
+    "JULY 20" in late April becomes this July)."""
     flat = re.sub(r'\s+', ' ', text)
+
+    with_year: list[datetime]    = []
+    without_year: list[datetime] = []
+
     for m in _CS_DATE_SCAN_RE.finditer(flat):
         month_str = m.group(1).lower()[:3]
         month_num = _CS_MONTH_MAP.get(month_str)
@@ -857,6 +863,7 @@ def _cs_scan_for_date(text: str, today: datetime) -> datetime | None:
             day = int(m.group(2))
         except (ValueError, TypeError):
             continue
+
         year_str = m.group(3)
         if year_str:
             try:
@@ -864,22 +871,28 @@ def _cs_scan_for_date(text: str, today: datetime) -> datetime | None:
             except ValueError:
                 continue
             try:
-                return datetime(year, month_num, day)
+                with_year.append(datetime(year, month_num, day))
             except ValueError:
                 continue
         else:
             # No year given — use this year, or next if already past
             year = today.year
             try:
-                candidate = datetime(year, month_num, day)
+                cand = datetime(year, month_num, day)
             except ValueError:
                 continue
-            if candidate.date() < today.date():
+            if cand.date() < today.date():
                 try:
-                    return datetime(year + 1, month_num, day)
+                    cand = datetime(year + 1, month_num, day)
                 except ValueError:
                     continue
-            return candidate
+            without_year.append(cand)
+
+    # Year-explicit matches are more reliable — prefer them
+    if with_year:
+        return with_year[0]
+    if without_year:
+        return without_year[0]
     return None
 
 
@@ -995,25 +1008,49 @@ async def extract_church_studio_events(
         if href in seen_urls:
             continue
 
-        # Walk up to enclosing <section> — each event sits in one
-        section = a
+        # Walk up looking for the tightest event-wrapping scope.
+        #
+        # Elementor's layout hierarchy is: section > row > COLUMN > widget.
+        # When a section contains multiple events side-by-side (which happens
+        # on Church Studio's events page — HIT LIST and Speaker Wars share one
+        # section), each event lives in its own .elementor-column. Walking up
+        # to <section> would return the COMBINED text of both events, making
+        # it impossible to tell which date/title goes with which ticket link.
+        # Scope to the column instead.
+        #
+        # Fall back to <section> for layouts where each event has its own
+        # section (single-column-per-section case).
+        column  = None
+        section = None
+        p = a
         for _ in range(15):
-            section = section.parent
-            if section is None or section.name == 'section':
+            p = p.parent
+            if p is None:
                 break
-        if section is None or section.name != 'section':
+            classes = p.get('class', []) if hasattr(p, 'get') else []
+            if column is None and any('elementor-column' in c for c in classes):
+                column = p
+            if section is None and p.name == 'section':
+                section = p
+            if column is not None and section is not None:
+                break
+
+        scope = column if column is not None else section
+        if scope is None:
             skipped_no_section += 1
             continue
 
         # Title
-        title = _cs_extract_title(section)
+        title = _cs_extract_title(scope)
         if not title:
             skipped_no_title += 1
             continue
 
-        # Date — scan the full section's text
-        section_text = section.get_text(' ', strip=True)
-        start_dt = _cs_scan_for_date(section_text, today)
+        # Date — scan the full scope's text (handles split-widget dates like
+        # "FRIDAY" in one widget and "JULY 17" in the next; .get_text() with
+        # a space separator joins them into one string before the date regex).
+        scope_text = scope.get_text(' ', strip=True)
+        start_dt = _cs_scan_for_date(scope_text, today)
         if not start_dt:
             # Recurring or undated (e.g. "Tunes @ Noon") — skip cleanly
             skipped_no_date += 1
@@ -1027,7 +1064,7 @@ async def extract_church_studio_events(
             continue
 
         seen_urls.add(href)
-        desc = _cs_extract_description(section, title)
+        desc = _cs_extract_description(scope, title)
 
         events.append({
             'title':           title,
