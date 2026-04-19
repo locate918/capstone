@@ -1019,7 +1019,9 @@ async def extract_church_studio_events(
         # Scope to the column instead.
         #
         # Fall back to <section> for layouts where each event has its own
-        # section (single-column-per-section case).
+        # section (single-column-per-section case), or where the column
+        # containing the ticket button doesn't also contain the heading
+        # (button-in-separate-column layout).
         column  = None
         section = None
         p = a
@@ -1035,14 +1037,25 @@ async def extract_church_studio_events(
             if column is not None and section is not None:
                 break
 
-        scope = column if column is not None else section
-        if scope is None:
-            skipped_no_section += 1
-            continue
+        # Try column scope first (handles shared-section case cleanly). If it
+        # has no usable title, retry at section scope — some Church Studio
+        # event layouts put the ticket button in a different column than the
+        # heading, so the column-scoped search finds nothing.
+        title = ''
+        scope = None
+        if column is not None:
+            t = _cs_extract_title(column)
+            if t:
+                title = t
+                scope = column
 
-        # Title
-        title = _cs_extract_title(scope)
-        if not title:
+        if not title and section is not None:
+            t = _cs_extract_title(section)
+            if t:
+                title = t
+                scope = section
+
+        if not title or scope is None:
             skipped_no_title += 1
             continue
 
