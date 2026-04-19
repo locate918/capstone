@@ -64,6 +64,7 @@ from scraperExtractors import (
     extract_tulsa_oktoberfest_events,
     extract_seatengine_events,
     extract_rhp_events,
+    extract_church_studio_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -1366,6 +1367,7 @@ _EXTRACTOR_CHAIN = [
     ("TulsaOktoberfest",     extract_tulsa_oktoberfest_events),
     ("SeatEngine",           extract_seatengine_events),
     ("RHPEvents",            extract_rhp_events),
+    ("ChurchStudio",         extract_church_studio_events),
 ]
 
 
