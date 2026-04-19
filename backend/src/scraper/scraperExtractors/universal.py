@@ -30,6 +30,10 @@ from .platformExtractors import (
     extract_tickettailor_events,
 )
 
+from .apiExtractors import (
+    extract_timely_from_html,
+)
+
 from .genericExtractors import (
     extract_repeating_structures,
     extract_by_date_proximity,
@@ -215,12 +219,15 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
         methods_used.append(f"Squarespace ({len(sq_events)})")
 
     # ── 7. Fallbacks ──
-    # NOTE: extract_timely_from_html was removed as a fallback here.
-    # Timely's widget renders times client-side in JS, so when headless browsers
-    # load the page the times come out in UTC. Parsing that text and treating it
-    # as local time shifts every event forward by one day. The API path in
-    # apiExtractors.extract_timely is the only correct source; if that returns
-    # nothing, we'd rather have zero events than wrong events for data integrity.
+    # Timely HTML fallback: safe again because fetchers.py now sets Playwright's
+    # timezone_id to America/Chicago, so the widget renders in Central. The
+    # Timely-specific DOM parser also produces cleaner titles than the generic
+    # repeating-structures extractor (which glues tag spans onto the heading).
+    if not all_events:
+        timely_html = extract_timely_from_html(soup, base_url, source_name)
+        if timely_html:
+            all_events.extend(timely_html)
+            methods_used.append(f"Timely HTML ({len(timely_html)})")
 
     if not all_events:
         repeat_events = extract_repeating_structures(soup, base_url, source_name)

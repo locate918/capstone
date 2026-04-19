@@ -523,20 +523,14 @@ async def extract_timely(html: str, source_name: str, url: str = '', future_only
             print(f"[Timely] {len(events)} upcoming events after date filter", flush=True)
         return events, True
 
-    # NO HTML FALLBACK for Timely.
-    # The Timely widget renders times client-side in JS, so when Playwright/httpx
-    # loads the page headlessly the times come out in UTC (no browser TZ). Scraping
-    # that text and treating it as local pushes every event forward by a day.
-    # If the API returns nothing, we'd rather have zero events than wrong events —
-    # better failure mode for data integrity. Check the calendar_id if this fires.
-    print(
-        f"[Timely] WARNING: API returned 0 events for calendar {params['id']} "
-        f"({url}). HTML fallback is disabled — the widget renders UTC when "
-        f"headless and produces off-by-one-day dates. Verify the calendar ID "
-        f"is still valid and the API is reachable.",
-        flush=True,
-    )
-    return [], True
+    # HTML fallback: re-enabled because fetchers.py now sets Playwright's
+    # timezone_id to America/Chicago. The widget renders in Central, so the
+    # dates extracted from the DOM are correct.
+    print(f"[Timely] API returned 0 events, trying HTML extraction...", flush=True)
+    soup = BeautifulSoup(html, 'html.parser')
+    events = extract_timely_from_html(soup, url, source_name)
+    print(f"[Timely] Found {len(events)} events from HTML", flush=True)
+    return events, True
 
 
 # ============================================================================
