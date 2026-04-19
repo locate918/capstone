@@ -59,6 +59,7 @@ async def fetch_with_playwright(url: str) -> str:
         recdesk_api_data = []
         tnew_api_data = []
         gcal_api_data = []
+        tpac_api_data = {}  # name -> raw JSON text
 
         if is_etix:
             async def capture_response(response):
@@ -192,17 +193,23 @@ async def fetch_with_playwright(url: str) -> str:
             print(f"[TicketTailor] Page rendered: {len(await page.content())/1024:.1f}KB")
 
         elif is_tpac:
-            # Tulsa PAC / Ticketmaster Account Manager — Drupal shell + React SPA
-            # (nam-frontend.ppub-tmaws.io). The shell loads fast but React has
-            # to fetch ~5 APIs (venues, events, members, efs, promocodes) and
-            # hydrate before the event list appears.
+            # Tulsa PAC / Ticketmaster Account Manager.
             #
-            # CRITICAL: TM's bot detection blocks React hydration if request
-            # headers look scraper-ish. Our global HEADERS ships a UA of
-            # "Locate918 Event Aggregator (educational project)" which is
-            # instant red flag. Override with a realistic Chrome UA for the
-            # entire page+XHR session BEFORE navigation, otherwise the API
-            # calls React makes will silently fail and the DOM stays empty.
+            # BOT-DETECTION REALITY (observed in Railway logs):
+            #   • Standalone httpx from Railway IPs → HTTP 903 (Akamai soft-block)
+            #   • Playwright navigation → succeeds (148KB shell returns fine)
+            #   • React hydration in Playwright → blocked (0 event rows ever render)
+            #
+            # STRATEGY: navigate first to establish an Akamai session (cookies,
+            # bot-clearance tokens), THEN hit the 4 public JSON APIs via
+            # context.request which reuses the browser's TLS fingerprint,
+            # HTTP/2 connection, and cookies. That inherits the "I'm a browser"
+            # reputation Playwright earned during navigation — the same
+            # endpoints that returned 903 to httpx now return 200.
+            #
+            # Captured JSON is stapled into the returned HTML as <script>
+            # tags (same pattern as Etix/RecDesk/TNEW), so the extractor
+            # can parse it without any architecture change.
             await page.set_extra_http_headers({
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -213,52 +220,47 @@ async def fetch_with_playwright(url: str) -> str:
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             })
 
+            # Navigate to let Akamai set session cookies
             try:
-                await page.goto(url, wait_until="networkidle", timeout=60000)
-            except:
-                try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                except:
-                    await page.goto(url, timeout=30000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                print(f"[TulsaPAC] Navigation error (continuing anyway): {e}", flush=True)
 
-            # Wait for the React app to render at least one event row.
-            # data-testid="efs_view_detail_btn" is the most stable signal per
-            # Chrome-Claude's recon: hardcoded in the React component (not a
-            # hashed styled-components class), appears once per event row,
-            # only exists after the full render cascade completes.
-            render_succeeded = False
-            try:
-                await page.wait_for_selector(
-                    '[data-testid="efs_view_detail_btn"]',
-                    timeout=45000,
-                )
-                render_succeeded = True
-                print("[TulsaPAC] Event rows detected — React render complete")
-            except Exception:
-                # Diagnostic: count any partial DOM activity so future runs
-                # can tell "bot detection" (0 rows, shell size) from other
-                # issues (partial render, network timeout, etc).
+            # Brief settle for Akamai bot-manager cookie handshake
+            await page.wait_for_timeout(2500)
+
+            # Hit the 4 public APIs through the browser's network stack.
+            tpac_base = 'https://am.ticketmaster.com/tulsapac'
+            api_targets = [
+                ('buy',       '/api/v1/members/events/buy'),
+                ('events_p0', '/api/admin/v2/events?_format=json&epoch=upcoming'),
+                ('events_p1', '/api/admin/v2/events?_format=json&epoch=upcoming&page=1'),
+                ('venues',    '/api/admin/v2/venues?_format=json'),
+            ]
+            for name, path in api_targets:
                 try:
-                    row_count = await page.evaluate(
-                        '() => document.querySelectorAll(\'[data-testid="efs_view_detail_btn"]\').length'
+                    resp = await context.request.get(
+                        f'{tpac_base}{path}',
+                        headers={'Accept': 'application/json'},
+                        timeout=20000,
                     )
-                except Exception:
-                    row_count = -1
-                html_size_partial = len(await page.content()) / 1024
-                print(f"[TulsaPAC] React render timeout after 45s — "
-                      f"{row_count} event rows in DOM, {html_size_partial:.1f}KB HTML. "
-                      f"Likely bot detection; the extractor will fall back to the admin API.")
-
-            if render_succeeded:
-                # Settle + bottom-scroll to flush any trailing rows
-                await page.wait_for_timeout(1500)
-                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await page.wait_for_timeout(1000)
-                await page.evaluate("window.scrollTo(0, 0)")
-                await page.wait_for_timeout(500)
+                    status = resp.status
+                    body   = await resp.text()
+                    # Accept only actual JSON payloads
+                    body_stripped = body.strip()
+                    if status == 200 and (body_stripped.startswith('{') or body_stripped.startswith('[')):
+                        tpac_api_data[name] = body
+                        print(f"[TulsaPAC] {name}: {status} ({len(body)} bytes) ✓", flush=True)
+                    else:
+                        sample = body[:120].replace('\n', ' ')
+                        print(f"[TulsaPAC] {name}: {status} — body sample: {sample!r}", flush=True)
+                except Exception as e:
+                    print(f"[TulsaPAC] {name} error: {type(e).__name__}: {e}", flush=True)
 
             html_size = len(await page.content())
-            print(f"[TulsaPAC] Page rendered: {html_size/1024:.1f}KB")
+            print(f"[TulsaPAC] Page shell: {html_size/1024:.1f}KB, "
+                  f"captured {len(tpac_api_data)}/{len(api_targets)} APIs via browser session",
+                  flush=True)
 
         else:
             # ── Generic handler with TNEW and Google Calendar detection ──
@@ -443,6 +445,17 @@ async def fetch_with_playwright(url: str) -> str:
             for data in gcal_api_data:
                 html += f"<script type='gcal-api-data'>{data}</script>\n"
             print(f"[GCal] Appended {len(gcal_api_data)} API responses to HTML")
+
+        if tpac_api_data:
+            html += "\n<!-- TPAC_API_DATA -->\n"
+            for name, data in tpac_api_data.items():
+                # JSON payloads can legally contain "</script>", which would
+                # close the tag early and break downstream HTML parsing.
+                # Escape by splitting the sequence with a backslash-zero
+                # replacement that's invalid inside the JSON we'll parse.
+                safe = data.replace('</', '<\\/')
+                html += f"<script type='tpac-api-data' data-name='{name}'>{safe}</script>\n"
+            print(f"[TulsaPAC] Appended {len(tpac_api_data)} API responses to HTML", flush=True)
 
         # Also capture iframe content
         try:

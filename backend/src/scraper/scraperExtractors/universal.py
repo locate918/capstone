@@ -127,7 +127,7 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
     # ── Strip junk tags (preserving <header> for Tribe) ──
     for tag in soup.select('style, nav, footer, noscript'):
         tag.decompose()
-    for tag in soup.select('script:not([type="tnew-api-data"]):not([type="gcal-api-data"]):not([type="recdesk-api-data"]):not([type="etix-api-data"])'):
+    for tag in soup.select('script:not([type="tnew-api-data"]):not([type="gcal-api-data"]):not([type="recdesk-api-data"]):not([type="etix-api-data"]):not([type="tpac-api-data"])'):
         tag.decompose()
 
     # ── FIX: Strip PAST EVENTS sections ──
