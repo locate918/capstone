@@ -192,7 +192,7 @@ export const fetchRecommendedEvents = async () => {
  * Smart search using natural language.
  * Parses query like "jazz concerts under $30" and returns matching events.
  */
-export const smartSearch = async (query) => {
+export const smartSearch = async (query, useSmartSearch = true) => {
     if (USE_MOCKS) {
         return { events: getMockEvents(), parsed: { query } };
     }
@@ -201,7 +201,7 @@ export const smartSearch = async (query) => {
         const response = await authedFetch(`${LLM_SERVICE_URL}/api/search`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query }),
+            body: JSON.stringify({ query, useSmartSearch }),
         });
 
         if (!response.ok) {

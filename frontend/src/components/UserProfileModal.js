@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UserProfileModal.js - User Profile Modal Component
  * ===================================================
  * Modal for viewing and editing user profile information.
@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, MapPin, DollarSign, Users, MapPinIcon } from 'lucide-react';
+import { X, Save, AlertCircle, MapPin, DollarSign, Users, MapPinIcon, Brain } from 'lucide-react';
 import { updateUserPreferences } from '../services/api';
 
 const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
@@ -21,6 +21,7 @@ const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
         radius_miles: 15,
         price_max: null,
         family_friendly_only: false,
+        use_smart_search: true,
     });
 
     const [loading, setLoading] = useState(false);
@@ -36,6 +37,7 @@ const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
                 radius_miles: user.backend_user.radius_miles || 15,
                 price_max: user.backend_user.price_max || null,
                 family_friendly_only: user.backend_user.family_friendly_only || false,
+                use_smart_search: user.backend_user.use_smart_search !== false, // Default to true
             });
         }
     }, [user, isOpen]);
@@ -64,6 +66,7 @@ const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
                 radius_miles: formData.radius_miles,
                 price_max: formData.price_max,
                 family_friendly_only: formData.family_friendly_only,
+                use_smart_search: formData.use_smart_search,
             };
 
             await updateUserPreferences(payload);
@@ -213,6 +216,24 @@ const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
                             </span>
                         </label>
                         <p className="text-xs text-slate-500 mt-2 ml-7">Filter events to family-appropriate options</p>
+                    </div>
+
+                    {/* Smart Search Toggle */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                name="use_smart_search"
+                                checked={formData.use_smart_search}
+                                onChange={handleChange}
+                                className="w-4 h-4 rounded border-slate-300 text-[#D4AF37] focus:ring-[#D4AF37] cursor-pointer"
+                            />
+                            <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                                <Brain size={14} />
+                                Enable AI Smart Search
+                            </span>
+                        </label>
+                        <p className="text-xs text-slate-600 mt-2 ml-7">Use AI to understand natural language queries like "jazz concerts under $30"</p>
                     </div>
                 </div>
 

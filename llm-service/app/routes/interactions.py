@@ -34,7 +34,7 @@ async def log_interaction_and_update_preferences(request: InteractionRequest, au
     This function is designed to be resilient, logging failures without crashing.
     It requires the user's JWT to be passed in the 'Authorization' header.
     """
-    print(f"\n--- New Interaction Received ---")
+    print("\n--- New Interaction Received ---")
     print(f"DEBUG: Received interaction for user_id: {request.user_id}, type: {request.interaction_type}")
     print(f"DEBUG: Event Categories: {request.event_categories}")
 
@@ -108,7 +108,7 @@ async def log_interaction_and_update_preferences(request: InteractionRequest, au
                     headers=headers)
                 response.raise_for_status() # This will raise an error if the status is 4xx or 5xx
 
-        print(f"Interaction Processed Successfully")
+        print("Interaction Processed Successfully")
         return {"status": "success", "updated_preferences": updated_preferences}
 
     except httpx.HTTPStatusError as e:
