@@ -53,6 +53,7 @@ async def fetch_with_playwright(url: str) -> str:
         is_recdesk = 'recdesk.com' in url
         is_ticketleap = 'ticketleap.com' in url
         is_tickettailor = 'tickettailor.com' in url
+        is_tpac = 'am.ticketmaster.com/tulsapac' in url
         is_tnew = False
         etix_api_data = []
         recdesk_api_data = []
@@ -189,6 +190,48 @@ async def fetch_with_playwright(url: str) -> str:
             await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
             await page.wait_for_timeout(2000)
             print(f"[TicketTailor] Page rendered: {len(await page.content())/1024:.1f}KB")
+
+        elif is_tpac:
+            # Tulsa PAC / Ticketmaster Account Manager — Drupal shell + React SPA
+            # (nam-frontend.ppub-tmaws.io). The shell loads fast but React has
+            # to fetch ~5 APIs (venues, events, members, efs, promocodes) and
+            # hydrate before the event list appears. Generic 5-10s wait isn't
+            # enough; we've seen 148KB shells with zero cards. Wait up to 45s
+            # for the actual <ul> to contain children.
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=60000)
+            except:
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                except:
+                    await page.goto(url, timeout=30000)
+
+            # Wait for the React app to render at least one event card.
+            # The styled-components class names are hash-suffixed but the
+            # "StyledListWrapper" / "StyledWrapper" prefixes are stable.
+            try:
+                await page.wait_for_function(
+                    """() => {
+                        const ul = document.querySelector('ul[class*="StyledListWrapper"]');
+                        return ul && ul.children && ul.children.length > 0;
+                    }""",
+                    timeout=45000,
+                )
+            except Exception:
+                print("[TulsaPAC] React didn't render event cards within 45s — continuing anyway")
+
+            # Brief settle for any trailing hydration
+            await page.wait_for_timeout(1500)
+
+            # Scroll to force any virtualized rows into the DOM (TPAC doesn't
+            # virtualize today, but cheap insurance if they change it).
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1000)
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.wait_for_timeout(500)
+
+            html_size = len(await page.content())
+            print(f"[TulsaPAC] Page rendered: {html_size/1024:.1f}KB")
 
         else:
             # ── Generic handler with TNEW and Google Calendar detection ──
