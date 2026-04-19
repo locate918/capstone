@@ -55,26 +55,11 @@ def _proxy_for_url(url: str) -> dict | None:
     if not url:
         return None
     server = os.getenv('RESIDENTIAL_PROXY_URL', '').strip()
-    url_l = url.lower()
-    matches_proxy_venue = any(host in url_l for host in _PROXY_VENUES)
-
-    # Diagnostic: one-time-per-URL log. When a URL matches a proxy venue but
-    # the env var isn't visible, this tells us the env is the problem
-    # (vs. some other bug). Prints value length only — never the value itself.
-    if matches_proxy_venue:
-        user_set = bool(os.getenv('RESIDENTIAL_PROXY_USER', '').strip())
-        pass_set = bool(os.getenv('RESIDENTIAL_PROXY_PASS', '').strip())
-        print(
-            f"[Fetcher] Proxy env check for {url!r}: "
-            f"URL={'set' if server else 'EMPTY'}, "
-            f"USER={'set' if user_set else 'EMPTY'}, "
-            f"PASS={'set' if pass_set else 'EMPTY'}",
-            flush=True,
-        )
-
     if not server:
         return None
-    if not matches_proxy_venue:
+
+    url_l = url.lower()
+    if not any(host in url_l for host in _PROXY_VENUES):
         return None
 
     cfg: dict = {'server': server}
