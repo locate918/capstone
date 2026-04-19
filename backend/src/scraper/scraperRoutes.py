@@ -2481,13 +2481,4 @@ def register_routes(app):
         if not GOOGLE_PLACES_API_KEY:
             return jsonify({'error': 'Google Places API key not configured. Add GOOGLE_PLACES_API_KEY to .env'}), 500
 
-        try:
-            result = _run_async(lookup_venue_google_places(venue_name, city))
-
-            if result.get('types'):
-                result['inferred_type'] = infer_venue_type_from_google(result['types'], venue_name)
-
-            return jsonify(result)
-
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+     
