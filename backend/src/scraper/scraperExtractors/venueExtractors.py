@@ -47,70 +47,58 @@ from scraperUtils import (
 
 
 # ============================================================================
-# BRICKTOWN COMEDY CLUB — SeatEngine Platform
+# SEATENGINE PLATFORM — Generic extractor for any SeatEngine-hosted venue
 # ============================================================================
-# Site:    https://bricktowntulsa.com/events
-# Method:  httpx — fully server-rendered HTML (SeatEngine CMS, no public API)
-# Structure:
-#   Each event card: .event-list-item
-#     Title:       .el-header a (text)
-#     Event URL:   .el-header a[href]  → absolute URL
-#     Date range:  .el-date-range      (e.g. "March 22" or "March 27 - March 28")
-#     Label:       .event-label        ("Special Event" / "Free Show" / absent)
-#     Image:       .el-image img[src]
-#     Single show: h6 text             → "Sun Mar 22 2026, 6:00 PM"
-#     Multi-show:  .event-times-group  → h6.event-date + a.event-btn-inline per time
+# Platform URL pattern: {venue-slug}-com.seatengine.com (also serves as CNAME
+#   target for venues using their own domain, e.g. bricktowntulsa.com).
 #
-#   Multi-day headliners (e.g. "Ms. Pat — Fri Mar 27 + Sat Mar 28") emit ONE
-#   event per calendar day using the earliest showtime for that day.
+# Pages are fully server-rendered HTML — httpx is sufficient, skip Playwright.
 #
-# Venue:   Bricktown Comedy Club / 5982 S Yale Ave, Tulsa, OK 74135
-# Note:    "Bricktown Comedy Club" is the brand name; physically in south Tulsa.
+# Detection signals (any one suffices):
+#   - Hostname contains 'seatengine.com' OR is a key in SEATENGINE_VENUES
+#   - HTML references 'cdn.seatengine.com' / 'files.seatengine.com'
+#   - HTML contains 'Powered by SeatEngine' footer text
+#   - HTML has id="mini-events" + class="event-list-item" markers
+#
+# DOM structure per card (.event-list-item):
+#   Title:        .el-header a (text)
+#   Event URL:    .el-header a[href]
+#   Date range:   .el-date-range        (e.g. "March 22" or "March 27 - March 28")
+#   Label:        .event-label          ("Special Event" / "Free Show" / absent)
+#   Image:        .el-image img[src]
+#   Single-show:  h6 text               → "Sun Mar 22 2026, 6:00 PM"
+#   Multi-show:   .event-times-group    → h6.event-date + a.event-btn-inline per time
+#
+# Multi-day headliners emit ONE event per calendar day using the earliest
+# showtime for that day.
+#
+# Known venues are registered in SEATENGINE_VENUES with precise metadata
+# (address, category rules, description template). Unknown venues get a
+# best-effort name extracted from og:site_name / <title> / hostname slug
+# and leave address blank for downstream normalization to fill in.
 # ============================================================================
 
-_BCC_BASE_URL    = 'https://bricktowntulsa.com'
-_BCC_SOURCE_URL  = 'https://bricktowntulsa.com/events'
-_BCC_VENUE       = 'Bricktown Comedy Club'
-_BCC_ADDR        = '5982 S Yale Ave, Tulsa, OK 74135'
+# --- SeatEngine datetime format helpers ---
 
-# Datetime formats emitted by SeatEngine's h6 element
-_BCC_DT_FORMATS = [
+_SE_DT_FORMATS = [
     '%a %b %d %Y, %I:%M %p',   # "Sun Mar 22 2026, 6:00 PM"
     '%a %b %d %Y,  %I:%M %p',  # double-space variant
     '%a, %b %d, %Y %I:%M %p',  # "Fri, Mar 27, 2026 7:00 PM"
     '%a, %b %d, %Y  %I:%M %p', # double-space variant
 ]
-
-# Formats for the per-day header inside multi-show panels
-_BCC_DAY_FORMATS = [
+_SE_DAY_FORMATS = [
     '%a, %b %d, %Y',  # "Fri, Mar 27, 2026"
     '%a %b %d %Y',    # "Fri Mar 27 2026"
 ]
-
-# Time-only formats from a.event-btn-inline
-_BCC_TIME_FORMATS = [
-    '%I:%M %p',   # "7:00 PM"
-    ' %I:%M %p',  # leading-space variant
+_SE_TIME_FORMATS = [
+    '%I:%M %p',
+    ' %I:%M %p',
 ]
 
 
-def _bcc_parse_dt(text: str) -> datetime | None:
-    """Parse SeatEngine full datetime string → naive local datetime."""
-    text = text.strip()
-    # Collapse multiple spaces to one
-    text = re.sub(r'  +', ' ', text)
-    for fmt in _BCC_DT_FORMATS:
-        try:
-            return datetime.strptime(text, fmt)
-        except ValueError:
-            pass
-    return None
-
-
-def _bcc_parse_day(text: str) -> datetime | None:
-    """Parse a day-header string from a multi-show panel → naive date."""
+def _se_parse_dt(text: str) -> datetime | None:
     text = re.sub(r'  +', ' ', text.strip())
-    for fmt in _BCC_DAY_FORMATS:
+    for fmt in _SE_DT_FORMATS:
         try:
             return datetime.strptime(text, fmt)
         except ValueError:
@@ -118,10 +106,19 @@ def _bcc_parse_day(text: str) -> datetime | None:
     return None
 
 
-def _bcc_parse_time(text: str) -> tuple[int, int] | None:
-    """Parse a show-time button text → (hour24, minute)."""
+def _se_parse_day(text: str) -> datetime | None:
+    text = re.sub(r'  +', ' ', text.strip())
+    for fmt in _SE_DAY_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def _se_parse_time(text: str) -> tuple[int, int] | None:
     text = text.strip()
-    for fmt in _BCC_TIME_FORMATS:
+    for fmt in _SE_TIME_FORMATS:
         try:
             dt = datetime.strptime(text, fmt)
             return dt.hour, dt.minute
@@ -130,106 +127,225 @@ def _bcc_parse_time(text: str) -> tuple[int, int] | None:
     return None
 
 
-def _bcc_categories(title: str, label: str) -> list[str]:
-    cats = ['Comedy', 'Live Entertainment']
+# --- Known-venue registry ---
+# Keys: canonical lowercased hostnames (strip leading www.)
+# Values: either a metadata dict or a string alias pointing to another key.
+# Only fields that differ from _SEATENGINE_DEFAULT_META need be specified.
+
+_SEATENGINE_DEFAULT_META = {
+    'name':                 'SeatEngine Venue',
+    'address':              '',
+    'base_categories':      ['Live Entertainment'],
+    'category_keywords':    {},   # lowercased title substring -> category
+    'label_keywords':       {},   # lowercased label substring -> category
+    'description_template': '{title} at {venue}.',
+    'family_friendly':      None,
+}
+
+SEATENGINE_VENUES: dict = {
+    # Bricktown Comedy Club — 5982 S Yale Ave, Tulsa, OK
+    'bricktowntulsa.com': {
+        'name':                 'Bricktown Comedy Club',
+        'address':              '5982 S Yale Ave, Tulsa, OK 74135',
+        'base_categories':      ['Comedy', 'Live Entertainment'],
+        'category_keywords': {
+            'open mic':  'Open Mic',
+            'drag':      'Drag Show',
+            'bingo':     'Drag Show',
+            'magic':     'Magic Show',
+            'magician':  'Magic Show',
+            'improv':    'Improv',
+        },
+        'label_keywords': {
+            'free': 'Free Event',
+        },
+        'description_template': '{title} performing live at {venue}, Tulsa.',
+        'family_friendly':      None,
+    },
+    # Alias — SeatEngine's own subdomain for the same venue
+    'bricktowntulsa-com.seatengine.com': 'bricktowntulsa.com',
+}
+
+
+# --- Detection & metadata resolution ---
+
+def _se_canonical_host(url: str) -> str:
+    host = urlparse((url or '').lower()).netloc.split(':')[0]
+    if host.startswith('www.'):
+        host = host[4:]
+    return host
+
+
+def _is_seatengine(html: str, url: str) -> bool:
+    host = _se_canonical_host(url)
+    if 'seatengine.com' in host or host in SEATENGINE_VENUES:
+        return True
+    if html:
+        sample = html[:80000].lower()  # cap for perf on large pages
+        if 'cdn.seatengine.com' in sample or 'files.seatengine.com' in sample:
+            return True
+        if 'powered by seatengine' in sample:
+            return True
+        if 'id="mini-events"' in sample and 'event-list-item' in sample:
+            return True
+    return False
+
+
+def _resolve_seatengine_meta(url: str, html: str) -> dict:
+    """Registry lookup with alias resolution; falls back to page extraction."""
+    host = _se_canonical_host(url)
+    entry = SEATENGINE_VENUES.get(host)
+    seen = set()
+    while isinstance(entry, str) and entry not in seen:
+        seen.add(entry)
+        entry = SEATENGINE_VENUES.get(entry)
+
+    if isinstance(entry, dict):
+        return {**_SEATENGINE_DEFAULT_META, **entry}
+
+    # Unknown venue — do best-effort name extraction.
+    meta = dict(_SEATENGINE_DEFAULT_META)
+    if html:
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            og = soup.select_one('meta[property="og:site_name"]')
+            if og and og.get('content'):
+                meta['name'] = og['content'].strip()
+                return meta
+            t = soup.select_one('title')
+            if t:
+                title_text = t.get_text(strip=True)
+                for suf in (' — Events', ' | Events', ' - Events', ' Events',
+                            ' — Calendar', ' | Calendar', ' - Calendar'):
+                    if title_text.lower().endswith(suf.lower()):
+                        title_text = title_text[: -len(suf)].strip()
+                        break
+                if title_text:
+                    meta['name'] = title_text
+                    return meta
+        except Exception:
+            pass
+
+    # Final fallback — derive from hostname slug.
+    slug = host
+    if slug.endswith('.seatengine.com'):
+        slug = slug[: -len('.seatengine.com')]
+        if slug.endswith('-com'):
+            slug = slug[: -len('-com')]
+    else:
+        slug = slug.rsplit('.', 1)[0] if '.' in slug else slug
+    slug = slug.replace('-', ' ').replace('.', ' ').strip()
+    if slug:
+        meta['name'] = slug.title()
+    return meta
+
+
+def _seatengine_categories(title: str, label: str, meta: dict) -> list[str]:
+    cats = list(meta.get('base_categories', []))
     tl = title.lower()
     ll = label.lower()
-    if 'open mic' in tl:
-        cats.append('Open Mic')
-    if 'drag' in tl or 'bingo' in tl:
-        cats.append('Drag Show')
-    if 'magic' in tl or 'magician' in tl:
-        cats.append('Magic Show')
-    if 'improv' in tl:
-        cats.append('Improv')
-    if 'free' in ll:
-        cats.append('Free Event')
+    for kw, cat in meta.get('category_keywords', {}).items():
+        if kw in tl and cat not in cats:
+            cats.append(cat)
+    for kw, cat in meta.get('label_keywords', {}).items():
+        if kw in ll and cat not in cats:
+            cats.append(cat)
     return cats
 
 
-async def extract_bricktown_comedy_events(
+# --- Main extractor ---
+
+async def extract_seatengine_events(
         html: str, source_name: str, url: str = '', future_only: bool = True
 ) -> tuple[list, bool]:
     """
-    Extract events from Bricktown Comedy Club (bricktowntulsa.com).
+    Generic SeatEngine-platform extractor.
 
-    The site runs on the SeatEngine ticketing platform.  All event data is
-    server-rendered HTML — no public API is exposed.  One event is emitted
-    per calendar day for multi-day headliners (using the earliest showtime).
+    Detects any SeatEngine-hosted venue (via hostname, asset URLs, or page
+    markers) and parses the .event-list-item card grid into event records.
+    Known venues (SEATENGINE_VENUES) get rich metadata (address, categories);
+    unknown venues get a best-effort name derived from the page/URL.
     """
-    if 'bricktowntulsa.com' not in url.lower():
+    if not _is_seatengine(html, url):
         return [], False
 
-    print(f"[BricktownComedy] Detected Bricktown Comedy Club, scraping SeatEngine HTML...")
+    meta       = _resolve_seatengine_meta(url, html)
+    venue_name = meta['name']
+    print(f"[SeatEngine] Detected '{venue_name}' — scraping via httpx")
 
-    # ── Fetch fresh HTML if caller didn't provide it ──────────────────────────
+    # Page is fully server-rendered; refetch via httpx if caller passed thin
+    # or JS-stripped HTML that doesn't contain the event grid.
     if not html or 'event-list-item' not in html:
         try:
+            target = url or f"https://{_se_canonical_host(url)}/events"
             async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-                resp = await client.get(_BCC_SOURCE_URL, headers=HEADERS)
+                resp = await client.get(target, headers=HEADERS)
                 resp.raise_for_status()
                 html = resp.text
         except Exception as exc:
-            print(f"[BricktownComedy] Fetch error: {exc}")
+            print(f"[SeatEngine] Fetch error: {exc}")
             return [], False
 
     soup  = BeautifulSoup(html, 'html.parser')
     cards = soup.select('.event-list-item')
-    print(f"[BricktownComedy] Found {len(cards)} event cards")
+    print(f"[SeatEngine] Found {len(cards)} event cards")
+
+    parsed   = urlparse(url or '')
+    base_url = f"{parsed.scheme or 'https'}://{parsed.netloc}" if parsed.netloc else ''
 
     today     = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     events    = []
     seen_keys = set()
+    desc_tpl  = meta.get('description_template', _SEATENGINE_DEFAULT_META['description_template'])
 
     for card in cards:
-        # ── Basic card fields ─────────────────────────────────────────────────
-        a_tag  = card.select_one('.el-header a')
+        a_tag = card.select_one('.el-header a')
         if not a_tag:
             continue
         title     = a_tag.get_text(strip=True)
-        event_url = _BCC_BASE_URL + a_tag.get('href', '')
+        href      = a_tag.get('href', '')
+        event_url = urljoin(base_url, href) if href else ''
         label     = card.select_one('.event-label')
         label_txt = label.get_text(strip=True) if label else ''
         img_tag   = card.select_one('.el-image img')
         image_url = img_tag['src'] if img_tag and img_tag.get('src') else ''
 
-        # ── Determine show datetimes ──────────────────────────────────────────
-        show_datetimes: list[datetime] = []  # one entry per distinct day (earliest time)
-
+        # Determine show datetimes
+        show_datetimes: list[datetime] = []
         time_groups = card.select('.event-times-group')
 
         if time_groups:
-            # Multi-show card: each group = one calendar day
+            # Multi-show card: one group per calendar day
             for group in time_groups:
-                day_h6  = group.select_one('h6.event-date') or group.select_one('h6')
-                day_dt  = _bcc_parse_day(day_h6.get_text()) if day_h6 else None
+                day_h6 = group.select_one('h6.event-date') or group.select_one('h6')
+                day_dt = _se_parse_day(day_h6.get_text()) if day_h6 else None
 
                 time_links = group.select('a.event-btn-inline')
                 first_hm: tuple[int, int] | None = None
                 for link in time_links:
-                    hm = _bcc_parse_time(link.get_text())
+                    hm = _se_parse_time(link.get_text())
                     if hm is not None:
-                        if first_hm is None or (hm[0] * 60 + hm[1]) < (first_hm[0] * 60 + first_hm[1]):
+                        if first_hm is None or (hm[0]*60 + hm[1]) < (first_hm[0]*60 + first_hm[1]):
                             first_hm = hm
 
                 if day_dt and first_hm:
                     show_datetimes.append(day_dt.replace(hour=first_hm[0], minute=first_hm[1], second=0))
                 elif day_dt:
                     show_datetimes.append(day_dt)
-
         else:
-            # Single-show card: parse from the h6 element
+            # Single-show card: parse from h6
             h6 = card.select_one('h6')
             if h6:
-                dt = _bcc_parse_dt(h6.get_text())
+                dt = _se_parse_dt(h6.get_text())
                 if dt:
                     show_datetimes.append(dt)
 
         if not show_datetimes:
-            print(f"[BricktownComedy] Skipping (no parseable datetime): {title}")
+            print(f"[SeatEngine] Skipping (no parseable datetime): {title}")
             continue
 
-        # ── Emit one event per day ────────────────────────────────────────────
+        multi_day = len(show_datetimes) > 1
+
         for start_dt in show_datetimes:
             if future_only and start_dt.date() < today.date():
                 continue
@@ -239,32 +355,36 @@ async def extract_bricktown_comedy_events(
                 continue
             seen_keys.add(dedup_key)
 
-            # For multi-day headliners, suffix the title with the weekday
             display_title = title
-            if len(show_datetimes) > 1:
+            if multi_day:
                 display_title = f"{title} – {start_dt.strftime('%a %b %-d')}"
+
+            desc = desc_tpl.format(title=title, venue=venue_name)
+            if label_txt:
+                desc += f" ({label_txt})"
 
             events.append({
                 'title':           display_title,
                 'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
                 'end_time':        '',
-                'venue':           _BCC_VENUE,
-                'venue_address':   _BCC_ADDR,
-                'description':     (
-                        f"{title} performing live at Bricktown Comedy Club, Tulsa."
-                        + (f" ({label_txt})" if label_txt else '')
-                ),
+                'venue':           venue_name,
+                'venue_address':   meta.get('address', ''),
+                'description':     desc,
                 'source_url':      event_url,
                 'image_url':       image_url,
-                'source_name':     source_name or _BCC_VENUE,
-                'categories':      _bcc_categories(title, label_txt),
+                'source_name':     source_name or venue_name,
+                'categories':      _seatengine_categories(title, label_txt, meta),
                 'outdoor':         False,
-                'family_friendly': None,
+                'family_friendly': meta.get('family_friendly'),
             })
-            print(f"[BricktownComedy] Added: {display_title} on {start_dt.strftime('%Y-%m-%d %H:%M')}")
 
-    print(f"[BricktownComedy] Total events: {len(events)}")
+    print(f"[SeatEngine] Total events: {len(events)}")
     return events, True
+
+
+# Backwards-compat alias — existing imports of the BCC-specific function
+# continue to work (now dispatches through the generic SeatEngine extractor).
+extract_bricktown_comedy_events = extract_seatengine_events
 
 # ============================================================================
 # LOONY BIN COMEDY CLUB TULSA — Custom CMS (loonybincomedy.com)

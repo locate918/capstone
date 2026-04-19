@@ -66,6 +66,7 @@ from .festivalExtractors import (
 
 # Venue-specific extractors
 from .venueExtractors import (
+    extract_seatengine_events,
     extract_bricktown_comedy_events,
     extract_loonybin_events,
     extract_rhp_events,
@@ -103,7 +104,8 @@ __all__ = [
     'extract_okcastle_events', 'extract_broken_arrow_events',
     'extract_tulsazoo_events', 'extract_hardrock_tulsa_events',
     'extract_gypsy_events', 'extract_badass_renees_events',
-    'extract_bricktown_comedy_events', 'extract_loonybin_events',
+    'extract_bricktown_comedy_events', 'extract_seatengine_events',
+    'extract_loonybin_events',
     'extract_rhp_events', 'extract_church_studio_events',
     'extract_maggies_events', 'extract_route66_village_events',
     'extract_living_arts_events', 'extract_carneyfest_events',

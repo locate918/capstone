@@ -219,15 +219,20 @@ def extract_events_universal(html: str, base_url: str, source_name: str) -> list
         methods_used.append(f"Squarespace ({len(sq_events)})")
 
     # ── 7. Fallbacks ──
-    # Timely HTML fallback: safe again because fetchers.py now sets Playwright's
-    # timezone_id to America/Chicago, so the widget renders in Central. The
-    # Timely-specific DOM parser also produces cleaner titles than the generic
-    # repeating-structures extractor (which glues tag spans onto the heading).
+    # Timely HTML fallback: only run if the page actually shows Timely markers.
+    # The main extractor chain (scraperRoutes._EXTRACTOR_CHAIN) already calls
+    # extract_timely(), which internally falls back to extract_timely_from_html
+    # when the API returns zero. Running it again here with no detection gate
+    # produced false positives on SeatEngine sites (e.g. bricktowntulsa.com).
     if not all_events:
-        timely_html = extract_timely_from_html(soup, base_url, source_name)
-        if timely_html:
-            all_events.extend(timely_html)
-            methods_used.append(f"Timely HTML ({len(timely_html)})")
+        has_timely_marker = bool(
+            soup.select_one('[class*="timely-"], [class*="tc-event"], [data-timely], [data-calendar-id]')
+        )
+        if has_timely_marker:
+            timely_html = extract_timely_from_html(soup, base_url, source_name)
+            if timely_html:
+                all_events.extend(timely_html)
+                methods_used.append(f"Timely HTML ({len(timely_html)})")
 
     if not all_events:
         repeat_events = extract_repeating_structures(soup, base_url, source_name)

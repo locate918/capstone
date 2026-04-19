@@ -439,8 +439,16 @@ def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
         containers.extend(soup.select(sel))
 
     if not containers:
-        for group in soup.select('[class*="agenda"], [class*="event-list"]'):
-            containers.extend(group.select('a[href*="event"], div[class*="event"], li'))
+        # Only run the loose fallback if the page actually looks like a Timely
+        # widget. Without this guard, [class*="event-list"] matches SeatEngine's
+        # .event-list-item and every href*="event" on the page gets treated as
+        # an event, producing false positives (e.g. "Click Showtime & Buy").
+        has_timely_marker = bool(
+            soup.select_one('[class*="timely-"], [class*="tc-event"], [data-timely], [data-calendar-id]')
+        )
+        if has_timely_marker:
+            for group in soup.select('[class*="agenda"], [class*="event-list"]'):
+                containers.extend(group.select('a[href*="event"], div[class*="event"], li'))
 
     for container in containers:
         title_el = (
