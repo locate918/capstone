@@ -1950,278 +1950,353 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
     """
     Extractor for Tulsa Performing Arts Center (am.ticketmaster.com/tulsapac).
 
-    Two paths:
+    Data flow:
 
-    1. PRIMARY — Parse Playwright-rendered DOM. The /buy page is a React SPA
-       that renders ~134 performance cards into a <ul> list. We read every
-       card's title, full date+time, thumbnail, and ISM ticket link directly.
-       This matches exactly what a user sees on the page.
+      A) PREFERRED — read JSON from <script type="tpac-api-data"> tags that
+         fetchers.py injects after making the 4 public API calls through
+         Playwright's browser session (context.request.get). This path
+         inherits the browser's TLS fingerprint, HTTP/2 connection and
+         Akamai-bot-manager cookies earned during navigation, so the API
+         calls that return HTTP 903 to standalone httpx return 200 here.
 
-    2. FALLBACK — Admin events JSON API. Returns only ~11 performances for
-       anonymous callers (access-filtered) but with full venue.id joins to
-       the /venues endpoint. Used when the HTML wasn't Playwright-rendered.
+      B) FALLBACK — standalone httpx. Works from residential IPs; on
+         datacenter IPs (Railway, etc.) Akamai will 903 this path and it
+         yields nothing. Kept for local-dev and residential-IP deployments.
 
-    The public marketing site (tulsapac.com) has no real event data — only a
-    9-slide hand-curated carousel — so any URL in the tulsapac domain
-    triggers this extractor, which ignores the marketing-site HTML and pulls
-    from the AM source of truth.
+    Either path populates the same four data structures. Then a single
+    filter + join pipeline emits events.
+
+    Filter (visibility on the public buy page):
+      efsFlag == "1"  AND  type == "single_event"  AND  buyFilter != "0"
+
+    URL guard accepts both tulsapac.com (marketing) and the AM subdomain —
+    the marketing site has no real events, but the extractor ignores HTML
+    anyway and pulls from the AM source of truth either way.
     """
-    url_l = url.lower()
+    url_l = (url or '').lower()
     if 'am.ticketmaster.com/tulsapac' not in url_l and 'tulsapac.com' not in url_l:
         return [], False
 
-    base = 'https://am.ticketmaster.com/tulsapac'
-
-    # ── 1. Primary path: parse the Playwright-rendered DOM ──────────────
-    if html and 'StyledListWrapper' in html:
-        print(f"[TulsaPAC] Detected rendered DOM — parsing event cards")
-        dom_events = _tpac_parse_dom(html, base, source_name, future_only)
-        if dom_events:
-            print(f"[TulsaPAC] {len(dom_events)} events parsed from DOM")
-            return dom_events, True
-        print(f"[TulsaPAC] DOM contained StyledListWrapper but parse returned 0 — falling back to API")
-
-    # ── 2. Fallback path: admin JSON API ────────────────────────────────
-    print(f"[TulsaPAC] Using Ticketmaster AM admin JSON API (anon access — returns reduced event set)")
-    return await _tpac_admin_api(base, source_name, future_only)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# DOM parsing helpers
-# ──────────────────────────────────────────────────────────────────────
-
-# "Fri • Apr 24, 2026 • 07:30 PM" — the bullet is unicode U+2022 but we
-# normalize anything list-separator-ish (bullet, middle-dot, pipe, em/en-dash).
-_TPAC_SEPARATORS_RE = re.compile(r'[\u2022\u00B7\u2013\u2014\|·•]+')
-_TPAC_WEEKDAY_RE    = re.compile(r'^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s+', re.IGNORECASE)
-
-
-def _tpac_parse_dt_text(text: str):
-    """
-    Parse the card's date+time string → naive local datetime.
-    Accepts "Fri • Apr 24, 2026 • 07:30 PM" and minor variants.
-    """
-    if not text:
-        return None
-    cleaned = _TPAC_SEPARATORS_RE.sub(' ', text)
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    cleaned = _TPAC_WEEKDAY_RE.sub('', cleaned)  # "Apr 24, 2026 07:30 PM"
-
-    for fmt in ('%b %d, %Y %I:%M %p', '%B %d, %Y %I:%M %p',
-                '%b %d %Y %I:%M %p',  '%B %d %Y %I:%M %p'):
-        try:
-            return datetime.strptime(cleaned, fmt)
-        except ValueError:
-            continue
-
-    # Last resort — dateutil fuzzy
+    print(f"[TulsaPAC] >>> ENTRY — url={url}", flush=True)
     try:
-        from dateutil import parser as _dp
-        return _dp.parse(cleaned, fuzzy=True).replace(tzinfo=None)
+        return await _tpac_api_impl(html, source_name, future_only)
+    except Exception as exc:
+        import traceback
+        print(f"[TulsaPAC] !!! EXCEPTION: {type(exc).__name__}: {exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        # Return (empty, True) so the chain stops here rather than cascading
+        # into the universal fallbacks (which would produce garbage from the
+        # empty Drupal shell).
+        return [], True
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Helper: parse Playwright-captured JSON from <script> tags injected by
+# fetchers.py. Returns the four data structures we need, possibly empty.
+# ──────────────────────────────────────────────────────────────────────
+
+def _tpac_load_captured(html: str) -> tuple[list, dict, dict, dict]:
+    """Extract pre-fetched JSON payloads from <script type='tpac-api-data'>
+    tags. Returns (buy_items, detail_by_code, detail_by_id, venue_map)."""
+    buy_items: list = []
+    detail_by_code: dict = {}
+    detail_by_id:   dict = {}
+    venue_map:      dict = {}
+
+    if not html or 'tpac-api-data' not in html:
+        return buy_items, detail_by_code, detail_by_id, venue_map
+
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
     except Exception:
-        return None
+        return buy_items, detail_by_code, detail_by_id, venue_map
 
-
-def _tpac_parse_dom(html: str, base: str, source_name: str, future_only: bool) -> list:
-    soup  = BeautifulSoup(html, 'html.parser')
-    # Stable anchor: the <ul> is emitted by a styled-components-generated
-    # class name like "target-plans__StyledListWrapper-kXSLxq". Partial
-    # match survives hash rotations.
-    cards = soup.select('ul[class*="StyledListWrapper"] > li[class*="StyledWrapper"]')
-
-    today  = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    events = []
-
-    for card in cards:
-        # Title. The <div class="text text--primary"> is the inner label; the
-        # outer wrapper also gets text--primary elsewhere, so we scope to the
-        # StyledTitle block first.
-        title_block = card.select_one('[class*="StyledTitle"]')
-        if title_block is None:
+    for script in soup.find_all('script', attrs={'type': 'tpac-api-data'}):
+        name = script.get('data-name', '')
+        text = script.string or script.get_text() or ''
+        if not text:
             continue
-        title_el = title_block.select_one('.text--primary') or title_block
-        title = title_el.get_text(strip=True)
-        if not title or len(title) < 2:
-            continue
-
-        dt_el = card.select_one('[class*="StyledDateTimeWrapper"]')
-        if dt_el is None:
-            continue
-        start_dt = _tpac_parse_dt_text(dt_el.get_text(' ', strip=True))
-        if start_dt is None:
-            continue
-
-        if future_only and start_dt.date() < today.date():
-            continue
-
-        # Ticket link: ISM seat map link ("Select" button in DOM).
-        # Hrefs from the React app are typically absolute-from-root
-        # ("/tulsapac/buy/ism/…"), so we join against scheme+host only —
-        # NOT the /tulsapac base, or we'd double the path segment.
-        link_el   = card.select_one('a[href*="/buy/ism/"], a[href*="/buy/"]')
-        href      = link_el.get('href', '') if link_el else ''
-        if href.startswith('http'):
-            event_url = href
-        elif href:
-            event_url = urljoin('https://am.ticketmaster.com', href)
-        else:
-            event_url = f'{base}/buy'
-
-        img_el    = card.select_one('img[src]')
-        image_url = img_el.get('src', '') if img_el else ''
-
-        events.append({
-            'title':           title,
-            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
-            'end_time':        '',
-            'venue':           'Tulsa Performing Arts Center',
-            'venue_address':   '110 E 2nd St, Tulsa, OK 74103',
-            'description':     '',
-            'source_url':      event_url,
-            'image_url':       image_url,
-            'source_name':     source_name or 'Tulsa PAC',
-            'categories':      ['Arts', 'Performance'],
-            'outdoor':         False,
-            'family_friendly': None,
-        })
-
-    events.sort(key=lambda e: e.get('start_time') or '9999')
-    return events
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Admin API fallback (same logic as the prior version, now a helper)
-# ──────────────────────────────────────────────────────────────────────
-
-async def _tpac_admin_api(base: str, source_name: str, future_only: bool) -> tuple[list, bool]:
-    """
-    Fallback: fetches events via the Ticketmaster AM admin JSON API.
-    Returns only ~11 events for anonymous callers but has full venue data.
-    Preferred path is DOM parse; this exists so the extractor still returns
-    *something* if Playwright rendering fails.
-    """
-    req_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept':     'application/json',
-        'Referer':    f'{base}/buy',
-        'Origin':     'https://am.ticketmaster.com',
-    }
-
-    async with httpx.AsyncClient(headers=req_headers, timeout=30, follow_redirects=True) as client:
-        # ── Venue lookup table ──
-        venue_map = {}
+        # Reverse the </\/ escaping that fetchers.py did during injection
+        text = text.replace('<\\/', '</')
         try:
-            vresp = await client.get(f'{base}/api/admin/v2/venues?_format=json')
-            if vresp.status_code == 200:
-                for vid, v in vresp.json().items():
-                    addr   = v.get('address', {})
+            data = json.loads(text)
+        except Exception:
+            continue
+
+        if name == 'buy':
+            if isinstance(data, dict):
+                buy_items.extend(v for v in data.values() if isinstance(v, dict))
+            elif isinstance(data, list):
+                buy_items.extend(v for v in data if isinstance(v, dict))
+
+        elif name.startswith('events_'):
+            events_dict = data.get('events', {}) if isinstance(data, dict) else {}
+            if isinstance(events_dict, dict):
+                for key, ev in events_dict.items():
+                    if not isinstance(ev, dict):
+                        continue
+                    code = ev.get('code')
+                    if code:
+                        detail_by_code[code] = ev
+                    detail_by_code.setdefault(key, ev)
+                    ev_id = ev.get('id')
+                    if ev_id is not None:
+                        detail_by_id[str(ev_id)] = ev
+
+        elif name == 'venues':
+            if isinstance(data, dict):
+                for key, v in data.items():
+                    if not isinstance(v, dict):
+                        continue
+                    addr   = v.get('address', {}) or {}
                     street = addr.get('streetAddress', {}) or {}
                     line1  = street.get('line1') or ''
                     city   = addr.get('city', 'Tulsa')
                     state  = addr.get('stateCode', 'OK')
-                    zcode  = addr.get('postalCode', '')
-                    venue_map[int(vid)] = {
+                    zcode  = addr.get('postalCode', '') or ''
+                    venue_id = str(v.get('id', key))
+                    venue_map[venue_id] = {
                         'name':    v.get('name', 'Tulsa PAC'),
                         'address': f"{line1}, {city}, {state} {zcode}".strip(', '),
                         'lat':     (v.get('geoLocation') or {}).get('latitude'),
                         'lng':     (v.get('geoLocation') or {}).get('longitude'),
                     }
-            print(f"[TulsaPAC] Loaded {len(venue_map)} venues")
-        except Exception as e:
-            print(f"[TulsaPAC] Venue fetch error: {e}")
 
-        # ── Events pagination ──
-        all_performances = {}
-        for page_num in range(10):
-            try:
-                eresp = await client.get(
-                    f'{base}/api/admin/v2/events',
-                    params={'_format': 'json', 'epoch': 'upcoming', 'page': page_num}
-                )
-                if eresp.status_code != 200:
-                    print(f"[TulsaPAC] Events page {page_num} returned {eresp.status_code}")
-                    break
+    return buy_items, detail_by_code, detail_by_id, venue_map
 
-                data        = eresp.json()
-                raw_events  = data.get('events', {})
-                page_meta   = data.get('page', {})
-                total_pages = int(page_meta.get('totalPages', 1))
 
-                if isinstance(raw_events, dict):
-                    all_performances.update(raw_events)
-                elif isinstance(raw_events, list):
-                    for ev in raw_events:
-                        all_performances[str(ev['id'])] = ev
+# ──────────────────────────────────────────────────────────────────────
+# Core implementation: captured-first, httpx-fallback, filter+join+emit.
+# ──────────────────────────────────────────────────────────────────────
 
-                print(f"[TulsaPAC] Page {page_num}: {len(raw_events)} perfs (total so far: {len(all_performances)})")
+async def _tpac_api_impl(html: str, source_name: str, future_only: bool) -> tuple[list, bool]:
+    base = 'https://am.ticketmaster.com/tulsapac'
 
-                if page_num >= total_pages - 1:
-                    break
-                await asyncio.sleep(0.3)
+    # ── 0. Preferred source: Playwright-captured JSON ──
+    buy_items, detail_by_code, detail_by_id, venue_map = _tpac_load_captured(html)
 
-            except Exception as e:
-                print(f"[TulsaPAC] Error fetching page {page_num}: {e}")
-                break
+    have_buy     = len(buy_items) > 0
+    have_details = len(detail_by_code) > 0 or len(detail_by_id) > 0
+    have_venues  = len(venue_map) > 0
 
-    if not all_performances:
-        print(f"[TulsaPAC] No performances returned from API")
+    if have_buy or have_details or have_venues:
+        print(
+            f"[TulsaPAC] Loaded from Playwright capture: "
+            f"buy={len(buy_items)}, "
+            f"details={len(detail_by_code)} by code / {len(detail_by_id)} by id, "
+            f"venues={len(venue_map)}",
+            flush=True,
+        )
+    else:
+        print("[TulsaPAC] No Playwright capture found — trying standalone httpx", flush=True)
+
+    # ── 1. Fill gaps via httpx (works from residential IPs) ──
+    if not (have_buy and have_details and have_venues):
+        req_headers = {
+            'Accept':          'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/131.0.0.0 Safari/537.36'
+            ),
+            'Referer':         f'{base}/buy',
+            'Origin':          'https://am.ticketmaster.com',
+        }
+
+        async with httpx.AsyncClient(headers=req_headers, timeout=30, follow_redirects=True) as client:
+
+            if not have_buy:
+                try:
+                    br = await client.get(f'{base}/api/v1/members/events/buy')
+                    if br.status_code == 200:
+                        raw = br.json()
+                        if isinstance(raw, dict):
+                            buy_items = [v for v in raw.values() if isinstance(v, dict)]
+                        elif isinstance(raw, list):
+                            buy_items = [v for v in raw if isinstance(v, dict)]
+                        print(f"[TulsaPAC] members/events/buy (httpx): {len(buy_items)} catalog items", flush=True)
+                    else:
+                        extra = ' — likely Akamai datacenter IP block' if br.status_code == 903 else ''
+                        print(f"[TulsaPAC] members/events/buy (httpx): {br.status_code}{extra}", flush=True)
+                except Exception as e:
+                    print(f"[TulsaPAC] members/events/buy httpx error: {e}", flush=True)
+
+            if not have_details:
+                for page_num in range(6):
+                    try:
+                        params = {'_format': 'json', 'epoch': 'upcoming'}
+                        if page_num > 0:
+                            params['page'] = page_num
+                        er = await client.get(f'{base}/api/admin/v2/events', params=params)
+                        if er.status_code != 200:
+                            print(f"[TulsaPAC] admin/v2/events page {page_num} (httpx): {er.status_code}", flush=True)
+                            break
+
+                        edata       = er.json()
+                        page_events = edata.get('events', {}) or {}
+                        page_meta   = edata.get('page', {}) or {}
+                        total_pages = int(page_meta.get('totalPages', 1))
+
+                        if isinstance(page_events, dict):
+                            for key, ev in page_events.items():
+                                if not isinstance(ev, dict):
+                                    continue
+                                code = ev.get('code')
+                                if code:
+                                    detail_by_code[code] = ev
+                                detail_by_code.setdefault(key, ev)
+                                ev_id = ev.get('id')
+                                if ev_id is not None:
+                                    detail_by_id[str(ev_id)] = ev
+                        elif isinstance(page_events, list):
+                            for ev in page_events:
+                                if not isinstance(ev, dict):
+                                    continue
+                                code = ev.get('code')
+                                if code:
+                                    detail_by_code[code] = ev
+                                ev_id = ev.get('id')
+                                if ev_id is not None:
+                                    detail_by_id[str(ev_id)] = ev
+
+                        print(
+                            f"[TulsaPAC] admin/v2/events page {page_num} (httpx): "
+                            f"{len(page_events)} records "
+                            f"(cum: {len(detail_by_code)} by code, {len(detail_by_id)} by id)",
+                            flush=True,
+                        )
+
+                        if page_num >= total_pages - 1:
+                            break
+                        await asyncio.sleep(0.25)
+                    except Exception as e:
+                        print(f"[TulsaPAC] admin/v2/events page {page_num} httpx error: {e}", flush=True)
+                        break
+
+            if not have_venues:
+                try:
+                    vr = await client.get(f'{base}/api/admin/v2/venues', params={'_format': 'json'})
+                    if vr.status_code == 200:
+                        vraw = vr.json()
+                        if isinstance(vraw, dict):
+                            for key, v in vraw.items():
+                                if not isinstance(v, dict):
+                                    continue
+                                addr   = v.get('address', {}) or {}
+                                street = addr.get('streetAddress', {}) or {}
+                                line1  = street.get('line1') or ''
+                                city   = addr.get('city', 'Tulsa')
+                                state  = addr.get('stateCode', 'OK')
+                                zcode  = addr.get('postalCode', '') or ''
+                                venue_id = str(v.get('id', key))
+                                venue_map[venue_id] = {
+                                    'name':    v.get('name', 'Tulsa PAC'),
+                                    'address': f"{line1}, {city}, {state} {zcode}".strip(', '),
+                                    'lat':     (v.get('geoLocation') or {}).get('latitude'),
+                                    'lng':     (v.get('geoLocation') or {}).get('longitude'),
+                                }
+                        print(f"[TulsaPAC] venues (httpx): {len(venue_map)} halls", flush=True)
+                    else:
+                        print(f"[TulsaPAC] venues (httpx): {vr.status_code}", flush=True)
+                except Exception as e:
+                    print(f"[TulsaPAC] venues httpx error: {e}", flush=True)
+
+    # ── 2. Nothing to emit if catalog empty ──
+    if not buy_items:
+        print("[TulsaPAC] No catalog items available — nothing to emit", flush=True)
         return [], True
 
-    now    = datetime.now()
-    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # ── 3. Filter + enrich + emit ──
+    try:
+        from dateutil import parser as _dp
+        from datetime import timedelta as _td
+    except ImportError:
+        _dp = None
+        _td = None
 
-    groups: dict = {}
-    for perf in all_performances.values():
-        if not isinstance(perf, dict):
+    cutoff  = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    events: list = []
+    skipped_filter = 0
+    skipped_nodate = 0
+    skipped_past   = 0
+    skipped_cancel = 0
+
+    for item in buy_items:
+        # Public visibility filter
+        if str(item.get('efsFlag', '')) != '1':
+            skipped_filter += 1
             continue
-        if perf.get('isCancelled'):
+        if item.get('type') != 'single_event':
+            skipped_filter += 1
             continue
-        name = (perf.get('name') or '').strip()
-        if not name:
+        if str(item.get('buyFilter', '')) == '0':
+            skipped_filter += 1
             continue
-        if name in ('Gift Certificates', 'Shuttle') or 'gift cert' in name.lower():
+
+        # Join key: "code" is authoritative; some API versions expose it as "name"
+        code = item.get('code') or item.get('name') or ''
+        if not code:
+            skipped_nodate += 1
             continue
-        groups.setdefault(name, []).append(perf)
 
-    events = []
-    for name, perfs in groups.items():
-        perfs.sort(key=lambda p: ((p.get('date') or {}).get('date') or '9999-99-99'))
-        earliest = perfs[0]
+        detail = detail_by_code.get(code) or {}
+        if not detail:
+            ev_id = item.get('eventId')
+            if ev_id:
+                detail = detail_by_id.get(str(ev_id)) or {}
 
-        date_block = earliest.get('date') or {}
-        dt_str     = date_block.get('datetime') or date_block.get('date') or ''
-        date_only  = date_block.get('date') or ''
-        duration   = date_block.get('duration')
+        date_info = (detail.get('date') or {}) if isinstance(detail, dict) else {}
+        dt_str    = date_info.get('datetime') or ''
+        date_only = date_info.get('date') or ''
+        duration  = date_info.get('duration')
 
-        if future_only and (dt_str or date_only):
-            try:
-                from dateutil import parser as _dp
-                ev_dt = _dp.parse(dt_str or date_only, fuzzy=True).replace(tzinfo=None)
-                if ev_dt < cutoff:
-                    continue
-            except Exception:
-                pass
+        if not dt_str and not date_only:
+            skipped_nodate += 1
+            continue
 
-        end_time_str = ''
-        if dt_str and duration:
-            try:
-                from dateutil import parser as _dp
-                from datetime import timedelta as _td
-                start_dt = _dp.parse(dt_str, fuzzy=True).replace(tzinfo=None)
-                end_time_str = (start_dt + _td(minutes=int(duration))).strftime('%Y-%m-%dT%H:%M:%S')
-            except Exception:
-                pass
+        try:
+            if _dp is None:
+                raise RuntimeError('dateutil unavailable')
+            ev_dt = _dp.parse(dt_str or date_only, fuzzy=True).replace(tzinfo=None)
+        except Exception:
+            skipped_nodate += 1
+            continue
 
-        venue_id      = (earliest.get('venue') or {}).get('id')
-        venue_obj     = venue_map.get(venue_id, {})
+        if detail.get('isCancelled'):
+            skipped_cancel += 1
+            continue
+
+        if future_only and ev_dt < cutoff:
+            skipped_past += 1
+            continue
+
+        title = (item.get('inetName') or detail.get('name') or '').strip()
+        if not title:
+            continue
+        lower_t = title.lower()
+        if 'gift cert' in lower_t or title in ('Gift Certificates', 'Shuttle'):
+            continue
+
+        venue_id = None
+        if isinstance(detail.get('venue'), dict):
+            venue_id = detail['venue'].get('id')
+        venue_obj     = venue_map.get(str(venue_id), {}) if venue_id is not None else {}
         venue_name    = venue_obj.get('name', 'Tulsa Performing Arts Center')
         venue_address = venue_obj.get('address', '110 E 2nd St, Tulsa, OK 74103')
         lat = venue_obj.get('lat')
         lng = venue_obj.get('lng')
 
-        major = (earliest.get('majorCategory') or '').strip()
-        minor = (earliest.get('minorCategory') or '').strip()
-        cats  = []
+        end_time_str = ''
+        if duration and _td is not None:
+            try:
+                end_time_str = (ev_dt + _td(minutes=int(duration))).strftime('%Y-%m-%dT%H:%M:%S')
+            except Exception:
+                pass
+
+        major = (detail.get('majorCategory') or '').strip()
+        minor = (detail.get('minorCategory') or '').strip()
+        cats: list = []
         for key in [major] + minor.split('/'):
             key = key.strip()
             mapped = _TPAC_CATEGORY_MAP.get(key)
@@ -2230,27 +2305,31 @@ async def _tpac_admin_api(base: str, source_name: str, future_only: bool) -> tup
         if not cats:
             cats = ['Arts', 'Performance']
 
-        imgs      = earliest.get('imagesLinks') or {}
-        image_url = imgs.get('desktop') or imgs.get('mobile') or ''
+        imgs      = detail.get('imagesLinks') or {}
+        image_url = imgs.get('desktop') or imgs.get('mobile') or item.get('image') or ''
 
-        event_id  = earliest.get('id')
-        event_url = f'{base}/event/{event_id}' if event_id else f'{base}/buy'
+        event_id_out = detail.get('id') or item.get('eventId')
+        event_url    = f"{base}/event/{event_id_out}" if event_id_out else f"{base}/buy"
 
-        perf_count  = len(perfs)
-        description = f"{perf_count} performance{'s' if perf_count > 1 else ''}" if perf_count > 1 else ''
+        description = (item.get('description') or '').strip()
+        if description:
+            description = re.sub(r'<[^>]+>', ' ', description)
+            description = re.sub(r'\s+', ' ', description).strip()
+            if len(description) > 300:
+                description = description[:297] + '…'
 
         ev_dict = {
-            'title':          name,
-            'start_time':     dt_str or date_only,
-            'end_time':       end_time_str,
-            'venue':          venue_name,
-            'venue_address':  venue_address,
-            'description':    description,
-            'source_url':     event_url,
-            'image_url':      image_url,
-            'source_name':    source_name or 'Tulsa PAC',
-            'categories':     cats,
-            'outdoor':        False,
+            'title':           title,
+            'start_time':      dt_str or date_only,
+            'end_time':        end_time_str,
+            'venue':           venue_name,
+            'venue_address':   venue_address,
+            'description':     description,
+            'source_url':      event_url,
+            'image_url':       image_url,
+            'source_name':     source_name or 'Tulsa PAC',
+            'categories':      cats,
+            'outdoor':         False,
             'family_friendly': 'FAMILY' in major.upper() or 'FAMILY' in minor.upper(),
         }
         if lat and lng:
@@ -2261,7 +2340,12 @@ async def _tpac_admin_api(base: str, source_name: str, future_only: bool) -> tup
 
     events.sort(key=lambda e: e.get('start_time') or '9999')
 
-    print(f"[TulsaPAC/API] {len(all_performances)} performances -> {len(events)} unique productions")
+    print(
+        f"[TulsaPAC] {len(buy_items)} catalog → {len(events)} emitted "
+        f"(skipped: {skipped_filter} non-public, {skipped_nodate} no-date, "
+        f"{skipped_past} past, {skipped_cancel} cancelled)",
+        flush=True,
+    )
     return events, True
 
 

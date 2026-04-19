@@ -787,21 +787,27 @@ async def extract_rhp_events(
 # THE CHURCH STUDIO — WordPress / Elementor Static HTML
 # ============================================================================
 # Site:    https://www.thechurchstudio.com/events/
-# Method:  httpx — static WP/Elementor page, ~4-5 upcoming events at a time
-# Structure:
-#   Elementor splits date components into separate text nodes, e.g.:
-#     "Wednesday" / "Mar 25, 2026" / "Songwriter's Round..." / "GET TICKETS"
-#   Strategy: collect all text nodes, join consecutive short lines that form
-#   a date together, then parse DATE→TITLE→DESC blocks.
-#   Carney Fest (early May) is a hardcoded computed event pointing to
-#   carneyfest.com — it's linked from the nav but not the main events section.
+# Method:  httpx — static WP/Elementor page
+# Structure (2026 recon):
+#   The /events/ page is a manually-built Elementor layout with NO events
+#   plugin, NO events schema, and NO stable event-card selector. Past events
+#   (going back to 2021) are mixed in with upcoming ones on the same page with
+#   zero programmatic separation. Title/date formats vary per-event because
+#   each section was designed by hand.
+#
+#   Anchor-first strategy: every ticketed upcoming event has a universe.com
+#   or etix.com anchor. Past events' ticket links have mostly been removed
+#   or expired, so these anchors naturally scope to "currently selling." For
+#   each anchor: walk up to the enclosing <section>, extract title from the
+#   nearest heading, and scan the section's text for any parseable date.
+#   Skip events with no date (recurring "Tunes @ Noon" falls in this bucket).
+#
 # Venue:   The Church Studio / 304 S Trenton Ave, Tulsa, OK 74120
 # ============================================================================
 
-_CS_SOURCE_URL   = 'https://www.thechurchstudio.com/events/'
-_CS_VENUE        = 'The Church Studio'
-_CS_ADDR         = '304 S Trenton Ave, Tulsa, OK 74120'
-_CS_CARNEY_URL   = 'https://carneyfest.com'
+_CS_SOURCE_URL = 'https://www.thechurchstudio.com/events/'
+_CS_VENUE      = 'The Church Studio'
+_CS_ADDR       = '304 S Trenton Ave, Tulsa, OK 74120'
 
 _CS_MONTH_MAP = {
     'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
@@ -810,54 +816,141 @@ _CS_MONTH_MAP = {
     'july':7,'august':8,'september':9,'october':10,'november':11,'december':12,
 }
 
-_CS_DOW_RE = re.compile(
-    r'^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$',
-    re.IGNORECASE
-)
-
-_CS_MONTH_DAY_YEAR_RE = re.compile(
-    r'^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|'
-    r'jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
-    r'[\s,.]+(\d{1,2}(?:\s*&\s*\d{1,2})?),?\s*(\d{4})?$',
-    re.IGNORECASE
-)
-
-# Also match "APRIL 7, 2026" or "JULY 20" directly
-_CS_FULL_DATE_RE = re.compile(
-    r'^(?:(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+)?'
+# Generic "[DOW,] Month Day[, Year]" pattern — finds ANY date in a text blob.
+# Handles missing year for formats like "FRIDAY JULY 17".
+_CS_DATE_SCAN_RE = re.compile(
+    r'(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)[,\s]+)?'
     r'(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|'
     r'jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
-    r'[\s,.]+(\d{1,2}(?:\s*&\s*\d{1,2})?),?\s*(\d{4})?$',
+    r'[\s,.]+(\d{1,2})(?:\s*&\s*\d{1,2})?(?:,?\s*(\d{4}))?',
     re.IGNORECASE
 )
 
-_CS_SKIP_RE = re.compile(
-    r'^(GET TICKETS|THE CHURCH STUDIO PRESENTS|PAST EVENTS|DONATE|SHOP|'
-    r'MEDIA|SUPPORT|ABOUT|VISIT|LOUNGE|CONTACT|TOURS|MEMBERSHIP|TUNES @ NOON)$',
+# Standalone day-of-week (e.g. Elementor often splits "Tuesday" onto its own
+# heading above the date). Must be skipped when selecting a title.
+_CS_DOW_ONLY_RE = re.compile(
+    r'^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)[.,\s]*$',
+    re.IGNORECASE
+)
+
+# Titles/labels we never want to emit as an event title — these appear as
+# button text, nav labels, or section headers in Elementor blocks.
+_CS_JUNK_TITLE_RE = re.compile(
+    r'^(GET TICKETS|MORE INFO|LEARN MORE|BUY NOW|THE CHURCH STUDIO PRESENTS|'
+    r'PAST EVENTS|UPCOMING EVENTS|EVENTS|DONATE|SHOP|MEDIA|SUPPORT|ABOUT|'
+    r'VISIT|LOUNGE|CONTACT|TOURS|MEMBERSHIP|HOME|MENU)$',
     re.IGNORECASE
 )
 
 
-def _cs_try_parse_date(line: str, default_year: int) -> datetime | None:
-    """Try to parse a single line as a date. Returns None if it isn't one."""
-    line = re.sub(r'\s+', ' ', line.strip())
-    m = _CS_FULL_DATE_RE.match(line)
-    if not m:
-        return None
-    month_str = m.group(2).lower()[:3]
-    month_num = _CS_MONTH_MAP.get(month_str)
-    if not month_num:
-        return None
-    day_part = re.split(r'[\s&]', m.group(3).strip())[0]
-    try:
-        day = int(day_part)
-    except ValueError:
-        return None
-    year = int(m.group(4)) if m.group(4) else default_year
-    try:
-        return datetime(year, month_num, day)
-    except ValueError:
-        return None
+def _cs_scan_for_date(text: str, today: datetime) -> datetime | None:
+    """Find the most reliable month-day-year match in a blob of text.
+
+    Prefers matches with an explicit year over those without. For year-less
+    matches, defaults to this year, rolling forward if already past (so
+    "JULY 20" in late April becomes this July)."""
+    flat = re.sub(r'\s+', ' ', text)
+
+    with_year: list[datetime]    = []
+    without_year: list[datetime] = []
+
+    for m in _CS_DATE_SCAN_RE.finditer(flat):
+        month_str = m.group(1).lower()[:3]
+        month_num = _CS_MONTH_MAP.get(month_str)
+        if not month_num:
+            continue
+        try:
+            day = int(m.group(2))
+        except (ValueError, TypeError):
+            continue
+
+        year_str = m.group(3)
+        if year_str:
+            try:
+                year = int(year_str)
+            except ValueError:
+                continue
+            try:
+                with_year.append(datetime(year, month_num, day))
+            except ValueError:
+                continue
+        else:
+            # No year given — use this year, or next if already past
+            year = today.year
+            try:
+                cand = datetime(year, month_num, day)
+            except ValueError:
+                continue
+            if cand.date() < today.date():
+                try:
+                    cand = datetime(year + 1, month_num, day)
+                except ValueError:
+                    continue
+            without_year.append(cand)
+
+    # Year-explicit matches are more reliable — prefer them
+    if with_year:
+        return with_year[0]
+    if without_year:
+        return without_year[0]
+    return None
+
+
+def _cs_extract_title(section) -> str:
+    """Find the best title from an Elementor section. Prefer headings; skip
+    junk labels, date-only strings, and the venue name itself."""
+    today = datetime.now()
+
+    # Pass 1: headings in order
+    for heading in section.select('h1, h2, h3, h4, h5, h6'):
+        t = heading.get_text(' ', strip=True)
+        if not t or len(t) > 200:
+            continue
+        if _CS_JUNK_TITLE_RE.match(t):
+            continue
+        # Skip bare day-of-week headings ("Tuesday")
+        if _CS_DOW_ONLY_RE.match(t):
+            continue
+        # Skip date-only headings (e.g. "Tuesday, May 5, 2026")
+        stripped_no_date = _CS_DATE_SCAN_RE.sub('', t).strip(' ,.')
+        if len(stripped_no_date) < 4:
+            continue
+        if 'church studio' == t.lower().strip():
+            continue
+        # Title-case ALL-CAPS headings
+        return t if t != t.upper() else t.title()
+
+    # Pass 2: heading-like Elementor widgets as a fallback
+    for el in section.select('[data-widget_type*="heading"]'):
+        t = el.get_text(' ', strip=True)
+        if not t or len(t) > 200:
+            continue
+        if _CS_JUNK_TITLE_RE.match(t):
+            continue
+        if _CS_DOW_ONLY_RE.match(t):
+            continue
+        if _cs_scan_for_date(t, today):
+            # Date-only widget — skip
+            stripped_no_date = _CS_DATE_SCAN_RE.sub('', t).strip(' ,.')
+            if len(stripped_no_date) < 4:
+                continue
+        return t if t != t.upper() else t.title()
+
+    return ''
+
+
+def _cs_extract_description(section, title: str) -> str:
+    """First substantive paragraph in a section, excluding the title itself."""
+    for p in section.select('p, [data-widget_type="text-editor.default"]'):
+        t = p.get_text(' ', strip=True)
+        if not t or len(t) < 30:
+            continue
+        if t == title or t.startswith(title):
+            continue
+        if _CS_JUNK_TITLE_RE.match(t):
+            continue
+        return t[:400]
+    return ''
 
 
 async def extract_church_studio_events(
@@ -866,15 +959,16 @@ async def extract_church_studio_events(
     """
     Extract events from The Church Studio (thechurchstudio.com/events/).
 
-    Elementor splits date text nodes across multiple lines (e.g. "Wednesday" on
-    one line, "Mar 25, 2026" on the next). We collect all non-empty text lines,
-    join adjacent DOW + month-day-year fragments, then parse DATE→TITLE→DESC
-    blocks. Carney Fest is added as a computed event pointing to carneyfest.com.
+    The page has no events plugin, no schema, no stable card selector, and mixes
+    past events (back to 2021) with upcoming. But every ticketed upcoming event
+    has a universe.com or etix.com anchor, so we anchor off those: for each
+    link, walk up to the enclosing <section>, extract title from the nearest
+    heading, find a date anywhere in the section text, and filter past events.
     """
     if 'thechurchstudio.com' not in url.lower():
         return [], False
 
-    print(f"[ChurchStudio] Detected The Church Studio events page...")
+    print(f"[ChurchStudio] Detected The Church Studio events page...", flush=True)
 
     if not html or 'thechurchstudio' not in html.lower():
         try:
@@ -883,115 +977,120 @@ async def extract_church_studio_events(
                 resp.raise_for_status()
                 html = resp.text
         except Exception as exc:
-            print(f"[ChurchStudio] Fetch error: {exc}")
+            print(f"[ChurchStudio] Fetch error: {exc}", flush=True)
             return [], False
 
     soup  = BeautifulSoup(html, 'html.parser')
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # ── Collect ticket links (strip nav first) ────────────────────────────────
-    for el in soup.select('nav, header, .header, .fl-page-nav, #fl-page-nav'):
+    # Strip nav/header/footer so nav submenu links don't pollute our anchors
+    for el in soup.select('nav, header, .header, .fl-page-nav, #fl-page-nav, '
+                          'footer, .footer, .fl-page-footer'):
         el.decompose()
 
-    ticket_links: list[str] = []
-    seen_tl: set = set()
-    for a in soup.select('a[href*="universe.com"], a[href*="etix.com"], a[href*="eventbrite.com"]'):
-        href = a.get('href', '')
-        if href.startswith('http') and href not in seen_tl:
-            seen_tl.add(href)
-            ticket_links.append(href)
+    # Find all ticketing anchors — the only reliable event markers on this page
+    anchors = soup.select(
+        'a[href*="universe.com"], a[href*="etix.com"], a[href*="eventbrite.com"]'
+    )
+    print(f"[ChurchStudio] Found {len(anchors)} ticketing anchor(s)", flush=True)
 
-    # ── Build flat list of text lines from page ───────────────────────────────
-    raw_lines = [
-        l.strip()
-        for l in soup.get_text(separator='\n').splitlines()
-        if l.strip()
-    ]
+    events    = []
+    seen_urls = set()
+    skipped_no_date   = 0
+    skipped_past      = 0
+    skipped_no_title  = 0
+    skipped_no_section = 0
 
-    # Trim to upcoming section (between EVENTS header and PAST EVENTS)
-    # Use the LAST occurrence of bare "EVENTS" — the first hit is usually the nav link.
-    events_idx = -1
-    for i, l in enumerate(raw_lines):
-        if l.upper() == 'EVENTS':
-            events_idx = i
-    if events_idx >= 0:
-        raw_lines = raw_lines[events_idx + 1:]
+    for a in anchors:
+        href = (a.get('href') or '').strip()
+        if not href or not href.startswith('http'):
+            continue
+        if href in seen_urls:
+            continue
 
-    try:
-        past_idx  = next(i for i, l in enumerate(raw_lines) if 'PAST EVENTS' in l.upper())
-        raw_lines = raw_lines[:past_idx]
-    except StopIteration:
-        pass
+        # Walk up looking for the tightest event-wrapping scope.
+        #
+        # Elementor's layout hierarchy is: section > row > COLUMN > widget.
+        # When a section contains multiple events side-by-side (which happens
+        # on Church Studio's events page — HIT LIST and Speaker Wars share one
+        # section), each event lives in its own .elementor-column. Walking up
+        # to <section> would return the COMBINED text of both events, making
+        # it impossible to tell which date/title goes with which ticket link.
+        # Scope to the column instead.
+        #
+        # Fall back to <section> for layouts where each event has its own
+        # section (single-column-per-section case).
+        column  = None
+        section = None
+        p = a
+        for _ in range(15):
+            p = p.parent
+            if p is None:
+                break
+            classes = p.get('class', []) if hasattr(p, 'get') else []
+            if column is None and any('elementor-column' in c for c in classes):
+                column = p
+            if section is None and p.name == 'section':
+                section = p
+            if column is not None and section is not None:
+                break
 
-    # ── Join split DOW + "Month Day, Year" pairs ──────────────────────────────
-    joined: list[str] = []
-    i = 0
-    while i < len(raw_lines):
-        line = raw_lines[i]
-        # If this line is just a day-of-week and next line is month+day
-        if _CS_DOW_RE.match(line) and i + 1 < len(raw_lines):
-            next_line = raw_lines[i + 1]
-            if _CS_MONTH_DAY_YEAR_RE.match(next_line):
-                joined.append(f"{line} {next_line}")
-                i += 2
-                continue
-        joined.append(line)
-        i += 1
+        scope = column if column is not None else section
+        if scope is None:
+            skipped_no_section += 1
+            continue
 
-    # ── Parse DATE → TITLE → DESC blocks ─────────────────────────────────────
-    events: list[dict] = []
-    seen_keys: set     = set()
-    link_idx           = 0
+        # Title
+        title = _cs_extract_title(scope)
+        if not title:
+            skipped_no_title += 1
+            continue
 
-    i = 0
-    while i < len(joined):
-        line     = joined[i]
-        start_dt = _cs_try_parse_date(line, today.year)
+        # Date — scan the full scope's text (handles split-widget dates like
+        # "FRIDAY" in one widget and "JULY 17" in the next; .get_text() with
+        # a space separator joins them into one string before the date regex).
+        scope_text = scope.get_text(' ', strip=True)
+        start_dt = _cs_scan_for_date(scope_text, today)
+        if not start_dt:
+            # Recurring or undated (e.g. "Tunes @ Noon") — skip cleanly
+            skipped_no_date += 1
+            print(f"[ChurchStudio] Skipping (no date): {title[:70]}", flush=True)
+            continue
 
-        if start_dt:
-            title = ''
-            desc  = ''
-            for j in range(i + 1, min(i + 8, len(joined))):
-                candidate = joined[j]
-                if _CS_SKIP_RE.match(candidate):
-                    continue
-                if _cs_try_parse_date(candidate, today.year):
-                    break
-                if not title and len(candidate) > 4:
-                    # Title-case to fix ALL-CAPS headings
-                    title = candidate if candidate != candidate.upper() else candidate.title()
-                    for k in range(j + 1, min(j + 5, len(joined))):
-                        d = joined[k]
-                        if not _CS_SKIP_RE.match(d) and not _cs_try_parse_date(d, today.year) and len(d) > 15:
-                            desc = d[:250]
-                            break
-                    break
+        # Past event filter — stale ticket links on past-event sections would
+        # otherwise produce pollution
+        if future_only and start_dt.date() < today.date():
+            skipped_past += 1
+            continue
 
-            if title and (not future_only or start_dt.date() >= today.date()):
-                dedup_key = f"{title.lower()[:60]}|{start_dt.strftime('%Y-%m-%d')}"
-                if dedup_key not in seen_keys:
-                    seen_keys.add(dedup_key)
-                    ev_url = ticket_links[link_idx] if link_idx < len(ticket_links) else _CS_SOURCE_URL
-                    link_idx += 1
-                    events.append({
-                        'title':           title,
-                        'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
-                        'end_time':        '',
-                        'venue':           _CS_VENUE,
-                        'venue_address':   _CS_ADDR,
-                        'description':     desc or title,
-                        'source_url':      ev_url,
-                        'image_url':       '',
-                        'source_name':     source_name or _CS_VENUE,
-                        'categories':      ['Live Music', 'Live Entertainment', 'Arts & Culture'],
-                        'outdoor':         False,
-                        'family_friendly': None,
-                    })
-                    print(f"[ChurchStudio] Added: {title} on {start_dt.strftime('%Y-%m-%d')}")
+        seen_urls.add(href)
+        desc = _cs_extract_description(scope, title)
 
-        i += 1
+        events.append({
+            'title':           title,
+            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_time':        '',
+            'venue':           _CS_VENUE,
+            'venue_address':   _CS_ADDR,
+            'description':     desc or title,
+            'source_url':      href,
+            'image_url':       '',
+            'source_name':     source_name or _CS_VENUE,
+            'categories':      ['Live Music', 'Live Entertainment', 'Arts & Culture'],
+            'outdoor':         False,
+            'family_friendly': None,
+        })
+        print(
+            f"[ChurchStudio] Added: {title} on {start_dt.strftime('%Y-%m-%d')}",
+            flush=True,
+        )
 
-    print(f"[ChurchStudio] Total events: {len(events)}")
+    print(
+        f"[ChurchStudio] Total: {len(events)} event(s)  "
+        f"(skipped: {skipped_past} past, {skipped_no_date} no-date, "
+        f"{skipped_no_title} no-title, {skipped_no_section} no-section)",
+        flush=True,
+    )
     return events, True
 
 
