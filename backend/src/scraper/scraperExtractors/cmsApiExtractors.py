@@ -1948,12 +1948,31 @@ _TPAC_CATEGORY_MAP = {
 
 async def extract_tulsapac_events(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     """
-    Extractor for Tulsa Performing Arts Center (am.ticketmaster.com/tulsapac).
+    Entry point for the Tulsa PAC extractor. Wraps the real implementation
+    with a loud log on entry, flush=True on every print, and a catch-all
+    so any exception surfaces in Railway's logs instead of silently failing
+    back to the universal fallbacks.
+    """
+    url_l = (url or '').lower()
+    if 'am.ticketmaster.com/tulsapac' not in url_l and 'tulsapac.com' not in url_l:
+        return [], False
 
-    Uses three public, CORS-open JSON APIs — no browser rendering required.
-    This is the authoritative data path: Ticketmaster's bot protection blocks
-    Playwright from rendering the React SPA, but the underlying APIs behind
-    that SPA accept any request. Browser is never touched.
+    print(f"[TulsaPAC] >>> ENTRY — url={url} (new API-only path)", flush=True)
+    try:
+        return await _tpac_api_impl(source_name, future_only)
+    except Exception as exc:
+        import traceback
+        print(f"[TulsaPAC] !!! EXCEPTION in API path: {type(exc).__name__}: {exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        # Return (empty, True) so the chain stops here rather than cascading
+        # into the universal fallbacks (which would produce garbage from the
+        # empty Drupal shell).
+        return [], True
+
+
+async def _tpac_api_impl(source_name: str, future_only: bool) -> tuple[list, bool]:
+    """
+    Real implementation — three public, CORS-open JSON APIs, no browser.
 
     Pipeline:
       1) GET  /api/v1/members/events/buy         → ~199 catalog items
@@ -1963,19 +1982,11 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
       5) Join detail by `code`, enrich w/ venue → output events
 
     Filter (from public-page visibility logic):
-      - efsFlag == "1"
-      - type    == "single_event"
-      - buyFilter != "0"
-
-    URL guard accepts either am.ticketmaster.com/tulsapac or tulsapac.com —
-    the marketing site has no real events but the user may configure either.
-    The html argument is ignored entirely.
+      - efsFlag    == "1"
+      - type       == "single_event"
+      - buyFilter  != "0"
     """
-    url_l = url.lower()
-    if 'am.ticketmaster.com/tulsapac' not in url_l and 'tulsapac.com' not in url_l:
-        return [], False
-
-    print("[TulsaPAC] Detected — fetching via public JSON APIs (no browser required)")
+    print("[TulsaPAC] Fetching via public JSON APIs (no browser required)", flush=True)
 
     base = 'https://am.ticketmaster.com/tulsapac'
     # Neutral browser UA. TM's APIs accept anything but the bot-protection
@@ -2005,11 +2016,11 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
                     buy_items = [v for v in raw.values() if isinstance(v, dict)]
                 elif isinstance(raw, list):
                     buy_items = [v for v in raw if isinstance(v, dict)]
-                print(f"[TulsaPAC] members/events/buy: {len(buy_items)} catalog items")
+                print(f"[TulsaPAC] members/events/buy: {len(buy_items)} catalog items", flush=True)
             else:
-                print(f"[TulsaPAC] members/events/buy returned {br.status_code}")
+                print(f"[TulsaPAC] members/events/buy returned {br.status_code}", flush=True)
         except Exception as e:
-            print(f"[TulsaPAC] members/events/buy fetch error: {e}")
+            print(f"[TulsaPAC] members/events/buy fetch error: {e}", flush=True)
 
         # ── 2. Detail + dates: /api/admin/v2/events (paginated) ──
         # Build two indexes because different API versions key the events
@@ -2023,7 +2034,7 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
                     params['page'] = page_num
                 er = await client.get(f'{base}/api/admin/v2/events', params=params)
                 if er.status_code != 200:
-                    print(f"[TulsaPAC] admin/v2/events page {page_num} → {er.status_code}")
+                    print(f"[TulsaPAC] admin/v2/events page {page_num} → {er.status_code}", flush=True)
                     break
 
                 edata       = er.json()
@@ -2055,13 +2066,13 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
                             detail_by_id[str(ev_id)] = ev
 
                 print(f"[TulsaPAC] admin/v2/events page {page_num}: {len(page_events)} records "
-                      f"(cumulative: {len(detail_by_code)} by code, {len(detail_by_id)} by id)")
+                      f"(cumulative: {len(detail_by_code)} by code, {len(detail_by_id)} by id)", flush=True)
 
                 if page_num >= total_pages - 1:
                     break
                 await asyncio.sleep(0.25)
             except Exception as e:
-                print(f"[TulsaPAC] admin/v2/events page {page_num} fetch error: {e}")
+                print(f"[TulsaPAC] admin/v2/events page {page_num} fetch error: {e}", flush=True)
                 break
 
         # ── 3. Venue lookup: /api/admin/v2/venues ──
@@ -2087,13 +2098,13 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
                             'lat':     (v.get('geoLocation') or {}).get('latitude'),
                             'lng':     (v.get('geoLocation') or {}).get('longitude'),
                         }
-                print(f"[TulsaPAC] venues: {len(venue_map)} halls")
+                print(f"[TulsaPAC] venues: {len(venue_map)} halls", flush=True)
         except Exception as e:
-            print(f"[TulsaPAC] venues fetch error: {e}")
+            print(f"[TulsaPAC] venues fetch error: {e}", flush=True)
 
     # ── 4. Filter + enrich ──
     if not buy_items:
-        print("[TulsaPAC] No catalog items — nothing to emit")
+        print("[TulsaPAC] No catalog items — nothing to emit", flush=True)
         return [], True
 
     try:
@@ -2241,7 +2252,8 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
     print(
         f"[TulsaPAC] {len(buy_items)} catalog → {len(events)} emitted "
         f"(skipped: {skipped_filter} non-public, {skipped_nodate} no-date, "
-        f"{skipped_past} past, {skipped_cancel} cancelled)"
+        f"{skipped_past} past, {skipped_cancel} cancelled)",
+        flush=True,
     )
     return events, True
 
