@@ -65,6 +65,7 @@ from scraperExtractors import (
     extract_seatengine_events,
     extract_rhp_events,
     extract_church_studio_events,
+    extract_carneyfest_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -1368,6 +1369,7 @@ _EXTRACTOR_CHAIN = [
     ("SeatEngine",           extract_seatengine_events),
     ("RHPEvents",            extract_rhp_events),
     ("ChurchStudio",         extract_church_studio_events),
+    ("CarneyFest",           extract_carneyfest_events),
 ]
 
 
