@@ -127,6 +127,9 @@ pub struct User {
     /// Only show family-friendly events
     pub family_friendly_only: bool,
 
+    /// Whether to use smart LLM-based search
+    pub use_smart_search: bool,
+
     /// Tracks if the user has completed the initial preference setup
     pub has_completed_onboarding: bool,
 
@@ -148,8 +151,14 @@ pub struct CreateUser {
     pub price_max: Option<f64>,
     #[serde(default)]
     pub family_friendly_only: bool,
+    #[serde(default = "default_false")]
+    pub use_smart_search: bool,
     #[serde(default)]
     pub has_completed_onboarding: bool,
+}
+
+fn default_false() -> bool {
+    false
 }
 
 /// Request payload for updating user preferences.
@@ -159,6 +168,7 @@ pub struct UpdateUserPreferences {
     pub radius_miles: Option<i32>,
     pub price_max: Option<f64>,
     pub family_friendly_only: Option<bool>,
+    pub use_smart_search: Option<bool>,
     pub has_completed_onboarding: Option<bool>,
 }
 

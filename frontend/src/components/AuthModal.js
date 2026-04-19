@@ -97,7 +97,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 }
             } else {
                 // Sign in
-                const { data, error: authError } = await signInWithPassword(email, password);
+                const { error: authError } = await signInWithPassword(email, password);
 
                 if (authError) {
                     setError(authError.message);

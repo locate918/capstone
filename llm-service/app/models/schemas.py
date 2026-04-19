@@ -65,6 +65,7 @@ class NormalizeResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     user_id: Optional[str] = Field(default=None, alias="userId")
+    use_smart_search: bool = Field(default=False, alias="useSmartSearch")
 
     model_config = ConfigDict(populate_by_name=True)
 

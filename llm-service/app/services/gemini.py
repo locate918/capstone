@@ -106,9 +106,16 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
     Output a valid JSON object with any of the following keys based on the query: 
     q, category, start_date, end_date, price_max, location, family_friendly, outdoor.
     Use null for missing fields.
-    IMPORTANT: If the query contains keywords that are not categories or dates, map them to 'q'. Do not ignore short words like "bad" or "fun".
-    Do not infer categories or dates from proper nouns (e.g. band names, venues). Only extract categories if words like 'concert', 'festival', 'music' appear explicitly.
-    For dates, convert "this weekend" or "tomorrow" to approximate ISO dates based on current context.
+    IMPORTANT:
+    - If the query contains keywords that are not categories or dates, map them to 'q'. 
+    - Do not ignore short words like "bad" or "fun".
+    - If the query mentions a specific price like "under $10" or "$30", extract the number into 'price_max'.
+    - Do not infer categories or dates from proper nouns (e.g. band names, venues). 
+    - Only extract categories if words like 'concert', 'festival', 'music' appear explicitly.
+    - If you extract a category, try to keep 'q' focused on specific keywords (e.g., band names, "events" is redundant if category="music").
+    - IMPORTANT: Do NOT include prepositions or price-related words in 'q' (e.g., exclude "under", "for", "at", "in", "around", "$"). If the user says "music under $10", q should NOT contain "under".
+    - For dates, convert "this weekend" or "tomorrow" to approximate ISO dates based on current context.
+    - If the query is just a single word and matches a category, use both 'q' and 'category'.
     """
 
     client = get_client()
