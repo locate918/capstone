@@ -1966,7 +1966,12 @@ async def extract_tulsapac_events(html: str, source_name: str, url: str = '', fu
 
     Event URL: https://am.ticketmaster.com/tulsapac/event/{id}
     """
-    if 'am.ticketmaster.com/tulsapac' not in url.lower():
+    # Accept either the public marketing site (tulsapac.com) or the
+    # Ticketmaster Account Manager subdomain. The marketing site HTML has no
+    # real event data — only a 9-slide featured carousel. The AM API is the
+    # authoritative source regardless of which URL the user configures.
+    url_l = url.lower()
+    if 'am.ticketmaster.com/tulsapac' not in url_l and 'tulsapac.com' not in url_l:
         return [], False
 
     print(f"[TulsaPAC] Detected Tulsa PAC — using Ticketmaster AM JSON API...")
