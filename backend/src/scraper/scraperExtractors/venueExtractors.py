@@ -1398,16 +1398,25 @@ async def extract_route66_village_events(
 # LIVING ARTS OF TULSA -- WordPress / Elementor Exhibitions Page
 # ============================================================================
 # Site:    https://livingarts.org/exhibitions/
-# Method:  httpx -- WP/Elementor static HTML
-# Structure (text-node order after '2026 Exhibition Calendar'):
-#   'January 2-17'          <- date range line
-#   '24 Hours of Wonder'    <- title (may appear twice due to Elementor)
-#   '24 Hours of Wonder'    <- duplicate -- skip
-#   'description text...'  <- description
-#   'Contours of Time'      <- second exhibition shares same date range
-#   'February 6-March 14'   <- next date range
-#   ...
-# Date ranges: 'Month D-D', 'Month D-Month D' (start/end)
+# Method:  httpx — WP + Astra + Elementor, fully server-rendered HTML.
+# Structure (2026 recon):
+#   The /exhibitions/ page is a manually-built Elementor layout — NOT rendered
+#   by the MEC events plugin (which powers /calendar/ and /events/ instead).
+#   Each exhibition date-block lives in one <section class="elementor-top-section">
+#   with a unique data-id. Within each top-section:
+#     - An icon-list widget holds the date range ("January 2-17",
+#       "February 6-March 14", etc.) — no year in the string; year lives only
+#       in the "2026 EXHIBITION CALENDAR" h2 above.
+#     - A heading widget (one per exhibition) holds the title. Some date-blocks
+#       host TWO simultaneous exhibitions in different galleries (e.g. January
+#       had "24 Hours of Wonder" + "Contours of Time"), so a single top-section
+#       may contain multiple heading widgets — each is its own exhibition
+#       sharing the same date range.
+#     - Text-editor widget holds the description.
+#     - Button widget (optional) holds the catalogue/ticket link.
+#     - Images are CSS background-image on .elementor-widget-wrap, NOT <img>.
+#   Date format uses ASCII hyphens only (no bullets, en-dashes, em-dashes).
+#   No past/current/upcoming markers in the DOM — status is derived from date.
 # Venue:   Living Arts of Tulsa / 307 E Reconciliation Way, Tulsa, OK 74120
 # ============================================================================
 
@@ -1422,43 +1431,100 @@ _LA_MONTH_MAP = {
     'sep':9,'oct':10,'nov':11,'dec':12,
 }
 
-# Matches: 'January 2-17', 'February 6-March 14', 'April 3-May 23', 'August 7-22'
+# Matches "January 2-17", "February 6-March 14", "August 7-22", or bare
+# "December 4". Hyphen separator is required for ranges. Any end day without
+# an explicit end month inherits the start month.
 _LA_DATE_RANGE_RE = re.compile(
     r'^(january|february|march|april|may|june|july|august|september|october|november|december)'
     r'\s+(\d{1,2})'
     r'(?:\s*-\s*(?:(january|february|march|april|may|june|july|august|september|october|november|december)\s+)?(\d{1,2}))?'
-    r'$',
+    r'\s*$',
     re.IGNORECASE
 )
 
-# Skip these footer/nav text nodes
-_LA_SKIP_TEXTS = {
-    'donate', 'quick links', 'contact us', 'who we are', 'opportunities',
-    'calendar', 'exhibitions & programming', 'special programs & events',
-    'rental', 'weekly newsletter', 'plan your visit by reviewing our amazing exhibition lineup for this year.',
-}
+# Page-level heading used to pull out the calendar year. Matches things like
+# "2026 Exhibition Calendar" or "2026 EXHIBITION CALENDAR".
+_LA_YEAR_HEADING_RE = re.compile(
+    r'(20\d{2})\s+EXHIBITION\s+CALENDAR',
+    re.IGNORECASE
+)
+
+# CSS background-image URL extraction (images are never <img> on this page)
+_LA_BG_IMAGE_RE = re.compile(
+    r'background-image\s*:\s*url\(\s*(["\']?)([^)"\']+?)\1\s*\)',
+    re.IGNORECASE
+)
 
 
 def _la_parse_date_range(line: str, year: int) -> tuple:
+    """Parse 'January 2-17', 'February 6-March 14', or 'December 4' into a
+    (start_dt, end_dt) tuple. If only one day is given, start == end."""
     m = _LA_DATE_RANGE_RE.match(line.strip())
     if not m:
         return None, None
+
     start_month = _LA_MONTH_MAP.get(m.group(1).lower())
-    start_day   = int(m.group(2))
-    if m.group(4):  # has end day
+    if not start_month:
+        return None, None
+    try:
+        start_day = int(m.group(2))
+    except (ValueError, TypeError):
+        return None, None
+
+    if m.group(4):  # has an end-day
         end_month = _LA_MONTH_MAP.get(m.group(3).lower()) if m.group(3) else start_month
-        end_day   = int(m.group(4))
+        if not end_month:
+            return None, None
+        try:
+            end_day = int(m.group(4))
+        except (ValueError, TypeError):
+            return None, None
     else:
         end_month = start_month
         end_day   = start_day
+
     try:
         start_dt = datetime(year, start_month, start_day)
-        end_dt   = datetime(year, end_month, end_day)
-        if end_dt < start_dt:  # cross-year range
-            end_dt = datetime(year + 1, end_month, end_day)
+        end_dt   = datetime(year, end_month, end_day, 23, 59)
+        # If end precedes start, range crosses year boundary (Dec 28-Jan 5)
+        if end_dt < start_dt:
+            end_dt = datetime(year + 1, end_month, end_day, 23, 59)
         return start_dt, end_dt
     except (ValueError, TypeError):
         return None, None
+
+
+def _la_extract_year(soup) -> int:
+    """Pull the calendar year from the '2026 Exhibition Calendar' heading.
+    Falls back to current year if no match."""
+    # Scan all heading-ish elements
+    for el in soup.find_all(['h1', 'h2', 'h3', 'h4']):
+        m = _LA_YEAR_HEADING_RE.search(el.get_text(' ', strip=True))
+        if m:
+            return int(m.group(1))
+    # Last resort: scan entire page text
+    m = _LA_YEAR_HEADING_RE.search(soup.get_text(' ', strip=True))
+    return int(m.group(1)) if m else datetime.now().year
+
+
+def _la_find_bg_image(scope) -> str:
+    """Find the first CSS background-image URL in any element's inline style
+    within the given scope (section or column). Checks the scope element
+    itself as well as its descendants, since column-level styles often
+    live on the column tag directly."""
+    # Check the scope's own style first
+    if hasattr(scope, 'get'):
+        own_style = scope.get('style') or ''
+        if own_style:
+            m = _LA_BG_IMAGE_RE.search(own_style)
+            if m:
+                return m.group(2).strip()
+    # Then descendants
+    for el in scope.find_all(style=True):
+        m = _LA_BG_IMAGE_RE.search(el.get('style', ''))
+        if m:
+            return m.group(2).strip()
+    return ''
 
 
 async def extract_living_arts_events(
@@ -1466,13 +1532,17 @@ async def extract_living_arts_events(
 ) -> tuple:
     """
     Extract exhibitions from Living Arts of Tulsa (livingarts.org/exhibitions/).
-    Walks text nodes after the current year section header, pairing each
-    date-range line with the title(s) that follow it.
+
+    Uses DOM structure rather than flat-text walking: each exhibition occupies
+    a top-level Elementor section with a date-range icon-list and one or more
+    heading widgets. Some sections host multiple simultaneous exhibitions in
+    different galleries — all heading widgets within a section share the
+    section's date range.
     """
-    if 'livingarts.org' not in url.lower():
+    if 'livingarts.org' not in url.lower() or '/exhibitions' not in url.lower():
         return [], False
 
-    print(f'[LivingArts] Detected Living Arts exhibitions page...')
+    print(f'[LivingArts] Detected Living Arts exhibitions page...', flush=True)
 
     if not html or 'livingarts' not in html.lower():
         try:
@@ -1481,145 +1551,141 @@ async def extract_living_arts_events(
                 resp.raise_for_status()
                 html = resp.text
         except Exception as exc:
-            print(f'[LivingArts] Fetch error: {exc}')
+            print(f'[LivingArts] Fetch error: {exc}', flush=True)
             return [], False
 
     soup  = BeautifulSoup(html, 'html.parser')
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    year  = _la_extract_year(soup)
+    print(f'[LivingArts] Using calendar year {year}', flush=True)
 
-    # Find the current year section heading (e.g. '2026 Exhibition Calendar')
-    target_year = today.year
-    year_h2 = None
-    for h2 in soup.find_all('h2'):
-        if str(target_year) in h2.get_text():
-            year_h2 = h2
-            break
-    if not year_h2:
-        # Fallback: try next year
-        for h2 in soup.find_all('h2'):
-            if str(target_year + 1) in h2.get_text():
-                year_h2 = h2
-                target_year += 1
-                break
-    if not year_h2:
-        print(f'[LivingArts] Could not find year section')
-        return [], False
+    events    = []
+    seen_keys = set()
+    skipped_no_date  = 0
+    skipped_no_title = 0
+    skipped_past     = 0
 
-    # Use get_text() on the full page and slice between year marker and DONATE
-    # This is more reliable than find_all_next() on deeply nested Elementor divs.
-    full_text = soup.get_text(separator='\n')
-    year_marker = f'{target_year} Exhibition Calendar'
-    year_idx = full_text.find(year_marker)
-    if year_idx == -1:
-        print(f'[LivingArts] Year marker not found in text')
-        return [], False
-    section_text = full_text[year_idx + len(year_marker):]
-    # Stop at DONATE or Quick Links (footer)
-    for stop in ['DONATE', 'Quick Links', 'Made By Symmetric']:
-        idx = section_text.find(stop)
-        if idx != -1:
-            section_text = section_text[:idx]
-            break
+    # Every exhibition date-block is a top-level Elementor section with a
+    # unique data-id. Filter to those that actually contain a date widget
+    # (the /exhibitions/ page also has header/footer top-sections).
+    top_sections = soup.select('section.elementor-top-section[data-id]')
+    print(f'[LivingArts] Found {len(top_sections)} top-level section(s)', flush=True)
 
-    raw_nodes = [l.strip() for l in section_text.splitlines() if l.strip()]
+    for section in top_sections:
+        date_widget = section.select_one(
+            '.elementor-widget-icon-list .elementor-icon-list-text'
+        )
+        if not date_widget:
+            continue  # not an exhibition section (header/footer/etc.)
 
-    # De-duplicate consecutive identical lines (Elementor renders titles twice)
-    deduped = []
-    for t in raw_nodes:
-        if deduped and deduped[-1] == t:
-            continue
-        deduped.append(t)
-
-    print(f'[LivingArts] {len(deduped)} lines in {target_year} section')
-
-    # Walk lines: state machine — date range sets context, next short lines are titles
-    # No h4 whitelist needed — we just rely on line length and position.
-    events      = []
-    seen_keys   = set()
-    curr_start  = None
-    curr_end    = None
-
-    # Titles are short; descriptions are long. Max title length chosen to fit
-    # the longest real title ('Dia de los Muertos Arts Festival & Exhibition' = 45 chars)
-    # while excluding leading-description fragments.
-    TITLE_MAX_LEN = 50
-    TITLE_MIN_LEN = 4
-
-    SKIP_LINES = {
-        'plan your visit by reviewing our amazing exhibition lineup for this year.',
-        'donate', 'quick links', 'contact us', 'who we are', 'opportunities',
-        'calendar', 'exhibitions & programming', 'special programs & events',
-        'rental', 'weekly newsletter', 'art market', 'art market.',
-        'read more', 'check out the online catalogue here!',
-        'check out the catalogue!', 'buy tickets to the fundraising gala here!',
-        'sign up', 'accordion #1',
-    }
-    # Also skip lines starting with sentence-fragments (description continuations)
-    SKIP_STARTS = ('by ', 'as a ', 'as an ', 'it ', 'through ', 'this ', 'in ', 'the ')
-
-    i = 0
-    while i < len(deduped):
-        line = deduped[i]
-
-        # Check if it's a date range
-        start_dt, end_dt = _la_parse_date_range(line, target_year)
-        if start_dt:
-            curr_start = start_dt
-            curr_end   = end_dt
-            i += 1
+        date_text = date_widget.get_text(' ', strip=True)
+        start_dt, end_dt = _la_parse_date_range(date_text, year)
+        if not start_dt:
+            skipped_no_date += 1
+            print(f'[LivingArts] Unparseable date: {date_text!r}', flush=True)
             continue
 
-        # Skip junk lines
-        if line.lower() in SKIP_LINES or len(line) < TITLE_MIN_LEN:
-            i += 1
+        # Past-event filter — exhibition is past once its end date has passed
+        if future_only and end_dt.date() < today.date():
+            skipped_past += 1
             continue
 
-        # Must have a date context to emit an event
-        if not curr_start:
-            i += 1
-            continue
+        # Find all heading widgets in this section. Some blocks host two
+        # simultaneous exhibitions in different galleries (e.g. January had
+        # "24 Hours of Wonder" + "Contours of Time"), so each heading becomes
+        # its own event sharing the section's date range.
+        heading_widgets = section.select('.elementor-widget-heading')
 
-        # If line is short enough to be a title, emit it as an event
-        if (len(line) <= TITLE_MAX_LEN
-                and not line.lower().startswith(SKIP_STARTS)):
-            title = line
-
-            # Grab description: next non-title, non-date line longer than 40 chars
-            desc = ''
-            for j in range(i + 1, min(i + 5, len(deduped))):
-                d = deduped[j]
-                if _la_parse_date_range(d, target_year)[0]:
-                    break
-                if len(d) > 40 and d.lower() not in SKIP_LINES:
-                    desc = d[:250]
-                    break
-
-            if future_only and (curr_end or curr_start).date() < today.date():
-                i += 1
+        # Filter out the page-title heading if it's somehow nested here
+        # (guard against sections that wrap the "2026 EXHIBITION CALENDAR" h2).
+        valid_headings = []
+        for h in heading_widgets:
+            title_text = h.get_text(' ', strip=True)
+            if not title_text or len(title_text) > 120 or len(title_text) < 3:
                 continue
+            if _LA_YEAR_HEADING_RE.search(title_text):
+                continue
+            # Skip date-only headings (just in case)
+            if _la_parse_date_range(title_text, year)[0]:
+                continue
+            valid_headings.append((h, title_text))
 
-            dedup_key = f"{title.lower()[:60]}|{curr_start.strftime('%Y-%m-%d')}"
-            if dedup_key not in seen_keys:
-                seen_keys.add(dedup_key)
-                events.append({
-                    'title':           title,
-                    'start_time':      curr_start.strftime('%Y-%m-%dT%H:%M:%S'),
-                    'end_time':        curr_end.strftime('%Y-%m-%dT%H:%M:%S') if curr_end and curr_end != curr_start else '',
-                    'venue':           _LA_VENUE,
-                    'venue_address':   _LA_ADDR,
-                    'description':     desc or title,
-                    'source_url':      _LA_SOURCE_URL,
-                    'image_url':       '',
-                    'source_name':     source_name or _LA_VENUE,
-                    'categories':      ['Arts & Culture', 'Exhibition', 'Community'],
-                    'outdoor':         False,
-                    'family_friendly': True,
-                })
-                print(f"[LivingArts] Added: {title} ({curr_start.strftime('%Y-%m-%d')} - {(curr_end or curr_start).strftime('%Y-%m-%d')})")
+        if not valid_headings:
+            skipped_no_title += 1
+            print(f'[LivingArts] No valid title headings for date {date_text!r}',
+                  flush=True)
+            continue
 
-        i += 1
+        # Default fallback link (site URL) — replaced by a button's href if
+        # one exists in the same column as the heading
+        fallback_url = url or _LA_SOURCE_URL
 
-    print(f'[LivingArts] Total exhibitions: {len(events)}')
+        for heading_widget, title in valid_headings:
+            # Scope description / button / image to the heading's column if
+            # possible — otherwise fall back to the whole section. BS4's
+            # find_parent(class_=lambda) doesn't invoke the lambda for
+            # class-matching, so we walk ancestors manually.
+            col = None
+            p = heading_widget
+            for _ in range(15):
+                p = p.parent
+                if p is None:
+                    break
+                p_classes = p.get('class', []) if hasattr(p, 'get') else []
+                if any('elementor-col' in c for c in p_classes):
+                    col = p
+                    break
+            scope = col if col is not None else section
+
+            # Description: first text-editor widget in the column
+            desc = ''
+            desc_widget = scope.select_one('.elementor-widget-text-editor')
+            if desc_widget:
+                desc = desc_widget.get_text(' ', strip=True)[:500]
+
+            # Link: button widget in the column (falls back to page URL)
+            link_el = scope.select_one('.elementor-widget-button a[href], a.elementor-button[href]')
+            link = link_el.get('href', '').strip() if link_el else fallback_url
+            if not link or not link.startswith('http'):
+                link = fallback_url
+
+            # Image: CSS background-image. Check column first (for multi-
+            # exhibition blocks where each col has its own image), fall
+            # back to any image in the top-section if the column has none.
+            image_url = _la_find_bg_image(scope) or _la_find_bg_image(section)
+
+            dedup_key = f"{title.lower()[:60]}|{start_dt.strftime('%Y-%m-%d')}"
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+
+            events.append({
+                'title':           title,
+                'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+                'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S')
+                if end_dt and end_dt != start_dt else '',
+                'venue':           _LA_VENUE,
+                'venue_address':   _LA_ADDR,
+                'description':     desc or title,
+                'source_url':      link,
+                'image_url':       image_url,
+                'source_name':     source_name or _LA_VENUE,
+                'categories':      ['Arts & Culture', 'Exhibition', 'Visual Art'],
+                'outdoor':         False,
+                'family_friendly': True,
+            })
+            print(
+                f"[LivingArts] Added: {title} "
+                f"({start_dt.strftime('%Y-%m-%d')} – {end_dt.strftime('%Y-%m-%d')})",
+                flush=True,
+            )
+
+    print(
+        f'[LivingArts] Total: {len(events)} exhibition(s)  '
+        f'(skipped: {skipped_past} past, {skipped_no_date} no-date, '
+        f'{skipped_no_title} no-title)',
+        flush=True,
+    )
     return events, True
 
 
