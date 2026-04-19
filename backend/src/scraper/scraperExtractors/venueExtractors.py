@@ -686,7 +686,11 @@ async def extract_rhp_events(
             return [], False
 
     soup  = BeautifulSoup(html, 'html.parser')
-    cards = soup.select('.rhpSingleEvent.rhp-event__single-event--list')
+    # Broad selector: catches .rhpSingleEvent on both the homepage widget
+    # (modifier --widget) and the full /events/ page (modifier --list), plus
+    # .rhpEventSeries multi-show cards. Cards without the required title/date
+    # children are skipped silently inside the loop.
+    cards = soup.select('.rhpSingleEvent, .rhpEventSeries')
     print(f"[RHPEvents/{venue_name}] Found {len(cards)} event cards")
 
     today      = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -696,12 +700,15 @@ async def extract_rhp_events(
     seen_keys  = set()
 
     for card in cards:
-        title_el   = card.select_one('.rhp-event__title--list')
-        date_el    = card.select_one('.singleEventDate')
-        time_el    = card.select_one('.rhp-event__time-text--list')
-        tagline_el = card.select_one('.rhp-event__tagline--list')
-        age_el     = card.select_one('.rhp-event__age-restriction--list')
-        a_tag      = card.select_one('a[href]')
+        title_el   = card.select_one('.rhp-event__title--list, .rhp-event__title, h2.rhp-event__title--list, .eventTitleDiv h2')
+        # The date element carries multiple co-equal classes in the live DOM:
+        #   <div class="rhp-event-series-date eventDateList rhp-event__date--list">
+        # Legacy .singleEventDate kept as a fallback in case older widgets use it.
+        date_el    = card.select_one('.rhp-event-series-date, .eventDateList, .rhp-event__date--list, .singleEventDate')
+        time_el    = card.select_one('.rhp-event__time-text--list, .eventDoorStartDate')
+        tagline_el = card.select_one('.rhp-event__tagline--list, .eventTagLine')
+        age_el     = card.select_one('.rhp-event__age-restriction--list, .eventAgeRestriction')
+        a_tag      = card.select_one('a.url[href], a[href*="/event/"], a[href]')
         img        = card.select_one('img')
 
         if not title_el or not date_el:
