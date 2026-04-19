@@ -36,7 +36,17 @@ async def fetch_with_playwright(url: str) -> str:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        # CRITICAL: set timezone_id on the browser context. Default headless Chromium
+        # runs in UTC, so any venue whose calendar widget renders times client-side
+        # (Timely/Starlite, some Squarespace blocks, Google Calendar embeds, etc.)
+        # will display every event as UTC. That makes a 9pm CDT show render as
+        # "2:00am" the next day. Pinning the context to America/Chicago makes the
+        # rendered DOM match what a Tulsa user would see in their browser.
+        context = await browser.new_context(
+            timezone_id="America/Chicago",
+            locale="en-US",
+        )
+        page = await context.new_page()
         await page.set_extra_http_headers(HEADERS)
 
         is_etix = 'etix.com' in url
