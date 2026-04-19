@@ -1306,6 +1306,100 @@ def infer_venue_type_from_google(types: list, name: str) -> str:
 
 
 # ============================================================================
+# ASYNC BRIDGE (gevent-safe)
+# ============================================================================
+#
+# Under gevent, asyncio.run() frequently fails with
+#     "RuntimeError: asyncio.run() cannot be called from a running event loop"
+# because a loop can remain attached to a worker thread across requests.
+# _run_async() builds a fresh loop per call, runs the coroutine, and tears it
+# down — the same pattern already used by /scrape-all and /cron-scrape.
+#
+# _run_scrape_pipeline() folds the fetch + extractor-chain into ONE coroutine
+# so we only need a single loop per /scrape request instead of ~30.
+
+def _run_async(coro):
+    """Run an async coroutine from a sync handler using a fresh event loop."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
+# Ordered extractor chain used by /scrape. Each entry is (log_label, async_fn).
+# Every fn must have signature: (html, source_name, url, future_only) -> (events, detected).
+# First extractor that returns (events, True) with non-empty events wins.
+_EXTRACTOR_CHAIN = [
+    ("EventCalendarApp API", extract_eventcalendarapp),
+    ("Timely API",           extract_timely),
+    ("BOK Center API",       extract_bok_center),
+    ("Circle Cinema",        extract_circle_cinema_events),
+    ("Expo Square API",      extract_expo_square_events),
+    ("Eventbrite API",       extract_eventbrite_api_events),
+    ("Simpleview API",       extract_simpleview_events),
+    ("SiteWrench API",       extract_sitewrench_events),
+    ("RecDesk API",          extract_recdesk_events),
+    ("TicketLeap",           extract_ticketleap_events),
+    ("LibNet API",           extract_libnet_events),
+    ("Philbrook AJAX",       extract_philbrook_events),
+    ("TulsaPAC API",         extract_tulsapac_events),
+    ("RoosterDays",          extract_roosterdays_events),
+    ("TulsaBrunchFest",      extract_tulsabrunchfest_events),
+    ("OKEQ",                 extract_okeq_events),
+    ("Flywheel",             extract_flywheel_events),
+    ("Arvest",               extract_arvest_events),
+    ("TulsaTough",           extract_tulsatough_events),
+    ("Gradient",             extract_gradient_events),
+    ("TFM",                  extract_tulsafarmersmarket_events),
+    ("OKCastle",             extract_okcastle_events),
+    ("BrokenArrow",          extract_broken_arrow_events),
+    ("TulsaZoo",             extract_tulsazoo_events),
+    ("HardRockTulsa",        extract_hardrock_tulsa_events),
+    ("Gypsy",                extract_gypsy_events),
+    ("BadAssRenees",         extract_badass_renees_events),
+    ("Rocklahoma",           extract_rocklahoma_events),
+    ("TulsaOktoberfest",     extract_tulsa_oktoberfest_events),
+]
+
+
+async def _run_scrape_pipeline(url: str, source_name: str, use_playwright: bool, future_only: bool):
+    """
+    Fetch HTML and run the full extractor chain inside a single coroutine.
+    Returns (html, events, methods).
+    """
+    # ── Fetch ────────────────────────────────────────────────────────────
+    if use_playwright:
+        html = await fetch_with_playwright(url)
+    else:
+        html = await fetch_with_httpx(url)
+
+    methods: list = []
+    events: list = []
+
+    # ── Venue-specific extractor chain (first hit wins) ──────────────────
+    for label, fn in _EXTRACTOR_CHAIN:
+        evs, detected = await fn(html, source_name, url, future_only)
+        if detected and evs:
+            events = evs
+            methods.append(f"{label} ({len(events)})")
+            print(f"[{label}] SUCCESS: {len(events)} events")
+            break
+
+    # ── Universal fallback (sync function) ───────────────────────────────
+    if not events:
+        events = extract_events_universal(html, url, source_name)
+        if events and '_extraction_methods' in events[0]:
+            methods = events[0]['_extraction_methods']
+            for e in events:
+                e.pop('_extraction_methods', None)
+
+    return html, events, methods
+
+
+# ============================================================================
 # ROUTE REGISTRATION
 # ============================================================================
 
@@ -1423,228 +1517,15 @@ def register_routes(app):
         save_url(url, source_name, use_playwright)
 
         try:
-            if use_playwright:
-                html = asyncio.run(fetch_with_playwright(url))
-            else:
-                html = asyncio.run(fetch_with_httpx(url))
+            html, events, methods = _run_async(
+                _run_scrape_pipeline(url, source_name, use_playwright, future_only)
+            )
 
-            methods = []
-            events = []
-
-            eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, source_name, url, future_only))
-            if eca_detected and eca_events:
-                events = eca_events
-                methods.append(f"EventCalendarApp API ({len(events)})")
-                print(f"[EventCalendarApp] SUCCESS: {len(events)} events via direct API")
-
-            if not events:
-                timely_events, timely_detected = asyncio.run(extract_timely(html, source_name, url, future_only))
-                if timely_detected and timely_events:
-                    events = timely_events
-                    methods.append(f"Timely API ({len(events)})")
-                    print(f"[Timely] SUCCESS: {len(events)} events via direct API")
-
-            if not events:
-                bok_events, bok_detected = asyncio.run(extract_bok_center(html, source_name, url, future_only))
-                if bok_detected and bok_events:
-                    events = bok_events
-                    methods.append(f"BOK Center API ({len(events)})")
-                    print(f"[BOK Center] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, source_name, url, future_only))
-                if cc_detected and cc_events:
-                    events = cc_events
-                    methods.append(f"Circle Cinema ({len(events)})")
-                    print(f"[CircleCinema] SUCCESS: {len(events)} events")
-
-            if not events:
-                expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, source_name, url, future_only))
-                if expo_detected and expo_events:
-                    events = expo_events
-                    methods.append(f"Expo Square API ({len(events)})")
-                    print(f"[Expo Square] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, source_name, url, future_only))
-                if eb_detected and eb_events:
-                    events = eb_events
-                    methods.append(f"Eventbrite API ({len(events)})")
-                    print(f"[Eventbrite] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, source_name, url, future_only))
-                if sv_detected and sv_events:
-                    events = sv_events
-                    methods.append(f"Simpleview API ({len(events)})")
-                    print(f"[Simpleview] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, source_name, url, future_only))
-                if sw_detected and sw_events:
-                    events = sw_events
-                    methods.append(f"SiteWrench API ({len(events)})")
-                    print(f"[SiteWrench] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, source_name, url, future_only))
-                if rd_detected and rd_events:
-                    events = rd_events
-                    methods.append(f"RecDesk API ({len(events)})")
-                    print(f"[RecDesk] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, source_name, url, future_only))
-                if tl_detected and tl_events:
-                    events = tl_events
-                    methods.append(f"TicketLeap ({len(events)})")
-                    print(f"[TicketLeap] SUCCESS: {len(events)} events")
-
-            if not events:
-                ln_events, ln_detected = asyncio.run(extract_libnet_events(html, source_name, url, future_only))
-                if ln_detected and ln_events:
-                    events = ln_events
-                    methods.append(f"LibNet API ({len(events)})")
-                    print(f"[LibNet] SUCCESS: {len(events)} events via API")
-
-            if not events:
-                pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, source_name, url, future_only))
-                if pb_detected and pb_events:
-                    events = pb_events
-                    methods.append(f"Philbrook AJAX ({len(events)})")
-                    print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
-
-            if not events:
-                tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, source_name, url, future_only))
-                if tpac_detected and tpac_events:
-                    events = tpac_events
-                    methods.append(f"TulsaPAC API ({len(events)})")
-                    print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
-
-            if not events:
-                rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, source_name, url, future_only))
-                if rd_detected and rd_ev:
-                    events = rd_ev
-                    methods.append(f"RoosterDays ({len(events)})")
-                    print(f"[RoosterDays] SUCCESS: {len(events)} event")
-
-            if not events:
-                tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, source_name, url, future_only))
-                if tbf_detected and tbf_ev:
-                    events = tbf_ev
-                    methods.append(f"TulsaBrunchFest ({len(events)})")
-                    print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
-
-            if not events:
-                okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, source_name, url, future_only))
-                if okeq_detected and okeq_ev:
-                    events = okeq_ev
-                    methods.append(f"OKEQ ({len(events)})")
-                    print(f"[OKEQ] SUCCESS: {len(events)} events")
-
-            if not events:
-                flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, source_name, url, future_only))
-                if flywheel_detected and flywheel_ev:
-                    events = flywheel_ev
-                    methods.append(f"Flywheel ({len(events)})")
-                    print(f"[Flywheel] SUCCESS: {len(events)} events")
-
-            if not events:
-                arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, source_name, url, future_only))
-                if arvest_detected and arvest_ev:
-                    events = arvest_ev
-                    methods.append(f"Arvest ({len(events)})")
-                    print(f"[Arvest] SUCCESS: {len(events)} events")
-
-            if not events:
-                tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, source_name, url, future_only))
-                if tt_detected and tt_ev:
-                    events = tt_ev
-                    methods.append(f"TulsaTough ({len(events)})")
-                    print(f"[TulsaTough] SUCCESS: {len(events)} events")
-
-            if not events:
-                gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, source_name, url, future_only))
-                if gradient_detected and gradient_ev:
-                    events = gradient_ev
-                    methods.append(f"Gradient ({len(events)})")
-                    print(f"[Gradient] SUCCESS: {len(events)} events")
-
-            if not events:
-                tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, source_name, url, future_only))
-                if tfm_detected and tfm_ev:
-                    events = tfm_ev
-                    methods.append(f"TFM ({len(events)})")
-                    print(f"[TFM] SUCCESS: {len(events)} events")
-
-            if not events:
-                okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, source_name, url, future_only))
-                if okcastle_detected and okcastle_ev:
-                    events = okcastle_ev
-                    methods.append(f"OKCastle ({len(events)})")
-                    print(f"[OKCastle] SUCCESS: {len(events)} events")
-
-            if not events:
-                ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, source_name, url, future_only))
-                if ba_detected and ba_ev:
-                    events = ba_ev
-                    methods.append(f"BrokenArrow ({len(events)})")
-                    print(f"[BrokenArrow] SUCCESS: {len(events)} events")
-
-            if not events:
-                zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, source_name, url, future_only))
-                if zoo_detected and zoo_ev:
-                    events = zoo_ev
-                    methods.append(f"TulsaZoo ({len(events)})")
-                    print(f"[TulsaZoo] SUCCESS: {len(events)} events")
-
-            if not events:
-                hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, source_name, url, future_only))
-                if hr_detected and hr_ev:
-                    events = hr_ev
-                    methods.append(f"HardRockTulsa ({len(events)})")
-                    print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
-
-            if not events:
-                gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, source_name, url, future_only))
-                if gypsy_detected and gypsy_ev:
-                    events = gypsy_ev
-                    methods.append(f"Gypsy ({len(events)})")
-                    print(f"[Gypsy] SUCCESS: {len(events)} events")
-
-            if not events:
-                bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, source_name, url, future_only))
-                if bar_detected and bar_ev:
-                    events = bar_ev
-                    methods.append(f"BadAssRenees ({len(events)})")
-                    print(f"[BadAssRenees] SUCCESS: {len(events)} events")
-
-            if not events:
-                rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, source_name, url, future_only))
-                if rl_detected and rl_ev:
-                    events = rl_ev
-                    methods.append(f"Rocklahoma ({len(events)})")
-                    print(f"[Rocklahoma] SUCCESS: {len(events)} events")
-
-            if not events:
-                ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, source_name, url, future_only))
-                if ok_detected and ok_ev:
-                    events = ok_ev
-                    methods.append(f"TulsaOktoberfest ({len(events)})")
-                    print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
-
-            if not events:
-                events = extract_events_universal(html, url, source_name)
-
-                if events and '_extraction_methods' in events[0]:
-                    methods = events[0]['_extraction_methods']
-                    for e in events:
-                        e.pop('_extraction_methods', None)
-
-            # ── FIX: Apply future date filter to universal extraction results ──
+            # ── Apply future-date filter to extraction results ──────────────
+            # (Individual extractors already honour future_only; this protects
+            # the universal fallback and handles year-wrap edge cases.)
             if future_only and events:
                 from dateutil import parser as date_parser
-                from datetime import timedelta
                 now = datetime.now()
                 cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 filtered = []
@@ -1655,23 +1536,20 @@ def register_routes(app):
                         continue
                     try:
                         dt = date_parser.parse(str(date_str), fuzzy=True)
-                        # FIX: Strip timezone info to avoid TypeError comparing tz-aware vs naive
+                        # Strip timezone info to avoid TypeError comparing tz-aware vs naive
                         dt = dt.replace(tzinfo=None)
-                        # FIX: Year-bumping - only bump if >270 days in past (likely year wrap)
-                        # e.g., "Jan 5" parsed in November should become next year's Jan 5
-                        # But "Feb 6" parsed in March should NOT become next year
+                        # Year-bumping - only bump if >270 days in past (likely year wrap)
                         if dt < cutoff:
                             days_past = (cutoff - dt).days
                             if days_past > 270:
-                                # Likely a year wrap - bump to next year
                                 dt = dt.replace(year=dt.year + 1)
                                 ev['date'] = dt.strftime('%b %d, %Y')
                                 if dt >= cutoff:
                                     filtered.append(ev)
                             else:
                                 # Start is in the past — check end_date before dropping.
-                                # Multi-day events (e.g. started Mar 16, ends Mar 22) should
-                                # be kept if the end date is still in the future.
+                                # Multi-day events (e.g. started Mar 16, ends Mar 22)
+                                # should be kept if the end date is still in the future.
                                 end_str = ev.get('end_date', '') or ev.get('end_time', '') or ev.get('date_end', '')
                                 if end_str:
                                     try:
@@ -1692,6 +1570,7 @@ def register_routes(app):
                     print(f"[FutureFilter] Found: {len(events)}, Kept: {len(filtered)}, Dropped: {dropped} past events")
                 events = filtered
 
+            # ── Persist raw HTML for debugging ──────────────────────────────
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = re.sub(r'[^\w\-]', '_', source_name)
             filename = f"{safe_name}_{timestamp}.html"
@@ -1850,7 +1729,7 @@ def register_routes(app):
             }
 
         try:
-            result = asyncio.run(asyncScraper.scrape_one_standalone(entry))
+            result = _run_async(asyncScraper.scrape_one_standalone(entry))
             return jsonify({
                 'url':          result['url'],
                 'name':         result['name'],
@@ -2295,7 +2174,7 @@ def register_routes(app):
 
                         if (missing_address or missing_website or missing_coords) and GOOGLE_PLACES_API_KEY:
                             try:
-                                result = asyncio.run(lookup_venue_google_places(venue_data['name'], 'Tulsa, OK'))
+                                result = _run_async(lookup_venue_google_places(venue_data['name'], 'Tulsa, OK'))
                                 if 'error' not in result:
                                     patch_data = {}
                                     if missing_address and result.get('address'):
@@ -2603,7 +2482,7 @@ def register_routes(app):
             return jsonify({'error': 'Google Places API key not configured. Add GOOGLE_PLACES_API_KEY to .env'}), 500
 
         try:
-            result = asyncio.run(lookup_venue_google_places(venue_name, city))
+            result = _run_async(lookup_venue_google_places(venue_name, city))
 
             if result.get('types'):
                 result['inferred_type'] = infer_venue_type_from_google(result['types'], venue_name)
