@@ -10,8 +10,66 @@ Previously, non-TNEW sites returned HTML which caused JSON parse errors.
 """
 
 import json
+import os
 import httpx
 from scraperUtils import HEADERS
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Residential proxy routing
+# ──────────────────────────────────────────────────────────────────────
+# Some venues sit behind enterprise bot managers (Akamai, Cloudflare Bot
+# Management, PerimeterX, etc.) that silently block ALL traffic from
+# datacenter IPs — including Railway, AWS, GCP, and every other major
+# cloud provider. No amount of UA spoofing, cookie bootstrapping, or
+# TLS mimicry gets past this; the only real fix is to egress through
+# a residential IP.
+#
+# When RESIDENTIAL_PROXY_URL is set (via Railway env vars or local
+# .env), Playwright requests to flagged hostnames route through that
+# proxy. Everything else continues to egress directly — no unnecessary
+# proxy cost for venues that work fine from datacenter IPs.
+#
+# Setup (one-time):
+#   1. Sign up at webshare.io (free tier, 1GB/mo) or iproyal.com
+#      (pay-per-GB, ~$1.75/GB)
+#   2. Set three env vars in Railway:
+#        RESIDENTIAL_PROXY_URL   = http://proxy.provider.com:12321
+#        RESIDENTIAL_PROXY_USER  = your-username
+#        RESIDENTIAL_PROXY_PASS  = your-password
+#   3. Redeploy. TPAC (and any other domain in _PROXY_VENUES) now
+#      routes through the residential IP.
+
+# Hostnames that require residential egress. Substring match against
+# the URL. Add new entries here as you discover bot-blocked venues.
+_PROXY_VENUES: tuple = (
+    'am.ticketmaster.com',   # Tulsa PAC (Akamai Bot Manager)
+)
+
+
+def _proxy_for_url(url: str) -> dict | None:
+    """Return a Playwright `proxy=` config dict for URLs that need residential
+    egress, or None to egress directly. Gated on RESIDENTIAL_PROXY_URL env var:
+    if that's unset, always returns None (no behavior change for anyone who
+    hasn't wired up a provider)."""
+    if not url:
+        return None
+    server = os.getenv('RESIDENTIAL_PROXY_URL', '').strip()
+    if not server:
+        return None
+
+    url_l = url.lower()
+    if not any(host in url_l for host in _PROXY_VENUES):
+        return None
+
+    cfg: dict = {'server': server}
+    user = os.getenv('RESIDENTIAL_PROXY_USER', '').strip()
+    pw   = os.getenv('RESIDENTIAL_PROXY_PASS', '').strip()
+    if user:
+        cfg['username'] = user
+    if pw:
+        cfg['password'] = pw
+    return cfg
 
 
 async def fetch_with_httpx(url: str) -> str:
@@ -42,10 +100,23 @@ async def fetch_with_playwright(url: str) -> str:
         # will display every event as UTC. That makes a 9pm CDT show render as
         # "2:00am" the next day. Pinning the context to America/Chicago makes the
         # rendered DOM match what a Tulsa user would see in their browser.
-        context = await browser.new_context(
-            timezone_id="America/Chicago",
-            locale="en-US",
-        )
+        #
+        # Also: check whether this URL needs residential-proxy egress (for
+        # venues behind enterprise bot managers that hard-block datacenter IPs).
+        # Returns None when RESIDENTIAL_PROXY_URL env isn't set — zero behavior
+        # change for anyone not using a proxy provider.
+        proxy_cfg = _proxy_for_url(url)
+        if proxy_cfg:
+            print(f"[Fetcher] Routing through residential proxy for {url}", flush=True)
+
+        context_kwargs: dict = {
+            "timezone_id": "America/Chicago",
+            "locale":      "en-US",
+        }
+        if proxy_cfg:
+            context_kwargs["proxy"] = proxy_cfg
+
+        context = await browser.new_context(**context_kwargs)
         page = await context.new_page()
         await page.set_extra_http_headers(HEADERS)
 
