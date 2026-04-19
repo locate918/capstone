@@ -896,61 +896,85 @@ def _cs_scan_for_date(text: str, today: datetime) -> datetime | None:
     return None
 
 
-def _cs_extract_title(section) -> str:
-    """Find the best title from an Elementor section. Prefer headings; skip
-    junk labels, date-only strings, and the venue name itself."""
-    today = datetime.now()
+def _cs_classify_text_widget(text: str, today: datetime) -> str:
+    """Classify a text-editor widget's text content for Church Studio events.
 
-    # Pass 1: headings in order
-    for heading in section.select('h1, h2, h3, h4, h5, h6'):
-        t = heading.get_text(' ', strip=True)
-        if not t or len(t) > 200:
-            continue
-        if _CS_JUNK_TITLE_RE.match(t):
-            continue
-        # Skip bare day-of-week headings ("Tuesday")
-        if _CS_DOW_ONLY_RE.match(t):
-            continue
-        # Skip date-only headings (e.g. "Tuesday, May 5, 2026")
-        stripped_no_date = _CS_DATE_SCAN_RE.sub('', t).strip(' ,.')
-        if len(stripped_no_date) < 4:
-            continue
-        if 'church studio' == t.lower().strip():
-            continue
-        # Title-case ALL-CAPS headings
-        return t if t != t.upper() else t.title()
+    Returns one of:
+      'empty'    — nothing usable
+      'date'     — matches a date/DOW fragment (FRIDAY, JULY 17, Tuesday May 5 2026, etc.)
+      'junk'     — button label or venue boilerplate
+      'title'    — looks like an event title (short, not a date, not junk)
+      'desc'     — long paragraph, likely a description
+    """
+    if not text:
+        return 'empty'
+    t = text.strip()
+    if len(t) < 3:
+        return 'empty'
 
-    # Pass 2: heading-like Elementor widgets as a fallback
-    for el in section.select('[data-widget_type*="heading"]'):
-        t = el.get_text(' ', strip=True)
-        if not t or len(t) > 200:
-            continue
-        if _CS_JUNK_TITLE_RE.match(t):
-            continue
-        if _CS_DOW_ONLY_RE.match(t):
-            continue
-        if _cs_scan_for_date(t, today):
-            # Date-only widget — skip
-            stripped_no_date = _CS_DATE_SCAN_RE.sub('', t).strip(' ,.')
-            if len(stripped_no_date) < 4:
-                continue
-        return t if t != t.upper() else t.title()
+    # Pure day-of-week fragment
+    if _CS_DOW_ONLY_RE.match(t):
+        return 'date'
 
-    return ''
+    # Contains a parseable month-day (with or without DOW/year) and no other content
+    stripped_no_date = _CS_DATE_SCAN_RE.sub('', t).strip(' ,.')
+    # Also strip DOW prefix
+    stripped_no_date = re.sub(
+        r'^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)[.,\s]+',
+        '', stripped_no_date, flags=re.IGNORECASE,
+    ).strip(' ,.')
+    # Trailing time (5:30 PM, 10:00 AM)
+    stripped_no_date = re.sub(
+        r'\d{1,2}:\d{2}\s*(?:am|pm)\.?$',
+        '', stripped_no_date, flags=re.IGNORECASE,
+    ).strip(' ,.')
+    if _cs_scan_for_date(t, today) and len(stripped_no_date) < 4:
+        return 'date'
+
+    # Junk button labels / venue boilerplate
+    if _CS_JUNK_TITLE_RE.match(t):
+        return 'junk'
+
+    # Length-based title vs description split
+    if len(t) <= 140:
+        return 'title'
+    return 'desc'
 
 
-def _cs_extract_description(section, title: str) -> str:
-    """First substantive paragraph in a section, excluding the title itself."""
-    for p in section.select('p, [data-widget_type="text-editor.default"]'):
-        t = p.get_text(' ', strip=True)
-        if not t or len(t) < 30:
-            continue
-        if t == title or t.startswith(title):
-            continue
-        if _CS_JUNK_TITLE_RE.match(t):
-            continue
-        return t[:400]
-    return ''
+def _cs_extract_title_and_desc(scope, today: datetime) -> tuple:
+    """Walk text-editor and heading widgets in DOM order within scope, returning
+    (title, description). Handles Church Studio's layout where EVERYTHING
+    (date, title, description) is rendered as separate text-editor widgets
+    with no <h*> tags at all.
+
+    Title = first widget that classifies as 'title' (short, non-date, non-junk).
+    Description = first widget that classifies as 'desc' (long paragraph)
+                  appearing after the title.
+    """
+    title = ''
+    desc  = ''
+
+    # Elementor's text-editor widget is the primary carrier. Some layouts
+    # also have heading widgets; include both and walk in document order.
+    widgets = scope.select(
+        '[data-widget_type="text-editor.default"], '
+        '[data-widget_type="heading.default"], '
+        '.elementor-widget-text-editor, '
+        '.elementor-widget-heading'
+    )
+
+    for w in widgets:
+        text = w.get_text(' ', strip=True)
+        klass = _cs_classify_text_widget(text, today)
+
+        if klass == 'title' and not title:
+            # Title-case all-caps titles for display
+            title = text if text != text.upper() else text.title()
+        elif klass == 'desc' and title and not desc:
+            desc = text[:400]
+            break
+
+    return title, desc
 
 
 async def extract_church_studio_events(
@@ -1008,18 +1032,17 @@ async def extract_church_studio_events(
         if href in seen_urls:
             continue
 
-        # Walk up looking for the tightest event-wrapping scope.
+        # Walk up to the tightest event-wrapping scope.
         #
         # Elementor's layout hierarchy is: section > row > COLUMN > widget.
-        # When a section contains multiple events side-by-side (which happens
-        # on Church Studio's events page — HIT LIST and Speaker Wars share one
-        # section), each event lives in its own .elementor-column. Walking up
-        # to <section> would return the COMBINED text of both events, making
-        # it impossible to tell which date/title goes with which ticket link.
-        # Scope to the column instead.
+        # Column scope is CRITICAL for Church Studio: sections frequently host
+        # multiple events side-by-side (recon confirmed HIT LIST + Speaker Wars
+        # share section 7dca08b, with each event in its own column). Walking
+        # up to <section> would return the combined widget set of both events,
+        # making it impossible to tell which title/date goes with which link.
         #
-        # Fall back to <section> for layouts where each event has its own
-        # section (single-column-per-section case).
+        # Fall back to <section> only if no column is found (shouldn't happen
+        # on Elementor pages, but safe default).
         column  = None
         section = None
         p = a
@@ -1040,31 +1063,32 @@ async def extract_church_studio_events(
             skipped_no_section += 1
             continue
 
-        # Title
-        title = _cs_extract_title(scope)
+        # Title + description from text-editor widgets in column DOM order.
+        # Church Studio's page has NO <h*> tags — everything is text-editor.
+        title, desc = _cs_extract_title_and_desc(scope, today)
         if not title:
             skipped_no_title += 1
             continue
 
-        # Date — scan the full scope's text (handles split-widget dates like
-        # "FRIDAY" in one widget and "JULY 17" in the next; .get_text() with
-        # a space separator joins them into one string before the date regex).
+        # Date — scan the full scope's text. Split-widget dates ("FRIDAY" +
+        # "JULY 17") become one string via get_text(' '). Year-explicit
+        # matches are preferred over year-less (Speaker Wars has both
+        # "MONDAY JULY 20" and "Mon, July 20, 2026" — the latter wins).
         scope_text = scope.get_text(' ', strip=True)
         start_dt = _cs_scan_for_date(scope_text, today)
         if not start_dt:
-            # Recurring or undated (e.g. "Tunes @ Noon") — skip cleanly
+            # Recurring or undated (e.g. "Tunes @ Noon" standing ticket)
             skipped_no_date += 1
             print(f"[ChurchStudio] Skipping (no date): {title[:70]}", flush=True)
             continue
 
-        # Past event filter — stale ticket links on past-event sections would
-        # otherwise produce pollution
+        # Past-event filter — stale ticket links on past-event sections
+        # would otherwise produce pollution
         if future_only and start_dt.date() < today.date():
             skipped_past += 1
             continue
 
         seen_urls.add(href)
-        desc = _cs_extract_description(scope, title)
 
         events.append({
             'title':           title,
