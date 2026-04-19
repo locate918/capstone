@@ -15,8 +15,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json,
-    Router,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -107,11 +106,11 @@ async fn list_venues(
             WHERE website IS NULL OR website = ''
             ORDER BY name ASC
             LIMIT $1
-            "#
+            "#,
         )
-            .bind(limit)
-            .fetch_all(&pool)
-            .await
+        .bind(limit)
+        .fetch_all(&pool)
+        .await
     } else {
         sqlx::query_as::<_, Venue>(
             r#"
@@ -121,16 +120,16 @@ async fn list_venues(
             FROM venues
             ORDER BY name ASC
             LIMIT $1
-            "#
+            "#,
         )
-            .bind(limit)
-            .fetch_all(&pool)
-            .await
+        .bind(limit)
+        .fetch_all(&pool)
+        .await
     }
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(Json(venues))
 }
 
@@ -138,9 +137,7 @@ async fn list_venues(
 // HANDLER: LIST VENUES MISSING WEBSITE
 // =============================================================================
 
-async fn list_missing_websites(
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<Venue>>, StatusCode> {
+async fn list_missing_websites(State(pool): State<PgPool>) -> Result<Json<Vec<Venue>>, StatusCode> {
     let venues = sqlx::query_as::<_, Venue>(
         r#"
         SELECT id, name, address, city, capacity, venue_type, noise_level,
@@ -149,14 +146,14 @@ async fn list_missing_websites(
         FROM venues
         WHERE website IS NULL OR website = ''
         ORDER BY name ASC
-        "#
+        "#,
     )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(venues))
 }
@@ -176,15 +173,15 @@ async fn get_venue(
                latitude, longitude
         FROM venues
         WHERE id = $1
-        "#
+        "#,
     )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     match venue {
         Some(v) => Ok(Json(v)),
@@ -211,22 +208,21 @@ async fn create_venue(
                latitude, longitude
         FROM venues
         WHERE LOWER(name) = LOWER($1)
-        "#
+        "#,
     )
-        .bind(&payload.name)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&payload.name)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     if let Some(venue) = existing {
         // Venue exists — fill in any missing fields (COALESCE keeps existing values)
-        let needs_update =
-            (venue.website.is_none() && payload.website.is_some()) ||
-                (venue.address.is_none() && payload.address.is_some()) ||
-                (venue.latitude.is_none() && payload.latitude.is_some());
+        let needs_update = (venue.website.is_none() && payload.website.is_some())
+            || (venue.address.is_none() && payload.address.is_some())
+            || (venue.latitude.is_none() && payload.latitude.is_some());
 
         if needs_update {
             sqlx::query(
@@ -238,20 +234,20 @@ async fn create_venue(
                     latitude = COALESCE(latitude, $5),
                     longitude = COALESCE(longitude, $6)
                 WHERE id = $1
-                "#
+                "#,
             )
-                .bind(&venue.id)
-                .bind(&payload.address)
-                .bind(&payload.city)
-                .bind(&payload.website)
-                .bind(&payload.latitude)
-                .bind(&payload.longitude)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    eprintln!("Database error: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+            .bind(&venue.id)
+            .bind(&payload.address)
+            .bind(&payload.city)
+            .bind(&payload.website)
+            .bind(&payload.latitude)
+            .bind(&payload.longitude)
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
             // Fetch updated venue
             let updated = sqlx::query_as::<_, Venue>(
@@ -261,15 +257,15 @@ async fn create_venue(
                        latitude, longitude
                 FROM venues
                 WHERE id = $1
-                "#
+                "#,
             )
-                .bind(&venue.id)
-                .fetch_one(&pool)
-                .await
-                .map_err(|e| {
-                    eprintln!("Database error: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
+            .bind(&venue.id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
             return Ok((StatusCode::OK, Json(updated)));
         }
@@ -286,22 +282,22 @@ async fn create_venue(
         r#"
         INSERT INTO venues (id, name, address, city, website, latitude, longitude, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#
+        "#,
     )
-        .bind(&id)
-        .bind(&payload.name)
-        .bind(&payload.address)
-        .bind(&payload.city)
-        .bind(&payload.website)
-        .bind(&payload.latitude)
-        .bind(&payload.longitude)
-        .bind(&now)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&id)
+    .bind(&payload.name)
+    .bind(&payload.address)
+    .bind(&payload.city)
+    .bind(&payload.website)
+    .bind(&payload.latitude)
+    .bind(&payload.longitude)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let venue = Venue {
         id,
@@ -348,26 +344,26 @@ async fn update_venue(
             longitude = COALESCE($11, longitude),
             venue_priority = COALESCE($12, venue_priority)
         WHERE id = $1
-        "#
+        "#,
     )
-        .bind(&id)
-        .bind(&payload.address)
-        .bind(&payload.city)
-        .bind(&payload.capacity)
-        .bind(&payload.venue_type)
-        .bind(&payload.noise_level)
-        .bind(&payload.parking_info)
-        .bind(&payload.accessibility_info)
-        .bind(&payload.website)
-        .bind(&payload.latitude)
-        .bind(&payload.longitude)
-        .bind(&payload.venue_priority)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&id)
+    .bind(&payload.address)
+    .bind(&payload.city)
+    .bind(&payload.capacity)
+    .bind(&payload.venue_type)
+    .bind(&payload.noise_level)
+    .bind(&payload.parking_info)
+    .bind(&payload.accessibility_info)
+    .bind(&payload.website)
+    .bind(&payload.latitude)
+    .bind(&payload.longitude)
+    .bind(&payload.venue_priority)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Fetch and return updated venue
     let venue = sqlx::query_as::<_, Venue>(
@@ -377,15 +373,15 @@ async fn update_venue(
                latitude, longitude, venue_priority
         FROM venues
         WHERE id = $1
-        "#
+        "#,
     )
-        .bind(id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(venue))
 }

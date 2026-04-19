@@ -419,6 +419,57 @@ const VenueSelectorModal = ({ isOpen, onClose, venues, onSelectVenue }) => {
     );
 };
 
+const getLoadingCopy = ({ query, activeTab, selectedVenue }) => {
+    if (query) {
+        return {
+            title: 'Searching events...',
+            subtitle: `Looking for matches for "${query}".`,
+        };
+    }
+
+    if (activeTab === 'savedEvents') {
+        return {
+            title: 'Loading saved events...',
+            subtitle: 'Retrieving your bookmarked events.',
+        };
+    }
+
+    if (activeTab === 'recommended') {
+        return {
+            title: 'Building recommendations...',
+            subtitle: 'Matching upcoming events to your preferences.',
+        };
+    }
+
+    if (activeTab === 'byVenue' && selectedVenue) {
+        return {
+            title: 'Loading venue events...',
+            subtitle: `Fetching upcoming events for ${selectedVenue}.`,
+        };
+    }
+
+    return {
+        title: 'Loading events...',
+        subtitle: 'Retrieving the latest upcoming events from the backend.',
+    };
+};
+
+const DataLoadingOverlay = ({ isVisible, title, subtitle }) => {
+    if (!isVisible) return null;
+
+    return (
+        <div className="fixed inset-0 z-[80] bg-[#08111f]/55 backdrop-blur-sm flex items-center justify-center px-4">
+            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-950/85 px-6 py-8 text-center shadow-2xl">
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/10">
+                    <Loader2 size={28} className="animate-spin text-[#D4AF37]" />
+                </div>
+                <h2 className="text-2xl font-serif text-white">{title}</h2>
+                <p className="mt-2 text-sm text-slate-300">{subtitle}</p>
+            </div>
+        </div>
+    );
+};
+
 // =============================================================================
 // MAIN APP COMPONENT
 // =============================================================================
@@ -447,6 +498,14 @@ export default function App() {
     const [selectedVenue, setSelectedVenue] = useState(null);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
+    const [loadingCopy, setLoadingCopy] = useState(() =>
+        getLoadingCopy({
+            query: '',
+            activeTab: user ? 'savedEvents' : 'thisWeek',
+            selectedVenue: null,
+        })
+    );
 
     // --- HANDLERS ---
 
@@ -607,8 +666,22 @@ export default function App() {
         };
 
         setLoading(true);
+        setLoadingCopy(getLoadingCopy({ query, activeTab, selectedVenue }));
         loadData();
-    }, [query, activeTab, user]);
+    }, [query, activeTab, selectedVenue, user]);
+
+    useEffect(() => {
+        if (!loading || authLoading) {
+            setShowLoadingOverlay(false);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setShowLoadingOverlay(true);
+        }, 180);
+
+        return () => clearTimeout(timer);
+    }, [loading, authLoading]);
 
     // =============================================================================
     // BACKGROUND FETCH: Populate saved events for badge (independent of tab)
@@ -731,6 +804,7 @@ export default function App() {
 
     // Check if date filter is active
     const hasDateFilter = dateFrom || dateTo;
+    const showDataLoadingOverlay = showLoadingOverlay && loading && !authLoading;
 
     // --- PAGE NAVIGATION HANDLERS ---
 
@@ -847,6 +921,11 @@ export default function App() {
     // --- RENDER ---
     return (
         <div className="min-h-screen text-slate-800 bg-[#f8f1e0] bg-premium-pattern selection-gold relative">
+            <DataLoadingOverlay
+                isVisible={showDataLoadingOverlay}
+                title={loadingCopy.title}
+                subtitle={loadingCopy.subtitle}
+            />
 
             {/* ===== ONBOARDING MODAL ===== */}
             <OnboardingModal
@@ -888,6 +967,7 @@ export default function App() {
                     onOpenAuth={() => setIsAuthOpen(true)}
                     onSignOut={handleSignOut}
                     onOpenProfile={handleOpenProfile}
+                    isSearching={Boolean(query) && loading}
                 />
             </div>
 

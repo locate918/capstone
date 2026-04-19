@@ -1,0 +1,14 @@
+# Everyone owns everything by default
+* @ChiCode1 @BentNail86 @Sbeesl @Gameknight06 @superbored2
+
+# Frontend
+/frontend/ @ChiCode1
+
+# Backend
+/backend/ @BentNail86 @Sbeesl
+
+# LLM Service
+/llm-service/ @Gameknight06
+
+# CI/CD
+/.github/ @superbored2

@@ -21,8 +21,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json,
-    Router,
+    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -211,15 +210,15 @@ async fn get_event(
             LIMIT 1
         ) v ON TRUE
         WHERE e.id = $1
-        "#
+        "#,
     )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     match event {
         Some(e) => Ok(Json(e)),
@@ -296,36 +295,36 @@ async fn create_event(
                                ELSE COALESCE(events.canonical_url, EXCLUDED.canonical_url)
                              END,
             updated_at     = NOW()
-        "#
+        "#,
     )
-        .bind(&id)
-        .bind(&payload.title)
-        .bind(&payload.description)
-        .bind(&payload.venue)
-        .bind(&payload.venue_address)
-        .bind(&payload.location)
-        .bind(&payload.source_url)
-        .bind(&payload.source_name)
-        .bind(&payload.start_time)
-        .bind(&payload.end_time)
-        .bind(&payload.categories)
-        .bind(&payload.price_min)
-        .bind(&payload.price_max)
-        .bind(&payload.outdoor)
-        .bind(&payload.family_friendly)
-        .bind(&payload.image_url)
-        .bind(&payload.time_estimated)
-        .bind(&payload.content_hash)
-        .bind(&priority)
-        .bind(&payload.canonical_url)
-        .bind(&now)
-        .bind(&now)
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&id)
+    .bind(&payload.title)
+    .bind(&payload.description)
+    .bind(&payload.venue)
+    .bind(&payload.venue_address)
+    .bind(&payload.location)
+    .bind(&payload.source_url)
+    .bind(&payload.source_name)
+    .bind(&payload.start_time)
+    .bind(&payload.end_time)
+    .bind(&payload.categories)
+    .bind(&payload.price_min)
+    .bind(&payload.price_max)
+    .bind(&payload.outdoor)
+    .bind(&payload.family_friendly)
+    .bind(&payload.image_url)
+    .bind(&payload.time_estimated)
+    .bind(&payload.content_hash)
+    .bind(&priority)
+    .bind(&payload.canonical_url)
+    .bind(&now)
+    .bind(&now)
+    .execute(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Then fetch the event with venue data JOIN
     let event = sqlx::query_as::<_, Event>(
@@ -355,15 +354,15 @@ async fn create_event(
             LIMIT 1
         ) v ON TRUE
         WHERE e.source_url = $1
-        "#
+        "#,
     )
-        .bind(&payload.source_url)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Database error fetching created event: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    .bind(&payload.source_url)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| {
+        eprintln!("Database error fetching created event: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok((StatusCode::OK, Json(event)))
 }
@@ -516,7 +515,9 @@ async fn search_events(
             ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}
         "#,
-        where_clause, bind_index, bind_index + 1
+        where_clause,
+        bind_index,
+        bind_index + 1
     );
 
     // Wrap the dedup query so we can re-sort the deduplicated results
@@ -535,10 +536,10 @@ async fn search_events(
     if let Some(ref q) = params.q {
         let pattern = format!("%{}%", q);
         query_builder = query_builder
-            .bind(pattern.clone())  // title
-            .bind(pattern.clone())  // description
-            .bind(pattern.clone())  // venue
-            .bind(pattern);         // source_name
+            .bind(pattern.clone()) // title
+            .bind(pattern.clone()) // description
+            .bind(pattern.clone()) // venue
+            .bind(pattern); // source_name
     }
 
     if let Some(ref category) = params.category {
@@ -567,13 +568,10 @@ async fn search_events(
 
     query_builder = query_builder.bind(limit).bind(offset);
 
-    let events = query_builder
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            eprintln!("Search error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let events = query_builder.fetch_all(&pool).await.map_err(|e| {
+        eprintln!("Search error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(events))
 }

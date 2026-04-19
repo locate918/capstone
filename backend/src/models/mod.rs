@@ -17,10 +17,10 @@
 // IMPORTS
 // =============================================================================
 
-use chrono::{DateTime, Utc};           // Timestamp handling (timezone-aware)
-use serde::{Deserialize, Serialize};   // JSON serialization/deserialization
-use sqlx::FromRow;                     // Maps database rows to structs
-use uuid::Uuid;                        // Universally unique identifiers
+use chrono::{DateTime, Utc}; // Timestamp handling (timezone-aware)
+use serde::{Deserialize, Serialize}; // JSON serialization/deserialization
+use sqlx::FromRow; // Maps database rows to structs
+use uuid::Uuid; // Universally unique identifiers
 
 // =============================================================================
 // EVENT MODELS
@@ -58,7 +58,6 @@ use uuid::Uuid;                        // Universally unique identifiers
 /// }
 /// ```
 
-
 /// Request payload for creating a new event.
 ///
 /// # Differences from Event
@@ -77,7 +76,6 @@ use uuid::Uuid;                        // Universally unique identifiers
 ///   "categories": ["concerts", "jazz"]
 /// }
 /// ```
-
 
 // =============================================================================
 // USER MODELS
@@ -141,6 +139,7 @@ pub struct User {
 
 /// Request payload for creating a new user.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct CreateUser {
     pub email: String,
     pub name: Option<String>,

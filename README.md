@@ -1,274 +1,138 @@
 <p align="center">
-  <img src="./Locate918.png" alt="locate 918" width="400">
+  <img src="./Locate918.png" alt="Locate918" width="360">
 </p>
 
-# Locate918 - Event Discovery Aggregator
+# Locate918
 
 An AI-powered event aggregator for the Tulsa (918) area that pulls from multiple public sources, uses an LLM to normalize and summarize event information, and matches users to events through natural language preferences.
 
----
+Live site: **https://locate918.com**
 
-## Quick Start
+## Current Status
 
-**Get the database password from a team member, then:**
+The site is deployed and publicly accessible, with the frontend, backend, LLM service, and Supabase-backed data layer all running in production.
 
-```bash
-# 1. Clone the repo
-git clone https://github.com/locate918/capstone.git
-cd capstone
+The product is currently positioned as an **open beta**. Event details are aggregated from multiple public sources, so users should still verify final timing and venue details with the original organizer before attending.
 
-# 2. Start the backend
-cd backend
-cp .env.example .env  # Then add the real password
-cargo run
+## What the Site Does Today
 
-# 3. Start the frontend (new terminal)
-cd frontend
-cp .env.example .env
-npm install
-npm start
+- Aggregates upcoming Tulsa-area events from multiple public sources into one searchable experience
+- Supports **natural-language Smart Search** for queries like `jazz this weekend` or `cheap family events`
+- Includes **Tully**, a streaming AI assistant for conversational event discovery
+- Shows events in both a **card feed** and an **interactive map**
+- Uses **map clustering** and hover-to-highlight behavior to connect the list and the map
+- Lets users browse by **This Week**, **All Events**, **Saved Events**, **Recommended**, and **By Venue**
+- Supports **date-range filtering** and venue-specific browsing
+- Uses **Supabase Auth** for sign up, sign in, and Google OAuth
+- Includes a multi-step **onboarding flow** that captures user interests, location, travel radius, budget, and family-friendly preferences
+- Generates **personalized recommendations** from saved preferences and interaction history
+- Lets signed-in users **save and unsave events**
+- Tracks user interactions to continuously update category preference weights
+- Lets users edit their profile preferences after onboarding
+- Enriches events with **venue websites**, **venue priority**, and **map coordinates** when available
+- Suppresses low-trust aggregator links in the UI and prefers direct venue/canonical links when possible
+- Supports place-aware chat tooling for nearby recommendations beyond events
 
-# 4. Open http://localhost:5173
-```
+## Recently Added / Expanded Features
 
-**No Docker needed!** We use a shared Supabase database.
+Compared with the earlier project phase, the app now includes several shipped features that were not reflected in the old README:
 
----
-
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [How It Works](#how-it-works)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Team Roles](#team-roles)
-- [Getting Started](#getting-started)
-- [Scraper Tool Guide](#scraper-tool-guide)
-- [API Endpoints](#api-endpoints)
-- [Environment Variables](#environment-variables)
-- [Running the Full Stack](#running-the-full-stack)
-- [Troubleshooting](#troubleshooting)
-
----
-
-## Project Overview
-
-**Problem:** Event discovery is fragmented. People miss events because information is scattered across multiple platforms (Eventbrite, Facebook, venue websites), each optimized for promoters rather than attendees.
-
-**Solution:** A unified platform that:
-1. Aggregates events from multiple public sources using our Universal Scraper
-2. Uses AI (Google Gemini) to normalize and summarize event data
-3. Offers **two ways to search**: Smart Search (quick) and Chat with **Tully** (conversational)
-4. Answers contextual questions (weather, directions, venue info)
-5. Links back to original sources, driving traffic to organizers
-
----
-
-## How It Works
-
-### Two Ways to Discover Events
-
-#### 🔍 Smart Search (Quick)
-For users who know what they want. Type a natural language query, get instant results.
-
-```
-"rock concerts this weekend under $30"
-```
-→ Returns a list of matching events immediately. No conversation, just results.
-
-#### 💬 Chat with Tully (Conversational)
-For exploration and discovery. Our AI assistant helps you find the perfect event.
-
-```
-User: "I'm new to Tulsa with my family. What should we do this weekend?"
-
-Tully: "Welcome to Tulsa! Here are some great family activities this weekend:
-
-🎪 Tulsa State Fair - Saturday 10am at Expo Square
-   Perfect for all ages! Rides, food, and live entertainment. $15/person.
-
-🦁 Tulsa Zoo - Open daily 9am-5pm  
-   The new elephant exhibit is amazing! $12 adults, $8 kids.
-
-The weather looks great—sunny and 72°F. Would you like directions to any of these?"
-```
-
-Both interfaces use the same AI backend and event database.
-
----
+- **Production deployment** on `locate918.com`
+- **Authentication and user accounts** with Supabase
+- **Saved events** and bookmark management
+- **Personalized recommendations** powered by onboarding preferences and interaction scoring
+- **Profile editing** for location, radius, budget, and family-friendly settings
+- **Venue-first browsing** with venue selection and event counts
+- **Interactive map clustering** with category-colored pins
+- **Streaming AI chat responses** from Tully
+- **Production CI/CD checks and health-check-based deployment flow**
 
 ## Architecture
 
+```text
+Users
+  |
+  +-- Frontend: React app
+  |     - deployed at locate918.com
+  |
+  +-- Rust API (Axum)
+  |     - event, user, venue, saved-event, and recommendation endpoints
+  |
+  +-- Python LLM Service (FastAPI + Gemini)
+  |     - smart search, chat, normalization, interaction scoring
+  |
+  +-- Supabase
+        - PostgreSQL data store
+        - authentication
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              USER INTERFACES                                │
-│                                                                             │
-│    ┌───────────────────────────┐     ┌───────────────────────────┐        │
-│    │      SMART SEARCH         │     │     CHAT WITH TULLY       │        │
-│    │  "concerts under $30"     │     │  "what's fun this weekend" │        │
-│    └─────────────┬─────────────┘     └─────────────┬─────────────┘        │
-│                  │                                 │                       │
-│                  ▼                                 ▼                       │
-│         React Frontend (:5173)              LLM Service (:8001)           │
-│                  │                                 │                       │
-│                  └─────────────┬─────────────────┘                        │
-│                                ▼                                           │
-│                    ┌─────────────────────┐                                │
-│                    │  Rust Backend (:3000)│                                │
-│                    └──────────┬──────────┘                                │
-└───────────────────────────────┼───────────────────────────────────────────┘
-                                │
-                                ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                        SUPABASE (PostgreSQL)                               │
-│                   db.kpihjwzqtwqlschmtekx.supabase.co                     │
-│                                                                           │
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│   │   events    │  │    users    │  │ preferences │  │   venues    │    │
-│   │  (270+)     │  │  (accounts) │  │  (explicit) │  │  (metadata) │    │
-│   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
-└───────────────────────────────────────────────────────────────────────────┘
-                                ▲
-                                │
-┌───────────────────────────────┼───────────────────────────────────────────┐
-│                    SCRAPER TOOL (localhost:5000)                           │
-│                                                                           │
-│    ┌─────────────────────────────────────────────────────────────┐       │
-│    │  Universal Scraper - 18 extraction strategies               │       │
-│    │  • EventCalendarApp API    • Simpleview/VisitTulsa API     │       │
-│    │  • Timely API              • BOK Center API                 │       │
-│    │  • Schema.org/JSON-LD      • Eventbrite, Ticketmaster      │       │
-│    │  • Stubwire, Dice.fm       • Generic HTML parsing          │       │
-│    └─────────────────────────────────────────────────────────────┘       │
-│                                                                           │
-└───────────────────────────────────────────────────────────────────────────┘
-```
-
----
 
 ## Tech Stack
 
-| Component | Technology | Port | Owner |
-|-----------|------------|------|-------|
-| Backend API | Rust (Axum) | 3000 | Will |
-| Database | Supabase (PostgreSQL) | - | Team (cloud) |
-| LLM Service | Python (FastAPI) + Gemini | 8001 | Ben |
-| Scraper Tool | Python (Flask) + Playwright | 5000 | Will/Skylar |
-| Frontend | React | 5173 | Malachi/Jordi |
+| Layer | Tech |
+| --- | --- |
+| Frontend | React, Tailwind CSS, Leaflet, Supabase JS |
+| Backend API | Rust, Axum, SQLx, PostgreSQL |
+| AI Service | Python, FastAPI, Gemini |
+| Data | Supabase PostgreSQL + Supabase Auth |
+| Mapping | Leaflet + marker clustering |
+| Scraping | Python scraper tooling with Playwright/Flask |
+| Deployment | Vercel, Railway, Supabase |
 
----
+## Repo Layout
 
-## Team Roles
+```text
+capstone/
+|-- frontend/       React client
+|-- backend/        Rust API
+|-- llm-service/    FastAPI service for search/chat/normalization
+|-- docs/           design notes, team docs, architecture docs
+|-- Deployment.md   deployment notes
+`-- README.md
+```
 
-| Name | Role | Responsibilities |
-|------|------|------------------|
-| **Will** | Coordinator / Backend Lead | Rust backend, database, scraper tool, code review |
-| **Ben** | AI Engineer | Python LLM service, Gemini integration, `/api/search` + `/api/chat` |
-| **Skylar** | Data Engineer | Running scrapers, finding event sources, data quality |
-| **Malachi** | Frontend Developer | React UI, search + chat interface |
-| **Jordi** | Fullstack Developer | Cross-stack support, integration |
-
----
-
-## Getting Started
+## Running Locally
 
 ### Prerequisites
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| Git | Version control | https://git-scm.com/downloads |
-| Rust | Backend | https://rustup.rs |
-| Python 3.11+ | LLM Service + Scraper | https://www.python.org/downloads |
-| Node.js 18+ | Frontend | https://nodejs.org |
+- Node.js 18+
+- Rust
+- Python 3.11+
+- Access to the shared Supabase project secrets
+- Gemini API key for the LLM service
 
-**Note:** Docker is optional — we use Supabase for the shared database.
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/locate918/capstone.git
-cd capstone
-```
-
----
-
-### Database Setup (Supabase)
-
-We use a **shared Supabase database** — the whole team connects to the same data!
-
-1. **Get the database password** from Will or another team member
-2. Add it to your `backend/.env` file (see Environment Variables below)
-
-That's it! No Docker, no local database setup.
-
----
-
-### Rust Backend Setup
+### 1. Start the Rust backend
 
 ```bash
 cd backend
-
-# Create environment file
 cp .env.example .env
-
-# Edit .env and add the real password (get from team)
-notepad .env   # Windows
-nano .env      # Mac/Linux
-
-# Build and run
-cargo build
 cargo run
 ```
 
-**Verify:** http://localhost:3000/api/events should return events JSON.
+Expected local URL: `http://localhost:3000`
 
----
-
-### Python LLM Service Setup
+### 2. Start the LLM service
 
 ```bash
 cd llm-service
-
-# Create virtual environment
 python -m venv venv
-
-# Activate it
-.\venv\Scripts\Activate   # Windows
-source venv/bin/activate  # Mac/Linux
-
-# Install dependencies
+.\venv\Scripts\Activate
 pip install -r requirements.txt
-
-# Create environment file
 cp .env.example .env
-# Edit and add the Gemini API key (get from Ben)
-
-# Run the service
 uvicorn app.main:app --reload --port 8001
 ```
 
-**Verify:** http://localhost:8001/ should return `{"status": "online"}`
+Expected local URL: `http://localhost:8001`
 
----
-
-### Frontend Setup
+### 3. Start the frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Create environment file (if not exists)
 cp .env.example .env
-
-# Run development server
 npm start
 ```
 
-**Verify:** http://localhost:5173 should show the app with events.
-
----
+Expected local URL: `http://localhost:5173`
 
 ## Scraper Tool Guide
 
@@ -278,6 +142,9 @@ The Universal Scraper is a Flask web app that extracts events from any website u
 
 ```bash
 cd backend/src/scraper
+
+python -m venv venv
+.\venv\Scripts\Activate
 
 # Install dependencies
 pip install flask playwright httpx beautifulsoup4 python-dateutil python-dotenv
@@ -291,192 +158,97 @@ python ScraperTool.py
 
 **Open:** http://localhost:5000
 
-### Features
-
-- ✅ **Smart Extraction:** Auto-detects site type (Eventbrite, Timely, JSON-LD, etc.)
-- ✅ **robots.txt Compliance:** Won't scrape sites that disallow it
-- ✅ **Direct API Access:** Uses APIs when available (faster, more reliable)
-- ✅ **Direct Database Save:** Sends events straight to Supabase
-
-### Supported Platforms
-
-| Platform | Method | Events |
-|----------|--------|--------|
-| VisitTulsa/Simpleview | REST API | 300+ |
-| EventCalendarApp | Direct API | varies |
-| Timely | Direct API | varies |
-| BOK Center | AJAX API | ~50 |
-| Eventbrite | Schema.org/HTML | varies |
-| Ticketmaster | HTML parsing | varies |
-| Most venue sites | Generic extraction | varies |
-
-### Usage
-
-1. Open http://localhost:5000
-2. Enter a URL (e.g., `https://www.visittulsa.com/events/`)
-3. Enter source name (e.g., `Visit Tulsa`)
-4. Click **Scrape**
-5. Review events in the table
-6. Click **💾 Save to Database**
-
-### Good Sources to Scrape
-
-```
-https://www.visittulsa.com/events/         # City calendar (300+ events)
-https://www.bokcenter.com/events           # BOK Center shows
-https://www.cainsballroom.com/events       # Cain's Ballroom concerts
-https://www.guthriegreen.com/events        # Outdoor events
-https://www.tulsapac.com/events            # Performing arts
-https://www.philbrook.org/events           # Museum events
-```
-
----
-
-## API Endpoints
-
-### Rust Backend (`:3000`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/events` | List events (default 100, max 1000) |
-| GET | `/api/events?limit=500` | List with custom limit |
-| POST | `/api/events` | Create event (scraper uses this) |
-| GET | `/api/events/:id` | Get event by ID |
-| GET | `/api/events/search` | Search with filters |
-
-**Search Parameters:**
-```
-GET /api/events/search?q=jazz&category=concerts&price_max=30
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `q` | string | Text search in title/description |
-| `category` | string | Filter by category |
-| `start_date` | ISO date | Start of date range |
-| `end_date` | ISO date | End of date range |
-| `price_max` | number | Maximum price |
-| `outdoor` | boolean | Only outdoor events |
-| `family_friendly` | boolean | Only family-friendly |
-| `limit` | integer | Max results (default 50) |
-
-### Python LLM Service (`:8001`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Health check |
-| POST | `/search` | Parse natural language → search params |
-| POST | `/chat` | Chat with Tully |
-| POST | `/normalize` | Raw HTML → structured events |
-
----
+**Note:** The scraper runs automatically using cron scheduler on Railway. The scraper itself can be accessed on **admin.locate918.com**.
+Only the password is needed to access and can be found in Railway labeled ADMIN_PASSWORD.
 
 ## Environment Variables
 
 ### `backend/.env`
-```
-DATABASE_URL=postgresql://postgres:PASSWORD_HERE@db.kpihjwzqtwqlschmtekx.supabase.co:5432/postgres
+
+```env
+DATABASE_URL=postgresql://...
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_ANON_KEY=...
 LLM_SERVICE_URL=http://localhost:8001
 ```
-> **Get the password from Will or from another team member**
 
 ### `llm-service/.env`
-```
-GEMINI_API_KEY=your_gemini_api_key_here
+
+```env
+GEMINI_API_KEY=...
 BACKEND_URL=http://localhost:3000
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_KEY=...
 ```
-> **Get the Gemini API key from Ben** or create your own at https://makersuite.google.com/app/apikey
+
+`SUPABASE_URL` and `SUPABASE_KEY` are used by the place-aware chat tools and may be omitted if that workflow is not being used locally.
 
 ### `frontend/.env`
-```
-PORT=5173
+
+```env
 REACT_APP_BACKEND_URL=http://localhost:3000
 REACT_APP_LLM_SERVICE_URL=http://localhost:8001
-REACT_APP_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+REACT_APP_SUPABASE_URL=https://<project>.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=...
 REACT_APP_USE_MOCKS=false
 ```
-> **Get the Supabase URL and Anon Key from Jordi or from another team member**
+
+## Key API Surface
+
+### Rust backend
+
+- `GET /api/events`
+- `GET /api/events/search`
+- `GET /api/events/:id`
+- `GET /api/users/me`
+- `GET /api/users/me/profile`
+- `GET/POST/PUT /api/users/me/preferences`
+- `GET/POST /api/users/me/interactions`
+- `GET/POST/DELETE /api/users/me/saved-events`
+- `GET /api/users/me/recommendations`
+- `GET /api/venues`
+
+### LLM service
+
+- `GET /health`
+- `POST /api/search`
+- `POST /api/chat`
+- `POST /api/normalize`
+- `POST /api/interactions`
+
+## Deployment
+
+The current production stack is set up around:
+
+- **Frontend** on Vercel
+- **Rust backend** on Railway
+- **LLM service** on Railway
+- **Database and auth** on Supabase
+
+The repo also includes:
+
+- `frontend/vercel.json`
+- `backend/Dockerfile`
+- `llm-service/Dockerfile`
+- GitHub Actions workflows under `.github/workflows/`
+
+## Notes
+
+- The app favors direct venue or canonical links over aggregator pages when possible.
+- Venue coordinates are used for mapping when available; events without coordinates still appear in list results.
+- Personalized recommendations depend on onboarding completion and accumulated preference weights.
 
 ---
 
-## Running the Full Stack
+## Team Roles
 
-Open 3-4 terminal windows:
-
-**Terminal 1 — Rust Backend:**
-```bash
-cd backend
-cargo run
-# Runs on http://localhost:3000
-```
-
-**Terminal 2 — LLM Service:**
-```bash
-cd llm-service
-.\venv\Scripts\Activate   # Windows (or: source venv/bin/activate)
-uvicorn app.main:app --reload --port 8001
-# Runs on http://localhost:8001
-```
-
-**Terminal 3 — Frontend:**
-```bash
-cd frontend
-npm start
-# Runs on http://localhost:5173
-```
-
-**Terminal 4 — Scraper (when needed):**
-```bash
-cd backend/src/scraper
-python ScraperTool.py
-# Runs on http://localhost:5000
-```
-
----
-
-## Project Structure
-
-```
-locate918/
-├── backend/                      # Rust API Server
-│   ├── src/
-│   │   ├── main.rs
-│   │   ├── routes/
-│   │   │   ├── events.rs        # GET/POST /api/events, /search
-│   │   │   └── users.rs
-│   │   └── models/
-│   ├── src/scraper/
-│   │   └── ScraperTool.py       # Universal event scraper
-│   ├── migrations/
-│   ├── .env.example
-│   └── Cargo.toml
-│
-├── llm-service/                  # Python LLM Service
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── models/schemas.py
-│   │   ├── routes/
-│   │   │   ├── search.py
-│   │   │   ├── chat.py
-│   │   │   └── normalize.py
-│   │   ├── services/gemini.py
-│   │   └── tools/definitions.py
-│   ├── requirements.txt
-│   └── .env.example
-│
-├── frontend/                     # React App
-│   ├── src/
-│   │   ├── components/
-│   │   ├── services/api.js
-│   │   └── App.js
-│   ├── .env.example
-│   └── package.json
-│
-└── README.md
-```
-
----
+| Name | Role | Responsibilities |
+|------|------|------------------|
+| **Will** | Coordinator / Backend Lead | Rust backend, database, scraper tool, code review |
+| **Ben** | AI Engineer | Python LLM service, Gemini integration, `/api/search` + `/api/chat` |
+| **Skylar** | Data Engineer | Running scrapers, finding event sources, data quality |
+| **Malachi** | Frontend Developer | React UI, search + chat interface |
+| **Jordi** | Fullstack Developer | Cross-stack support, integration |
 
 ## Troubleshooting
 
