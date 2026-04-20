@@ -49,7 +49,7 @@ const UserProfileModal = ({ isOpen, onClose, user, onUpdate }) => {
         setFormData(prev => ({
             ...prev,
             [name]: type === 'checkbox' ? checked :
-                type === 'number' ? (value ? parseFloat(value) : null) :
+                (type === 'number' || type === 'range') ? (value ? parseFloat(value) : null) :
                     value
         }));
         setError(null);

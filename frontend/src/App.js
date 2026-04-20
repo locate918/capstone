@@ -1056,7 +1056,7 @@ export default function App() {
                     <div className="flex flex-col gap-1 w-full">
                         {debouncedQuery ? (
                             <>
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center justify-between gap-4 md:mt-6">
                                     <div>
                                         <h2 className="text-xl sm:text-2xl md:text-3xl font-serif tracking-tight text-slate-900">
                                             Results: "{debouncedQuery}"

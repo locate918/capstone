@@ -106,7 +106,7 @@ export function AuthProvider({ children }) {
         } else {
             setUser(null);
         }
-    }, [session?.user?.id]); // Only run when session user ID changes, not on every render
+    }, [session?.user]); // Only run when session user changes, not on every render
 
     const value = useMemo(
         () => ({
