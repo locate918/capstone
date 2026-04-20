@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OnboardingModal.js - New User Preference Questionnaire
  * ======================================================
  * A multi-step modal to guide new users through setting up their initial preferences.
@@ -56,13 +56,18 @@ const WEIGHT_LABELS = {
     5: "Obsessed"
 };
 
+const DEFAULT_CATEGORIES = CATEGORIES.reduce((acc, cat) => {
+    acc[cat] = 0;
+    return acc;
+}, {});
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 const OnboardingModal = ({ isOpen, onComplete, user }) => {
     const [step, setStep] = useState(1);
     const [preferences, setPreferences] = useState({
-        categories: {}, // Changed to object: { "Music": 3, "Comedy": 1, ... }
+        categories: DEFAULT_CATEGORIES,
         location: '',
         radius: 15,
         priceMax: 50,
@@ -75,13 +80,8 @@ const OnboardingModal = ({ isOpen, onComplete, user }) => {
         if (isOpen) {
             setStep(1);
             setIsExiting(false);
-            // Initialize all categories with weight 0
-            const initialCategories = {};
-            CATEGORIES.forEach(cat => {
-                initialCategories[cat] = 0;
-            });
             setPreferences({
-                categories: initialCategories,
+                categories: DEFAULT_CATEGORIES,
                 location: 'Tulsa, OK',
                 radius: 15,
                 priceMax: 50,
@@ -216,8 +216,7 @@ const CategoryStep = ({ weights, onWeightChange }) => {
             <div className="space-y-4">
                 {sortedCategories.map(category => {
                     const weight = weights[category] || 0;
-                    const label = WEIGHT_LABELS[weight];
-                    const intensity = weight / 5; // 0-1 scale for color
+                    const label = WEIGHT_LABELS[weight];// 0-1 scale for color
 
                     // Dynamic color based on weight
                     const bgColor = weight === 0
@@ -226,9 +225,6 @@ const CategoryStep = ({ weights, onWeightChange }) => {
                     const textColor = weight === 0
                         ? 'text-slate-400'
                         : 'text-black';
-                    const opacity = weight === 0
-                        ? 'opacity-50'
-                        : `opacity-${Math.ceil(intensity * 10) * 10}`; // opacity-10 to opacity-100
 
                     return (
                         <div
