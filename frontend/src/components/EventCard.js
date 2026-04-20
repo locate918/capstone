@@ -17,7 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import { MapPin, Calendar, Building2, Heart, Tag } from 'lucide-react';
+import { Calendar, Building2, Heart, Tag } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
 import { recordInteraction, saveEvent, unsaveEvent } from '../services/api';
 

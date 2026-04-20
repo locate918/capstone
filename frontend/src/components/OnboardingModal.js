@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OnboardingModal.js - New User Preference Questionnaire
  * ======================================================
  * A multi-step modal to guide new users through setting up their initial preferences.

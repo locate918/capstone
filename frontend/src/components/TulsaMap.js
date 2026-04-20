@@ -194,7 +194,7 @@ const MapController = ({ hoveredEventId, events, onMapReady }) => {
     // Duration (in milliseconds) the user must hover before the map centers.
     // Adjust this value to change the responsiveness:
     // - 300ms: Quick, responsive
-    // - 500ms: Balanced (default) — allows for natural browsing without snapping
+    // - 500ms: Balanced (default) ï¿½ allows for natural browsing without snapping
     // - 800ms: Relaxed, requires intentional hover
     const HOVER_DELAY_MS = 500;
 
@@ -359,7 +359,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
     const containerRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const [clusterEvents, setClusterEvents] = useState(null);
-    const normalizedEvents = Array.isArray(events) ? events : [];
+    const normalizedEvents = useMemo(() => (events ? events : []), [events]);
 
     useEffect(() => {
         injectMapStyles();
@@ -569,7 +569,7 @@ const TulsaMap = ({ events, onMarkerClick, hoveredEventId, className = "h-[500px
                     {/* Bottom sheet anchored to bottom of map */}
                     <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl max-h-[85%] flex flex-col">
 
-                        {/* Sticky header: drag handle + title bar with X — never scrolls away */}
+                        {/* Sticky header: drag handle + title bar with X ï¿½ never scrolls away */}
                         <div className="flex-shrink-0 bg-white rounded-t-2xl">
                             <div className="flex justify-center pt-3 pb-2">
                                 <div className="w-10 h-1 bg-slate-300 rounded-full" />
