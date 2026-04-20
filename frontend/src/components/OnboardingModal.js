@@ -226,9 +226,6 @@ const CategoryStep = ({ weights, onWeightChange }) => {
                     const textColor = weight === 0
                         ? 'text-slate-400'
                         : 'text-black';
-                    const opacity = weight === 0
-                        ? 'opacity-50'
-                        : `opacity-${Math.ceil(intensity * 10) * 10}`; // opacity-10 to opacity-100
 
                     return (
                         <div
