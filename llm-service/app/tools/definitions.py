@@ -44,7 +44,10 @@ search_events_func = types.FunctionDeclaration(
         type=types.Type.OBJECT,
         properties={
             "q": types.Schema(type=types.Type.STRING, description="Keywords to search for in title or description"),
-            "category": types.Schema(type=types.Type.STRING, description="Category of the event (e.g., concerts, sports, comedy, theater, festivals)"),
+            "category": types.Schema(
+                type=types.Type.STRING, 
+                description="Category of the event. MUST be one of: Music, Comedy, Arts & Theater, Festival, Film, Food & Drink, Nightlife, Sports & Fitness, Family, Educational, Nature & Outdoors, Community"
+            ),
             "venue": types.Schema(type=types.Type.STRING, description="Venue name to filter by (e.g., Cain's Ballroom, BOK Center, The Vanguard)"),
             "start_date": types.Schema(type=types.Type.STRING, description="ISO 8601 start date - find events ON or after this date"),
             "end_date": types.Schema(type=types.Type.STRING, description="ISO 8601 end date - find events ON or before this date"),

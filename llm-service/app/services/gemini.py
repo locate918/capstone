@@ -175,7 +175,7 @@ async def generate_chat_response(
        - "tomorrow" = the next calendar day
        - "this weekend" = upcoming Saturday and Sunday
     4. **Imaginative Search**: Users often ask for "vibes" rather than keywords. Translate these:
-       - "Date Ideas" -> Search for `q="jazz"`, `q="comedy"`, `q="wine"`, `q="dinner"`, `q="theatre"`, or `category="Arts"`. Do NOT just set `family_friendly=False`.
+       - "Date Ideas" -> Search for `q="jazz"`, `q="comedy"`, `q="wine"`, `q="dinner"`, `q="theatre"`, or `category="Arts & Theater"`. Do NOT just set `family_friendly=False`.
        - "Family Fun" -> `family_friendly=True` is good, but also try `q="festival"`, `q="market"`, `q="zoo"`.
        - "Nightlife" -> `q="concert"`, `q="dj"`, `q="party"`, `q="cocktail"`.
        - "Chill" -> `q="acoustic"`, `q="poetry"`, `q="yoga"`.
