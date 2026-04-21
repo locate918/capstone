@@ -98,49 +98,7 @@ pub struct RecommendationsQuery {
 /// `GET /api/users/me/saved-events`
 ///
 /// Returns events sorted by save date (newest first).
-async fn get_saved_events(
-    auth: AuthUser,
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<Event>>, StatusCode> {
-    let user_id = auth.user_id;
 
-    println!("[DEBUG] Fetching saved events for user: {}", user_id);
-
-    let events = sqlx::query_as::<_, Event>(
-        r#"
-        SELECT
-            e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
-            e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
-            e.created_at, e.updated_at,
-            v.website      AS venue_website,
-            v.latitude     AS venue_latitude,
-            v.longitude    AS venue_longitude,
-            v.venue_priority AS venue_priority
-        FROM user_saved_events se
-        JOIN events e ON se.event_id = e.id
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
-        WHERE se.user_id = $1
-        ORDER BY se.created_at DESC
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error fetching saved events: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    println!(
-        "[DEBUG] Found {} saved events for user {}",
-        events.len(),
-        user_id
-    );
-
-    Ok(Json(events))
-}
 
 // =============================================================================
 // HANDLER: SAVE EVENT
