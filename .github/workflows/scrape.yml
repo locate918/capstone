@@ -55,7 +55,7 @@ jobs:
     strategy:
       matrix:
         url: ${{ fromJson(needs.prepare.outputs.urls) }}
-      max-parallel: 3      # start conservative — bump to 5 once stable
+      max-parallel: 1     # start conservative — bump to 5 once stable
       fail-fast: false      # one venue failing ≠ kill the rest
     timeout-minutes: 10
     steps:
