@@ -1426,6 +1426,7 @@ def register_routes(app):
 
         # Allow cron requests authenticated via CRON_SECRET header or query param
         # Works regardless of IP (Railway cron, external triggers, etc.)
+        print(f"[AUTH DEBUG] path={request.path!r} cron_paths={('/cron-scrape', '/scrape-all', '/scrape-source')}")
         if request.path in ('/cron-scrape', '/scrape-all', '/scrape-source'):
             cron_token = (
                     request.headers.get('X-Cron-Secret') or
