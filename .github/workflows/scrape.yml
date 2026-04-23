@@ -1,9 +1,7 @@
 name: Scrape Locate918 Sources
-
 on:
   schedule:
     - cron: '0 8 * * 4'   # Thursday 8am UTC = 3am CDT / 2am CST
-
   workflow_dispatch:
     inputs:
       job_type:
@@ -17,7 +15,6 @@ on:
         required: false
         type: string
         default: '1'
-
 jobs:
   # ── Stage 1: read saved_urls.json, emit matrix of URLs ──────────────
   prepare:
@@ -32,8 +29,7 @@ jobs:
           JOB_TYPE: ${{ github.event.inputs.job_type || 'all' }}
           PRIORITY: ${{ github.event.inputs.priority || '1' }}
         run: |
-          SAVED_URLS_PATH="backend/src/scraper/saved_urls.json"   # adjust if different
-
+          SAVED_URLS_PATH="backend/src/scraper/saved_urls.json"
           if [ "$JOB_TYPE" = "priority" ]; then
             FILTER=$(echo "$PRIORITY" | tr ',' '\n' | jq -Rcs 'split("\n") | map(select(length > 0)) | map(tonumber)')
             URLS=$(jq -c --argjson p "$FILTER" \
@@ -42,12 +38,10 @@ jobs:
           else
             URLS=$(jq -c '[.[].url]' "$SAVED_URLS_PATH")
           fi
-
           COUNT=$(echo "$URLS" | jq 'length')
           echo "Matched $COUNT venues"
           echo "urls=$URLS" >> "$GITHUB_OUTPUT"
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
-
   # ── Stage 2: scrape each venue in its own job ───────────────────────
   scrape:
     needs: prepare
@@ -55,8 +49,8 @@ jobs:
     strategy:
       matrix:
         url: ${{ fromJson(needs.prepare.outputs.urls) }}
-      max-parallel: 1     # start conservative — bump to 5 once stable
-      fail-fast: false      # one venue failing ≠ kill the rest
+      max-parallel: 1
+      fail-fast: false
     timeout-minutes: 20
     steps:
       - name: Scrape ${{ matrix.url }}
@@ -71,22 +65,30 @@ jobs:
             exit 1
           fi
 
-          # Escape URL for JSON body
           JSON_BODY=$(jq -cn --arg u "${{ matrix.url }}" '{url: $u}')
 
-          curl --fail-with-body \
+          HTTP_CODE=$(curl -o /tmp/response.txt -w "%{http_code}" \
                --max-time 900 \
                --connect-timeout 30 \
-               --show-error --silent \
+               --silent \
                -X POST \
                -H "Content-Type: application/json" \
                -d "$JSON_BODY" \
-               -w "\n\n[HTTP %{http_code} — total %{time_total}s]\n" \
-               "$SCRAPER_URL/scrape-source?secret=$CRON_SECRET"
+               "$SCRAPER_URL/scrape-source?secret=$CRON_SECRET" || true)
 
+          cat /tmp/response.txt 2>/dev/null || true
+          echo ""
+          echo "[HTTP $HTTP_CODE]"
+
+          if [ "$HTTP_CODE" = "502" ] || [ "$HTTP_CODE" = "000" ]; then
+            echo "::warning::Timeout for ${{ matrix.url }} — scrape likely still running server-side"
+          elif [ "$HTTP_CODE" -ge 400 ] 2>/dev/null; then
+            echo "::error::Failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
   # ── Stage 3: summary of what passed/failed ──────────────────────────
   summary:
-    needs: scrape
+    needs: [prepare, scrape]
     if: always()
     runs-on: ubuntu-latest
     steps:
