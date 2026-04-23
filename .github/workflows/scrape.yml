@@ -57,7 +57,7 @@ jobs:
         url: ${{ fromJson(needs.prepare.outputs.urls) }}
       max-parallel: 1     # start conservative — bump to 5 once stable
       fail-fast: false      # one venue failing ≠ kill the rest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Scrape ${{ matrix.url }}
         env:
@@ -75,7 +75,7 @@ jobs:
           JSON_BODY=$(jq -cn --arg u "${{ matrix.url }}" '{url: $u}')
 
           curl --fail-with-body \
-               --max-time 540 \
+               --max-time 900 \
                --connect-timeout 30 \
                --show-error --silent \
                -X POST \
