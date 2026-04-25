@@ -27,7 +27,8 @@ import {
     DollarSign,
     Users,
     Sparkles,
-    Star
+    Star,
+    Settings2
 } from 'lucide-react';
 
 // Pre-defined categories for the user to choose from
@@ -73,6 +74,7 @@ const OnboardingModal = ({ isOpen, onComplete, user }) => {
         priceMax: 50,
         familyFriendly: false,
     });
+
     const [isExiting, setIsExiting] = useState(false);
 
     // Reset state if the modal is closed and reopened
@@ -202,8 +204,8 @@ const WelcomeStep = ({ name }) => (
 );
 
 const CategoryStep = ({ weights, onWeightChange }) => {
-    // Sort categories by weight (highest first)
-    const sortedCategories = CATEGORIES.sort((a, b) => (weights[b] || 0) - (weights[a] || 0));
+    // Keep categories in original order (don't sort by weight)
+    // This prevents jarring reordering while the user adjusts sliders
 
     return (
         <div className="animate-fade-in">
@@ -214,9 +216,9 @@ const CategoryStep = ({ weights, onWeightChange }) => {
             <p className="text-slate-400 mb-6">Use the sliders to show your preference level. Higher = more interested!</p>
 
             <div className="space-y-4">
-                {sortedCategories.map(category => {
+                {CATEGORIES.map(category => {
                     const weight = weights[category] || 0;
-                    const label = WEIGHT_LABELS[weight];// 0-1 scale for color
+                    const label = WEIGHT_LABELS[weight];
 
                     // Dynamic color based on weight
                     const bgColor = weight === 0
@@ -250,14 +252,15 @@ const CategoryStep = ({ weights, onWeightChange }) => {
                                             key={star}
                                             onClick={() => onWeightChange(category, star)}
                                             className={`transition-all duration-200 ${weight >= star
-                                                    ? 'text-[#D4AF37] scale-110'
-                                                    : 'text-slate-600 hover:text-slate-500'
+                                                ? 'text-[#D4AF37] scale-110'
+                                                : 'text-slate-600 hover:text-slate-500'
                                                 }`}
                                             title={WEIGHT_LABELS[star]}
                                         >
                                             <Star size={18} className={weight >= star ? 'fill-current' : ''} />
                                         </button>
                                     ))}
+
                                 </div>
 
                                 {/* Slider for fine-tuning */}
@@ -327,45 +330,83 @@ const LocationStep = ({ prefs, setPrefs }) => (
     </div>
 );
 
-const MiscStep = ({ prefs, setPrefs }) => (
-    <div className="animate-fade-in">
-        <h3 className="text-2xl font-serif text-white mb-6">A few more details...</h3>
-        <div className="space-y-6">
-            <div>
-                <label htmlFor="price" className="block text-sm font-medium text-slate-300 mb-2">Maximum price you're comfortable with: <span className="font-bold text-[#D4AF37]">${prefs.priceMax}</span></label>
-                <div className="flex items-center gap-4">
-                    <DollarSign size={20} className="text-slate-500" />
-                    <input
-                        type="range"
-                        id="price"
-                        min="0"
-                        max="200"
-                        step="5"
-                        value={prefs.priceMax}
-                        onChange={e => setPrefs(p => ({ ...p, priceMax: parseInt(e.target.value, 10) }))}
-                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer range-slider"
-                    />
-                </div>
-            </div>
-            <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                <div className="flex items-center gap-3">
-                    <Users size={20} className="text-[#D4AF37]" />
-                    <div>
-                        <h4 className="font-medium text-white">Family-Friendly Events</h4>
-                        <p className="text-sm text-slate-400">Only show events suitable for all ages.</p>
+const MiscStep = ({ prefs, setPrefs }) => {
+    return (
+        <div className="animate-fade-in">
+            <h3 className="text-2xl font-serif text-white mb-6">A few more details...</h3>
+            <div className="space-y-6">
+                <div className="p-4 rounded-lg bg-slate-800/30 border border-slate-700/50">
+                    <div className="flex items-center gap-4 mb-4">
+                        <label className="block text-sm font-medium text-slate-300">
+                            Maximum price you're comfortable with
+                        </label>
+                        <span className="text-xs text-slate-400">or</span>
+                        <button
+                            onClick={() => setPrefs(p => ({
+                                ...p,
+                                priceMax: p.priceMax === null ? 50 : null
+                            }))}
+                            className={`text-xs font-semibold px-3 py-2 rounded-full transition-all whitespace-nowrap ${prefs.priceMax === null
+                                ? 'bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/30'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                }`}
+                            title="Click to set no price preference"
+                        >
+                            No Preference
+                        </button>
                     </div>
+
+                    {prefs.priceMax !== null && (
+                        <div className="flex items-center gap-4">
+                            <DollarSign size={20} className="text-slate-500 flex-shrink-0" />
+                            <div className="flex-1">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm text-slate-300">Price range</span>
+                                    <span className="font-bold text-[#D4AF37]">${prefs.priceMax}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    id="price"
+                                    min="0"
+                                    max="200"
+                                    step="5"
+                                    value={prefs.priceMax}
+                                    onChange={(e) => setPrefs(p => ({ ...p, priceMax: parseInt(e.target.value, 10) }))}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer range-slider accent-[#D4AF37]"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {prefs.priceMax === null && (
+                        <div className="p-4 bg-gradient-to-r from-[#D4AF37]/10 to-transparent border border-[#D4AF37]/30 rounded-lg text-center">
+                            <p className="text-sm font-medium text-[#D4AF37]">
+                                ✨ Price won't be a factor in your recommendations!
+                            </p>
+                        </div>
+                    )}
                 </div>
-                <label htmlFor="family-switch" className="flex items-center cursor-pointer">
-                    <div className="relative">
-                        <input type="checkbox" id="family-switch" className="sr-only" checked={prefs.familyFriendly} onChange={e => setPrefs(p => ({ ...p, familyFriendly: e.target.checked }))} />
-                        <div className={`block w-14 h-8 rounded-full transition-colors ${prefs.familyFriendly ? 'bg-[#D4AF37]' : 'bg-slate-700'}`}></div>
-                        <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${prefs.familyFriendly ? 'translate-x-6' : ''}`}></div>
+
+                <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                    <div className="flex items-center gap-3">
+                        <Users size={20} className="text-[#D4AF37]" />
+                        <div>
+                            <h4 className="font-medium text-white">Family-Friendly Events</h4>
+                            <p className="text-sm text-slate-400">Only show events suitable for all ages.</p>
+                        </div>
                     </div>
-                </label>
+                    <label htmlFor="family-switch" className="flex items-center cursor-pointer">
+                        <div className="relative">
+                            <input type="checkbox" id="family-switch" className="sr-only" checked={prefs.familyFriendly} onChange={e => setPrefs(p => ({ ...p, familyFriendly: e.target.checked }))} />
+                            <div className={`block w-14 h-8 rounded-full transition-colors ${prefs.familyFriendly ? 'bg-[#D4AF37]' : 'bg-slate-700'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${prefs.familyFriendly ? 'translate-x-6' : ''}`}></div>
+                        </div>
+                    </label>
+                </div>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const ReviewStep = ({ prefs }) => {
     // Convert categories object back to readable format
@@ -391,7 +432,12 @@ const ReviewStep = ({ prefs }) => {
                 </div>
                 <div>
                     <span className="text-[#D4AF37] font-semibold">Budget:</span>
-                    <p className="text-slate-200 mt-1">Up to <span className="text-[#D4AF37]">${prefs.priceMax}</span> per ticket</p>
+                    <p className="text-slate-200 mt-1">
+                        {prefs.priceMax === null
+                            ? <span className="text-[#D4AF37]">No preference</span>
+                            : <>Up to <span className="text-[#D4AF37]">${prefs.priceMax}</span> per ticket</>
+                        }
+                    </p>
                 </div>
                 <div>
                     <span className="text-[#D4AF37] font-semibold">Family-Friendly:</span>

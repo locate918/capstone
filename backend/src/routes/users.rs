@@ -122,6 +122,7 @@ async fn get_saved_events(
         JOIN events e ON se.event_id = e.id
         LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
         WHERE se.user_id = $1
+          AND e.start_time >= NOW()
         ORDER BY se.created_at DESC
         "#,
     )
@@ -134,7 +135,7 @@ async fn get_saved_events(
     })?;
 
     println!(
-        "[DEBUG] Found {} saved events for user {}",
+        "[DEBUG] Found {} saved events for user {} (filtered for future dates)",
         events.len(),
         user_id
     );
@@ -508,7 +509,7 @@ async fn get_my_recommendations(
 // HANDLER: GET CURRENT USER
 // =============================================================================
 
-/// Returns the authenticated user's account info.
+/// Returns the authenticated user's account info including their category preferences.
 ///
 /// # Endpoint
 /// `GET /api/users/me`
@@ -518,7 +519,7 @@ async fn get_my_recommendations(
 async fn get_current_user(
     auth: AuthUser,
     State(pool): State<PgPool>,
-) -> Result<Json<User>, StatusCode> {
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let user = sqlx::query_as::<_, User>(
         r#"
         SELECT id, email, name, location_preference, radius_miles,
@@ -537,11 +538,43 @@ async fn get_current_user(
     })?;
 
     match user {
-        Some(u) => Ok(Json(u)),
+        Some(u) => {
+            // Fetch user's preferences
+            let preferences = sqlx::query_as::<_, UserPreference>(
+                r#"
+                SELECT id, user_id, category, 
+                       ROUND((weight * POWER(0.95, EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400.0))::numeric, 2)::float8 AS weight, 
+                       created_at, updated_at 
+                FROM user_preferences WHERE user_id = $1
+                "#,
+            )
+            .bind(auth.user_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                eprintln!("Database error fetching preferences: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+            // Return user + preferences as JSON
+            let response = serde_json::json!({
+                "id": u.id,
+                "email": u.email,
+                "name": u.name,
+                "location_preference": u.location_preference,
+                "radius_miles": u.radius_miles,
+                "price_max": u.price_max,
+                "family_friendly_only": u.family_friendly_only,
+                "use_smart_search": u.use_smart_search,
+                "has_completed_onboarding": u.has_completed_onboarding,
+                "created_at": u.created_at,
+                "updated_at": u.updated_at,
+                "preferences": preferences
+            });
+
+            Ok(Json(response))
+        }
         None => {
-            // User exists in auth.users but not in public.users yet.
-            // This can happen if the auth trigger hasn't fired or failed.
-            // Return 404 — the frontend can prompt the user to try again.
             eprintln!(
                 "Auth user {} has no public.users row — trigger may have failed",
                 auth.user_id
@@ -671,7 +704,7 @@ async fn get_my_preferences(
 /// # Endpoint
 /// `POST /api/users/me/preferences`
 ///
-/// Uses UPSERT — creates if new, updates weight if category already exists.
+/// Uses UPSERT — creates if new, replaces weight if category already exists.
 async fn add_my_preference(
     auth: AuthUser,
     State(pool): State<PgPool>,
@@ -705,7 +738,7 @@ async fn add_my_preference(
         VALUES ($1, $2, $3, $4, $5, $5)
         ON CONFLICT (user_id, category)
         DO UPDATE SET 
-            weight = ROUND(((user_preferences.weight * POWER(0.95, EXTRACT(EPOCH FROM (NOW() - user_preferences.updated_at)) / 86400.0)) + EXCLUDED.weight)::numeric, 2)::float8,
+            weight = EXCLUDED.weight,
             updated_at = EXCLUDED.updated_at
         RETURNING id, user_id, category, weight, created_at, updated_at
         "#,
@@ -759,7 +792,10 @@ async fn update_my_preferences(
         UPDATE users
         SET location_preference = COALESCE($2, location_preference),
             radius_miles = COALESCE($3, radius_miles),
-            price_max = COALESCE($4, price_max),
+            price_max = CASE 
+                WHEN $4::numeric IS NOT NULL THEN $4::numeric
+                ELSE price_max
+            END,
             family_friendly_only = COALESCE($5, family_friendly_only),
             use_smart_search = CASE 
                 WHEN $6::boolean IS NOT NULL THEN $6::boolean

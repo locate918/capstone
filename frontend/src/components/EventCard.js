@@ -137,12 +137,13 @@ const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveCha
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent opacity-80" />
 
-                {/* Event Type Badge - Show venue name for location context */}
+                {/* Venue Name Badge - Properly constrained and truncated */}
                 {event.location && (
-                    <div className="absolute top-4 right-4 max-w-[180px]">
+                    <div className="absolute top-4 right-4 left-4">
                         <span
-                            className="text-[10px] font-bold tracking-wider bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 uppercase group-hover:border-[#d4af37]/50 transition-colors line-clamp-1"
+                            className="inline-block text-[10px] font-bold tracking-wider bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 uppercase group-hover:border-[#d4af37]/50 transition-colors truncate max-w-full"
                             style={styles.primaryText}
+                            title={event.location}
                         >
                             {event.location}
                         </span>
@@ -153,9 +154,9 @@ const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveCha
             {/* Content Section */}
             <div className="p-6 flex-1 flex flex-col -mt-12 relative z-10">
                 {/* Date Badge */}
-                <div className="flex justify-between items-start mb-3">
+                <div className="flex justify-end mb-3">
                     <span
-                        className="text-xs font-semibold flex items-center gap-1 bg-black/60 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md shadow-lg"
+                        className="text-xs font-semibold flex items-center gap-1 bg-black/60 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md shadow-lg shrink-0"
                         style={styles.primaryText}
                     >
                         <Calendar size={12} />
@@ -191,8 +192,8 @@ const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveCha
                                 onClick={handleToggleSaveEvent}
                                 disabled={isLoading}
                                 className={`flex items-center justify-center text-xs font-medium px-2.5 py-1.5 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${saved
-                                        ? 'bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40 hover:bg-[#d4af37]/30'
-                                        : 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40'
+                                    ? 'bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40 hover:bg-[#d4af37]/30'
+                                    : 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40'
                                     }`}
                                 title={saved ? "Remove from saved" : "Save event"}
                             >

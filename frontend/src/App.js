@@ -34,7 +34,7 @@
  * - showProfileModal: Boolean to control user profile modal visibility
  */
 
-import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, AlertCircle, Building2, MapPin, Clock, Heart } from 'lucide-react';
 import { fetchEvents, fetchRecommendedEvents, fetchSavedEvents, smartSearch, recordInteraction, updateUserPreferences, addUserPreference } from './services/api';
 import { useAuth } from './context/AuthContext';
@@ -406,6 +406,7 @@ const VenueSelectorModal = ({ isOpen, onClose, venues, onSelectVenue }) => {
                                     </div>
                                 </button>
                             ))}
+
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -507,6 +508,11 @@ export default function App() {
             selectedVenue: null,
         })
     );
+    const [hasFetchedSavedEvents, setHasFetchedSavedEvents] = useState(false);
+
+    // --- FIX 1: Ref to track current user without triggering effect re-runs ---
+    const userRef = useRef(user);
+    userRef.current = user;
 
     // --- HANDLERS ---
 
@@ -531,7 +537,6 @@ export default function App() {
     };
 
     // --- EFFECTS ---
-
     // Update default tab based on login status when auth finishes loading
     useEffect(() => {
         if (authLoading) {
@@ -639,18 +644,18 @@ export default function App() {
         }
     }, [activeTab]);
 
-    // Fetch events (all, search results, saved, or recommended)
+    // --- FIX 2: Main fetch effect — removed `user` from dependency array ---
     useEffect(() => {
+        const currentUser = userRef.current;
         const loadData = async () => {
             try {
                 if (debouncedQuery) {
-                    const useSmartSearch = user?.backend_user?.use_smart_search !== false;
+                    const useSmartSearch = currentUser?.backend_user?.use_smart_search !== false;
                     const result = await smartSearch(debouncedQuery, useSmartSearch);
                     setEvents(Array.isArray(result?.events) ? result.events : []);
-                } else if (activeTab === 'savedEvents' && user) {
-                    const data = await fetchSavedEvents();
-                    setSavedEvents(Array.isArray(data) ? data : []);
-                } else if (activeTab === 'recommended' && user) {
+                } else if (activeTab === 'savedEvents' && currentUser) {
+                    // Already handled by background fetch
+                } else if (activeTab === 'recommended' && currentUser) {
                     const data = await fetchRecommendedEvents();
                     setRecommendedEvents(Array.isArray(data) ? data : []);
                 } else {
@@ -676,7 +681,7 @@ export default function App() {
         setLoading(true);
         setLoadingCopy(getLoadingCopy({ query: debouncedQuery, activeTab, selectedVenue }));
         loadData();
-    }, [debouncedQuery, activeTab, selectedVenue, user]);
+    }, [debouncedQuery, activeTab, selectedVenue]);
 
     useEffect(() => {
         if (!loading || authLoading) {
@@ -694,29 +699,42 @@ export default function App() {
     // =============================================================================
     // BACKGROUND FETCH: Populate saved events for badge (independent of tab)
     // =============================================================================
-    // Ensures savedEventsCount badge is always accurate without requiring user to
-    // click the Saved Events tab. Fetches saved events when user logs in/out.
     useEffect(() => {
         if (!user) {
-            // User logged out, clear saved events
+            // User logged out, clear saved events and reset flag
             setSavedEvents([]);
+            setHasFetchedSavedEvents(false);
             return;
         }
 
-        // User is authenticated, fetch saved events in background for badge
+        // Only fetch once per user session
+        if (hasFetchedSavedEvents) {
+            return;
+        }
+
+        // --- FIX 3: Set flag BEFORE async work to prevent re-entry ---
         const loadSavedEventsForBadge = async () => {
             try {
+                setHasFetchedSavedEvents(true); // Guard immediately
                 const data = await fetchSavedEvents();
-                setSavedEvents(Array.isArray(data) ? data : []);
-                console.log('[DEBUG] Background fetch: loaded', data?.length || 0, 'saved events');
+                // Filter out events where date_iso is in the past
+                const now = new Date();
+                const futureSavedEvents = (data || []).filter(event => {
+                    if (!event.date_iso) return true; // Keep if no date
+                    const eventDate = new Date(event.date_iso);
+                    return eventDate >= now;
+                });
+                setSavedEvents(futureSavedEvents);
+                console.log('[DEBUG] Background fetch: loaded', futureSavedEvents?.length || 0, 'saved events (filtered for future dates)');
             } catch (err) {
                 console.error('[ERROR] Failed to fetch saved events for badge:', err);
+                setHasFetchedSavedEvents(false); // Reset flag so it can retry
                 setSavedEvents([]);
             }
         };
 
         loadSavedEventsForBadge();
-    }, [user]); // Only depends on user auth state, NOT on activeTab
+    }, [user, hasFetchedSavedEvents]);
 
     // --- DERIVED STATE ---
 
@@ -741,8 +759,13 @@ export default function App() {
         }
 
         if (activeTab === 'savedEvents') {
-            // Saved Events: return all filtered (already in saved collection)
-            return filteredEvents;
+            // Saved Events: filter out expired events (already in saved collection)
+            const now = new Date();
+            return filteredEvents.filter(event => {
+                if (!event.date_iso) return true;
+                const eventDate = new Date(event.date_iso);
+                return eventDate >= now;
+            });
         }
 
         if (activeTab === 'recommended') {
@@ -806,7 +829,7 @@ export default function App() {
     const goToPage = (page) => {
         setHoveredEventId(null); // Clear hover state to prevent stale flyTo
         setCurrentPage(Math.max(1, Math.min(page, totalPages)));
-        window.scrollTo({ top: 400, behavior: 'smooth' });
+        window.scrollTo({ top: 1000, behavior: 'smooth' });
     };
 
     const clearDateFilter = () => {
@@ -1086,14 +1109,24 @@ export default function App() {
                                         {tabFilteredEvents.length} {tabFilteredEvents.length === 1 ? 'Event' : 'Events'} Found
                                     </span>
                                 </div>
-                                <button
-                                    onClick={handleClearVenue}
-                                    className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all shadow-sm"
-                                >
-                                    <Building2 size={14} className="sm:w-4 sm:h-4" />
-                                    <span className="hidden sm:inline">Change Venue</span>
-                                    <span className="sm:hidden">Change</span>
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setActiveTab('allEvents')}
+                                        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:text-slate-900 transition-all shadow-sm"
+                                    >
+                                        <X size={14} className="sm:w-4 sm:h-4" />
+                                        <span className="hidden sm:inline">Clear Filter</span>
+                                        <span className="sm:hidden">Clear</span>
+                                    </button>
+                                    <button
+                                        onClick={handleClearVenue}
+                                        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:border-[#D4AF37] hover:text-[#D4AF37] transition-all shadow-sm"
+                                    >
+                                        <Building2 size={14} className="sm:w-4 sm:h-4" />
+                                        <span className="hidden sm:inline">Choose Venue</span>
+                                        <span className="sm:hidden">Change</span>
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             /* Tab Buttons - Two-row staggered layout */
@@ -1471,8 +1504,13 @@ export default function App() {
                 )}
             </main>
 
-            {/* ===== EVENT MODAL ===== */}
-            <EventModal event={selectedEvent} onClose={() => handleEventClosing()} user={user} />
+            <EventModal
+                event={selectedEvent}
+                onClose={() => handleEventClosing()}
+                user={user}
+                isSaved={selectedEvent ? savedEvents.some(e => e.id === selectedEvent.id) : false}
+                onSaveChange={handleSaveChange}
+            />
 
             {/* ===== AUTH MODAL ===== */}
             <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />

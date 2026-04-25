@@ -1,28 +1,20 @@
-/**
- * EventModal Component
- * ====================
- * Full-screen overlay showing detailed event information.
- *
- * PROPS:
- * - event: Event object to display (null to hide modal)
- * - onClose: Function called when modal should close
- */
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2 } from 'lucide-react';
+import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2, Heart } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
-import {recordInteraction} from "../services/api";
+import { recordInteraction, saveEvent, unsaveEvent } from "../services/api";
 
-const EventModal = ({ event, onClose, user }) => {
+const EventModal = ({ event, onClose, user, isSaved = false, onSaveChange }) => {
     const [expanded, setExpanded] = useState(false);
     const [isClamped, setIsClamped] = useState(false);
+    const [saved, setSaved] = useState(isSaved);
+    const [isLoading, setIsLoading] = useState(false);
+    const [imageError, setImageError] = useState(false);
     const summaryRef = useRef(null);
 
     // Measure whether text overflows the clamp
     const checkClamped = useCallback(() => {
         const el = summaryRef.current;
         if (!el) return;
-        // scrollHeight > clientHeight means line-clamp is hiding content
         setIsClamped(el.scrollHeight > el.clientHeight + 1);
     }, []);
 
@@ -41,15 +33,55 @@ const EventModal = ({ event, onClose, user }) => {
         }
     };
 
+    // Handle image load error
+    const handleImageError = () => {
+        console.warn(`[DEBUG] Image failed to load: ${event.imageUrl}`);
+        setImageError(true);
+    };
+
+    // Handle "Save/Unsave" click
+    const handleToggleSaveEvent = async (e) => {
+        e.stopPropagation();
+        if (!user) {
+            console.warn("[DEBUG] Save clicked but user is missing");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            if (saved) {
+                // Unsave the event
+                await unsaveEvent(event.id);
+                console.log(`[DEBUG] Event unsaved: ${event.title}`);
+                logClick('unsaved');
+                setSaved(false);
+            } else {
+                // Save the event
+                await saveEvent(event.id);
+                console.log(`[DEBUG] Event saved: ${event.title}`);
+                logClick('saved');
+                setSaved(true);
+            }
+            // Notify parent if callback provided
+            if (onSaveChange) {
+                onSaveChange(event.id, !saved);
+            }
+        } catch (error) {
+            console.error("Failed to toggle save event:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Reset expanded state when a different event opens, and detect clamping
     useEffect(() => {
         if (!event) return;
 
         setExpanded(false);
         setIsClamped(false);
+        setSaved(isSaved); // Reset saved state when event changes
+        setImageError(false); // Reset image error state when event changes
 
-        // Multiple timing attempts to catch layout settling
-        // rAF alone can miss because the modal transition hasn't finished
         const raf = requestAnimationFrame(checkClamped);
         const t1 = setTimeout(checkClamped, 100);
         const t2 = setTimeout(checkClamped, 300);
@@ -59,7 +91,7 @@ const EventModal = ({ event, onClose, user }) => {
             clearTimeout(t1);
             clearTimeout(t2);
         };
-    }, [event, checkClamped]);
+    }, [event, checkClamped, isSaved]);
 
     // Don't render if no event selected
     if (!event) return null;
@@ -67,6 +99,9 @@ const EventModal = ({ event, onClose, user }) => {
     // Safe access to nested properties
     const aiAnalysis = event.ai_analysis || {};
     const questions = event.common_questions || [];
+
+    // Determine if we have a valid image URL
+    const hasImageUrl = event.imageUrl && event.imageUrl.trim().length > 0;
 
     // Format date and time for display
     const formatDateTime = (isoString) => {
@@ -104,12 +139,23 @@ const EventModal = ({ event, onClose, user }) => {
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* ===== HEADER IMAGE ===== */}
-                <div className="relative h-56 sm:h-64 flex-shrink-0 overflow-hidden">
-                    <img
-                        src={event.imageUrl}
-                        alt={event.title}
-                        className="w-full h-full object-cover opacity-90"
-                    />
+                <div className="relative h-56 sm:h-64 flex-shrink-0 overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+                    {hasImageUrl && !imageError ? (
+                        <img
+                            src={event.imageUrl}
+                            alt={event.title}
+                            className="w-full h-full object-cover opacity-90"
+                            onError={handleImageError}
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">
+                            <img
+                                src="/assets/Logo.png"
+                                alt="Locate918"
+                                className="w-24 h-24 object-contain opacity-40"
+                            />
+                        </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/40 to-transparent" />
 
                     {/* Close Button */}
@@ -244,7 +290,24 @@ const EventModal = ({ event, onClose, user }) => {
                 </div>
 
                 {/* ===== FOOTER ===== */}
-                <div className="p-4 sm:p-6 border-t border-white/5 bg-black/20 flex-shrink-0">
+                <div className="p-4 sm:p-6 border-t border-white/5 bg-black/20 flex-shrink-0 space-y-3">
+                    {/* Save Button */}
+                    {user && (
+                        <button
+                            onClick={handleToggleSaveEvent}
+                            disabled={isLoading}
+                            className={`w-full flex items-center justify-center gap-2 py-3 sm:py-4 rounded-xl font-bold tracking-wide transition-all disabled:opacity-50 disabled:cursor-not-allowed ${saved
+                                ? 'bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40 hover:bg-[#d4af37]/30'
+                                : 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 hover:bg-[#d4af37]/20 hover:border-[#d4af37]/40'
+                                }`}
+                            title={saved ? "Remove from saved" : "Save event"}
+                        >
+                            <Heart size={18} className={saved ? 'fill-current' : ''} />
+                            {saved ? 'Saved' : 'Save Event'}
+                        </button>
+                    )}
+
+                    {/* View Original Listing Button */}
                     {event.original_url ? (
                         <a
                             href={event.original_url}

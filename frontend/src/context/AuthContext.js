@@ -80,7 +80,7 @@ export function AuthProvider({ children }) {
             };
 
             setUser(mergedUser);
-            console.log("[DEBUG] User state updated with backend data:", mergedUser.user_metadata);
+            console.log("[DEBUG] User state updated with backend data:", mergedUser);
         } catch (error) {
             console.error("Failed to refresh user:", error);
         }

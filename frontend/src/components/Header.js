@@ -6,27 +6,26 @@
  */
 
 import React, { useState } from 'react';
-import { Search, Filter, ChevronDown, User, Bell, LogOut, Menu, X, Loader2 } from 'lucide-react';
+import { Search, Filter, ChevronDown, User, Bell, LogOut, Menu, X, Loader2, Settings } from 'lucide-react';
 import headerImage from '../assets/header_bg.png';
-import { Settings } from 'lucide-react';
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
 const CATEGORIES = [
-    { id: "music",      label: "Music",             keywords: "music concert live band" },
-    { id: "comedy",     label: "Comedy",             keywords: "comedy comedian standup funny" },
-    { id: "art",        label: "Arts & Theater",     keywords: "art theater dance ballet opera gallery performance" },
-    { id: "festival",   label: "Festival",           keywords: "festival fair outdoor celebration" },
-    { id: "film",       label: "Film",               keywords: "film movie cinema screening" },
-    { id: "food",       label: "Food & Drink",       keywords: "food dining restaurant beer wine cocktail brunch" },
-    { id: "nightlife",  label: "Nightlife",          keywords: "nightlife bar club dj party" },
-    { id: "sports",     label: "Sports & Fitness",   keywords: "sports fitness yoga workout cycling marathon game" },
-    { id: "family",     label: "Family",             keywords: "family kids children all ages storytime" },
-    { id: "educational",label: "Educational",        keywords: "educational museum history lecture workshop library" },
-    { id: "nature",     label: "Nature & Outdoors",  keywords: "nature outdoor park hiking trail garden" },
-    { id: "community",  label: "Community",          keywords: "community market vendor nonprofit fundraiser" },
+    { id: "music", label: "Music", keywords: "music concert live band" },
+    { id: "comedy", label: "Comedy", keywords: "comedy comedian standup funny" },
+    { id: "art", label: "Art & Theater", keywords: "art theater dance ballet opera gallery performance" },
+    { id: "festival", label: "Festival", keywords: "festival fair outdoor celebration" },
+    { id: "film", label: "Film", keywords: "film movie cinema screening" },
+    { id: "food", label: "Food & Drink", keywords: "food dining restaurant beer wine cocktail brunch" },
+    { id: "nightlife", label: "Nightlife", keywords: "nightlife bar club dj party" },
+    { id: "sports", label: "Sports & Fitness", keywords: "sports fitness yoga workout cycling marathon game" },
+    { id: "family", label: "Family", keywords: "family kids children all ages storytime" },
+    { id: "educational", label: "Educational", keywords: "educational museum history lecture workshop library" },
+    { id: "nature", label: "Nature & Outdoors", keywords: "nature outdoor park hiking trail garden" },
+    { id: "community", label: "Community", keywords: "community market vendor nonprofit fundraiser" },
 ];
 
 // =============================================================================
@@ -105,14 +104,25 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile, i
                         </div>
 
                         {user ? (
-                            <div className="space-y-4 mb-8">
-                                <p className="text-sm text-slate-600 truncate">{user.email}</p>
+                            <div className="space-y-3 mb-8">
+                                <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-3">Account</p>
+                                <p className="text-sm text-slate-600 truncate font-medium">{user.email}</p>
+                                <button
+                                    onClick={() => {
+                                        onOpenProfile();
+                                        setIsMobileMenuOpen(false);
+                                    }}
+                                    className="w-full flex items-center justify-center gap-2 bg-[#D4AF37] hover:bg-[#C5A028] text-white px-4 py-3 rounded-xl font-medium text-sm transition-all"
+                                >
+                                    <Settings size={16} />
+                                    Edit Profile
+                                </button>
                                 <button
                                     onClick={() => {
                                         onSignOut();
                                         setIsMobileMenuOpen(false);
                                     }}
-                                    className="w-full flex items-center justify-center gap-2 bg-[#162b4a] text-white px-4 py-3 rounded-xl font-medium text-sm"
+                                    className="w-full flex items-center justify-center gap-2 bg-[#162b4a] hover:bg-[#1f3a60] text-white px-4 py-3 rounded-xl font-medium text-sm transition-all"
                                 >
                                     <LogOut size={16} />
                                     Sign Out
@@ -132,7 +142,7 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile, i
                         )}
 
                         {/* Categories in Mobile Menu */}
-                        <div className="space-y-1">
+                        <div className="space-y-1 border-t border-slate-200 pt-6">
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Categories</p>
                             <button
                                 onClick={() => {
@@ -203,7 +213,7 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile, i
                                                     className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-all duration-200 ${selectedCategory?.id === category.id
                                                         ? 'bg-[#1f3a60] text-white'
                                                         : 'text-slate-300 hover:bg-[#1f3a60] hover:text-white'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     <span className={`w-2 h-2 rounded-full ${selectedCategory?.id === category.id ? 'bg-[#d4af37]' : 'bg-slate-500'}`} />
                                                     <span>{category.label}</span>
@@ -248,7 +258,7 @@ const Header = ({ query, setQuery, user, onOpenAuth, onSignOut, onOpenProfile, i
                                     <button
                                         onClick={onOpenProfile}
                                         className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-slate-700 px-3 py-3 rounded-xl font-medium text-sm transition-all"
-                                        title="View Profile"
+                                        title="Edit Profile"
                                     >
                                         <Settings size={14} />
                                     </button>
