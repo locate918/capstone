@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import NormalizeRequest, NormalizeResponse
 from app.services import gemini
+import traceback
 
 router = APIRouter()
 
@@ -14,4 +15,7 @@ async def normalize_event_data(request: NormalizeRequest):
         events = await gemini.normalize_events(request.raw_content, request.source_url, request.content_type)
         return NormalizeResponse(events=events)
     except Exception as e:
+        # Log the full traceback so it shows up in Railway logs
+        print(f"[Normalize] ERROR: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

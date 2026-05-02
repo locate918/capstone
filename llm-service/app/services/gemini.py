@@ -120,7 +120,7 @@ async def parse_user_intent(message: str) -> Dict[str, Any]:
 
     client = get_client()
     response = await client.aio.models.generate_content(
-        model='gemini-3-flash-preview',
+        model='gemini-2.0-flash',
         contents=[base_prompt, message],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
@@ -224,7 +224,7 @@ async def generate_chat_response(
     """
 
     client = get_client()
-    models_to_try = ['gemini-2.0-flash', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-flash-lite']
+    models_to_try = ['gemini-2.0-flash', 'gemini-2.5-flash-lite']
     response = None
     chat = None
 
@@ -243,7 +243,7 @@ async def generate_chat_response(
             response = await chat.send_message(message)
             break  # Success
         except Exception as e:
-            print(f"Error with model {model_name}: {e}")
+            print(f"[Chat] Gemini model '{model_name}' failed: {e}")
             if model_name == models_to_try[-1]:
                 yield json.dumps(
                     {"message": "I'm having a lot of requests right now. Please try again later.", "status": "Error"})
@@ -503,13 +503,31 @@ async def normalize_events(raw_content: str, source_url: str, content_type: str 
     """
 
     client = get_client()
-    response = await client.aio.models.generate_content(
-        model='gemini-3-flash-preview',
-        contents=[base_prompt, raw_content[:150000]],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json"
-        )
-    )
+
+    # Try multiple models — gemini-2.0-flash is most reliable for structured JSON,
+    # fall back to others if unavailable or overloaded
+    models_to_try = ['gemini-2.0-flash', 'gemini-2.5-flash-lite']
+    response = None
+    for model_name in models_to_try:
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=[base_prompt, raw_content[:150000]],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            break  # Success — stop trying models
+        except Exception as e:
+            print(f"[Normalize] Gemini model '{model_name}' failed: {e}")
+            if model_name == models_to_try[-1]:
+                raise  # Re-raise if ALL models failed
+            await asyncio.sleep(2)
+
+    if response is None:
+        print("[Normalize] All Gemini models failed, returning empty")
+        return []
+
     try:
         raw_data = json.loads(response.text)
         valid_events = []
