@@ -21,7 +21,8 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json, Router,
+    Json,
+    Router,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -141,19 +142,10 @@ async fn list_events(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN LATERAL (
-            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
-            FROM venues v2
-            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
-                COALESCE(
-                    (SELECT va.parent_venue FROM venue_aliases va
-                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
-                     LIMIT 1),
-                    e.venue
-                )
-            ))
-            LIMIT 1
-        ) v ON TRUE
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
         WHERE e.start_time >= NOW()
         ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
         LIMIT $1
@@ -196,29 +188,20 @@ async fn get_event(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN LATERAL (
-            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
-            FROM venues v2
-            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
-                COALESCE(
-                    (SELECT va.parent_venue FROM venue_aliases va
-                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
-                     LIMIT 1),
-                    e.venue
-                )
-            ))
-            LIMIT 1
-        ) v ON TRUE
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
         WHERE e.id = $1
-        "#,
+        "#
     )
-    .bind(id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     match event {
         Some(e) => Ok(Json(e)),
@@ -295,36 +278,91 @@ async fn create_event(
                                ELSE COALESCE(events.canonical_url, EXCLUDED.canonical_url)
                              END,
             updated_at     = NOW()
-        "#,
+        "#
     )
-    .bind(&id)
-    .bind(&payload.title)
-    .bind(&payload.description)
-    .bind(&payload.venue)
-    .bind(&payload.venue_address)
-    .bind(&payload.location)
-    .bind(&payload.source_url)
-    .bind(&payload.source_name)
-    .bind(&payload.start_time)
-    .bind(&payload.end_time)
-    .bind(&payload.categories)
-    .bind(&payload.price_min)
-    .bind(&payload.price_max)
-    .bind(&payload.outdoor)
-    .bind(&payload.family_friendly)
-    .bind(&payload.image_url)
-    .bind(&payload.time_estimated)
-    .bind(&payload.content_hash)
-    .bind(&priority)
-    .bind(&payload.canonical_url)
-    .bind(&now)
-    .bind(&now)
-    .execute(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        .bind(&id)
+        .bind(&payload.title)
+        .bind(&payload.description)
+        .bind(&payload.venue)
+        .bind(&payload.venue_address)
+        .bind(&payload.location)
+        .bind(&payload.source_url)
+        .bind(&payload.source_name)
+        .bind(&payload.start_time)
+        .bind(&payload.end_time)
+        .bind(&payload.categories)
+        .bind(&payload.price_min)
+        .bind(&payload.price_max)
+        .bind(&payload.outdoor)
+        .bind(&payload.family_friendly)
+        .bind(&payload.image_url)
+        .bind(&payload.time_estimated)
+        .bind(&payload.content_hash)
+        .bind(&priority)
+        .bind(&payload.canonical_url)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await;
+
+    // Handle content_hash unique constraint violation:
+    // Postgres can only have one ON CONFLICT target per INSERT. We handle
+    // source_url conflicts above. If a *different* source_url produces the
+    // same content_hash (same real-world event from another source), the
+    // content_hash unique index fires instead. We catch that and merge.
+    if let Err(ref e) = _result {
+        let err_str = e.to_string();
+        if err_str.contains("events_content_hash_key") {
+            // Same real-world event from a different source — update existing row.
+            // Only upgrade fields if the incoming source has better (lower) priority.
+            let _fallback = sqlx::query(
+                r#"
+                UPDATE events SET
+                    title          = CASE WHEN $1 < COALESCE(source_priority, 99) THEN $2 ELSE title END,
+                    description    = CASE
+                                       WHEN LENGTH($3) > COALESCE(LENGTH(description), 0) THEN $3
+                                       ELSE COALESCE(description, $3)
+                                     END,
+                    venue          = CASE WHEN $1 < COALESCE(source_priority, 99) THEN $4 ELSE venue END,
+                    venue_address  = COALESCE(venue_address, $5),
+                    source_name    = $6,
+                    start_time     = $7,
+                    end_time       = COALESCE($8, end_time),
+                    categories     = COALESCE($9, categories),
+                    image_url      = COALESCE(image_url, $10),
+                    source_priority = LEAST(COALESCE(source_priority, 99), $1),
+                    canonical_url  = CASE
+                                       WHEN $1 < COALESCE(source_priority, 99) AND $11 IS NOT NULL
+                                       THEN $11
+                                       ELSE COALESCE(canonical_url, $11)
+                                     END,
+                    updated_at     = NOW()
+                WHERE content_hash = $12
+                "#,
+            )
+                .bind(&priority)              // $1
+                .bind(&payload.title)         // $2
+                .bind(&payload.description)   // $3
+                .bind(&payload.venue)         // $4
+                .bind(&payload.venue_address) // $5
+                .bind(&payload.source_name)   // $6
+                .bind(&payload.start_time)    // $7
+                .bind(&payload.end_time)      // $8
+                .bind(&payload.categories)    // $9
+                .bind(&payload.image_url)     // $10
+                .bind(&payload.canonical_url) // $11
+                .bind(&payload.content_hash)  // $12
+                .execute(&pool)
+                .await
+                .map_err(|e2| {
+                    eprintln!("Database error (content_hash fallback update): {}", e2);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+        } else {
+            eprintln!("Database error: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
 
     // Then fetch the event with venue data JOIN
     let event = sqlx::query_as::<_, Event>(
@@ -340,29 +378,22 @@ async fn create_event(
             v.longitude      AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN LATERAL (
-            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
-            FROM venues v2
-            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
-                COALESCE(
-                    (SELECT va.parent_venue FROM venue_aliases va
-                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
-                     LIMIT 1),
-                    e.venue
-                )
-            ))
-            LIMIT 1
-        ) v ON TRUE
-        WHERE e.source_url = $1
-        "#,
+        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
+        WHERE e.source_url = $1 OR e.content_hash = $2
+        LIMIT 1
+        "#
     )
-    .bind(&payload.source_url)
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| {
-        eprintln!("Database error fetching created event: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        .bind(&payload.source_url)
+        .bind(&payload.content_hash)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Database error fetching created event: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok((StatusCode::OK, Json(event)))
 }
@@ -498,26 +529,15 @@ async fn search_events(
                 v.longitude      AS venue_longitude,
                 v.venue_priority AS venue_priority
             FROM events e
-            LEFT JOIN LATERAL (
-            SELECT v2.website, v2.latitude, v2.longitude, v2.venue_priority
-            FROM venues v2
-            WHERE LOWER(TRIM(v2.name)) = LOWER(TRIM(
-                COALESCE(
-                    (SELECT va.parent_venue FROM venue_aliases va
-                     WHERE LOWER(TRIM(va.alias)) = LOWER(TRIM(e.venue))
-                     LIMIT 1),
-                    e.venue
-                )
-            ))
-            LIMIT 1
-        ) v ON TRUE
+            LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+            COALESCE(va.parent_venue, e.venue)
+        ))
             WHERE {}
             ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
         LIMIT ${} OFFSET ${}
         "#,
-        where_clause,
-        bind_index,
-        bind_index + 1
+        where_clause, bind_index, bind_index + 1
     );
 
     // Wrap the dedup query so we can re-sort the deduplicated results
@@ -536,10 +556,10 @@ async fn search_events(
     if let Some(ref q) = params.q {
         let pattern = format!("%{}%", q);
         query_builder = query_builder
-            .bind(pattern.clone()) // title
-            .bind(pattern.clone()) // description
-            .bind(pattern.clone()) // venue
-            .bind(pattern); // source_name
+            .bind(pattern.clone())  // title
+            .bind(pattern.clone())  // description
+            .bind(pattern.clone())  // venue
+            .bind(pattern);         // source_name
     }
 
     if let Some(ref category) = params.category {
@@ -568,10 +588,13 @@ async fn search_events(
 
     query_builder = query_builder.bind(limit).bind(offset);
 
-    let events = query_builder.fetch_all(&pool).await.map_err(|e| {
-        eprintln!("Search error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let events = query_builder
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| {
+            eprintln!("Search error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(Json(events))
 }
