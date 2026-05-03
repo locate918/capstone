@@ -407,6 +407,20 @@ def extract_etix_events(soup, base_url: str, source_name: str) -> list:
     seen = set()
     is_etix_page = 'etix.com' in base_url
 
+    # PATCH: Skip the "external etix links" path on known venue domains that
+    # have their own dedicated extractor. Those extractors get the title from
+    # the venue's own DOM (artist name H2), not the etix link's anchor text
+    # ("Sold Out", "Buy Tickets"). Running both produces duplicate rows with
+    # garbage titles. extract_rhp_events handles all three RHP-events venues.
+    KNOWN_VENUE_DOMAINS = (
+        'cainsballroom.com',
+        'tulsatheater.com',
+        'mabeecenter.com',
+    )
+    base_host = urlparse(base_url).netloc.lower().lstrip('www.')
+    if not is_etix_page and any(d in base_host for d in KNOWN_VENUE_DOMAINS):
+        return []
+
     # Try captured API data first
     for script in soup.select('script[type="etix-api-data"]'):
         try:

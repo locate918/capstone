@@ -700,7 +700,7 @@ async def extract_rhp_events(
     seen_keys  = set()
 
     for card in cards:
-        title_el   = card.select_one('.rhp-event__title--list, .rhp-event__title, h2.rhp-event__title--list, .eventTitleDiv h2')
+        title_el   = card.select_one('.rhp-event__title--list, .rhp-event__title, h2.rhp-event__title--list, .eventTitleDiv h2, h2')
         # The date element carries multiple co-equal classes in the live DOM:
         #   <div class="rhp-event-series-date eventDateList rhp-event__date--list">
         # Legacy .singleEventDate kept as a fallback in case older widgets use it.
