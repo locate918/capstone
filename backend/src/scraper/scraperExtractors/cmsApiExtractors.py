@@ -1117,13 +1117,27 @@ async def extract_ticketleap_events(html: str, source_name: str, url: str = '', 
 #   "Thu 4/23: 5pm preshow in lobby\n6:30pm films"  ← skip preshow, use film time
 # ============================================================================
 
-# Regex for one showtime line: "Day M/D: time, time, time"
-_CC_SHOWTIME_LINE_RE = re.compile(
-    r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+(\d{1,2}/\d{1,2}):\s*(.+)',
+# Matches showtime lines WITH an explicit date: "Fri 5/1: 1:00p, 3:20p"
+_CC_SHOWTIME_DATED_RE = re.compile(
+    r'(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+(\d{1,2}/\d{1,2}):\s*(.+)',
     re.IGNORECASE,
 )
 
-# Matches individual time tokens: "1:00p", "5:00pm", "6:30pm", "7pm"
+# Matches showtime lines WITHOUT a date: "Sat: 1:00p*, 3:20p"
+_CC_SHOWTIME_DAYONLY_RE = re.compile(
+    r'(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*:\s*(.+)',
+    re.IGNORECASE,
+)
+
+# Legacy alias kept so any other references don't break
+_CC_SHOWTIME_LINE_RE = _CC_SHOWTIME_DATED_RE
+
+# Day-name to weekday number (Monday=0 ... Sunday=6)
+_CC_DAY_TO_WEEKDAY = {
+    'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6,
+}
+
+# Matches individual time tokens: "1:00p", "5:00pm", "6:30pm", "7pm", "1:00p*"
 _CC_TIME_TOKEN_RE = re.compile(
     r'\b(\d{1,2}(?::\d{2})?)\s*(am|pm|p|a)\b',
     re.IGNORECASE,
@@ -1156,33 +1170,90 @@ def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
     Parse the SHOWTIMES block text from a Circle Cinema detail page.
     Returns list of datetime objects (future only relative to now).
 
-    Handles:
-      "Thu 3/19: 1:00p, 5:00p"
-      "Thu 4/23: 5pm preshow in lobby\n6:30pm films"  → picks 6:30pm
+    Handles BOTH old and new formats:
+      OLD: "Thu 3/19: 1:00p, 5:00p"        — every line has M/D
+      NEW: "Fri 5/1: 1:00p*, 3:20p, 5:30p  — only first/last lines have M/D
+            Sat: 1:00p*, 3:20p, 5:30p       — intermediate lines are day-name only
+            Sun: 1:00p*, 3:20p, 5:30p
+            Wed 5/6: 1:00p*, 3:20p"
+      PRESHOW: "Thu 4/23: 5pm preshow in lobby\n6:30pm films"  → picks 6:30pm
+
+    Strategy: maintain a "running date" that starts from the last explicit M/D
+    and advances forward to the next matching weekday on each day-only line.
     """
     now = datetime.now()
     results = []
 
+    # Strip asterisks used for open-caption markers (e.g. "1:00p*")
+    showtimes_text = showtimes_text.replace('*', '')
+
     # Split into lines; a new showtime line starts with a day name
-    lines = re.split(r'\n|\r|(?=(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d)', showtimes_text)
+    # The lookahead handles both "Fri 5/1:" and bare "Sat:"
+    lines = re.split(r'\n|\r|(?=(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*[\s:])', showtimes_text)
+
+    running_date = None  # The last known date from an explicit M/D line
 
     for line in lines:
         line = line.strip()
-        day_match = _CC_SHOWTIME_LINE_RE.match(line)
-        if not day_match:
+        if not line:
             continue
 
-        date_str = day_match.group(1)   # e.g. "3/19"
-        times_str = day_match.group(2)  # e.g. "1:00p, 5:00p"
+        times_str = None
+        current_month = None
+        current_day = None
 
-        # Parse M/D into a date
-        try:
-            month, day = int(date_str.split('/')[0]), int(date_str.split('/')[1])
-            # If month is earlier than current month, it's next year
-            dt_date = datetime(year, month, day).date()
-            if dt_date < now.date():
+        # Try matching a line WITH an explicit date first
+        dated_match = _CC_SHOWTIME_DATED_RE.match(line)
+        if dated_match:
+            day_name = dated_match.group(1).lower()[:3]
+            date_str = dated_match.group(2)   # e.g. "5/1"
+            times_str = dated_match.group(3)
+            try:
+                current_month, current_day = int(date_str.split('/')[0]), int(date_str.split('/')[1])
+                running_date = datetime(year, current_month, current_day).date()
+                # If this month is much earlier than now, it might be next year
+                # (e.g. parsing in December, showtime says "Jan 5")
+                if running_date.month < now.month - 6:
+                    running_date = datetime(year + 1, current_month, current_day).date()
+            except (ValueError, IndexError):
                 continue
-        except (ValueError, IndexError):
+        else:
+            # Try matching a day-name-only line (no M/D)
+            dayonly_match = _CC_SHOWTIME_DAYONLY_RE.match(line)
+            if dayonly_match:
+                day_name = dayonly_match.group(1).lower()[:3]
+                times_str = dayonly_match.group(2)
+
+                if running_date is None:
+                    # No anchor date yet — skip this line
+                    continue
+
+                # Advance running_date to the next occurrence of this weekday
+                target_wd = _CC_DAY_TO_WEEKDAY.get(day_name)
+                if target_wd is None:
+                    continue
+
+                # Step forward from running_date day-by-day until we hit
+                # the target weekday (max 7 steps)
+                candidate = running_date + timedelta(days=1)
+                for _ in range(7):
+                    if candidate.weekday() == target_wd:
+                        running_date = candidate
+                        break
+                    candidate += timedelta(days=1)
+                else:
+                    continue
+
+                current_month = running_date.month
+                current_day = running_date.day
+            else:
+                continue
+
+        if times_str is None or current_month is None:
+            continue
+
+        # Skip dates in the past
+        if running_date < now.date():
             continue
 
         # Handle multi-line time entries (e.g. preshow + film)
@@ -1213,7 +1284,7 @@ def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
 
         for h, mn in time_tokens:
             try:
-                dt = datetime(year, month, day, h, mn)
+                dt = datetime(year, current_month, current_day, h, mn)
                 if dt > now:
                     results.append(dt)
             except ValueError:
@@ -1240,7 +1311,7 @@ def _cc_extract_card_meta(h6_title_elem, soup_root) -> dict:
         if container is None:
             break
         text = container.get_text(' ', strip=True)
-        if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s+\d{4}', text):
+        if re.search(r'\d{1,2}/\d{1,2}/\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s+\d{4}', text):
             card = container
             break
         container = getattr(container, 'parent', None)
@@ -1248,12 +1319,12 @@ def _cc_extract_card_meta(h6_title_elem, soup_root) -> dict:
     card_text = card.get_text(' ', strip=True) if card else ''
 
     # Release date — M/D/YY or "Mar 21, 2026"
-    dm = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4})', card_text)
+    dm = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4})', card_text)
     if dm:
         result['release_date'] = dm.group(1)
     else:
         dm2 = re.search(
-            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})',
+            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})',
             card_text, re.IGNORECASE
         )
         if dm2:
