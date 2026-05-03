@@ -1165,6 +1165,73 @@ def _cc_parse_time_token(token: str) -> tuple | None:
     return h, mn
 
 
+def _cc_expand_combined_dates(showtimes_text: str) -> str:
+    """
+    Pre-process showtimes text to handle Circle Cinema's multi-date shorthand:
+
+      "Fri 5/22 & Sat 5/23: 9:00p"          → expands to two separate lines
+      "Sun 5/3 - Tue 5/4: 12:00p, 2:40p"    → expands to one line per day in range
+
+    Both forms confuse the per-line regex (which requires `Day M/D:` together).
+    We rewrite the input so each day gets its own line BEFORE the splitter runs.
+    """
+    out_lines = []
+    for raw in re.split(r'\n|\r', showtimes_text):
+        line = raw.strip()
+        if not line:
+            out_lines.append('')
+            continue
+
+        # Pattern A: "Day1 M/D & Day2 M/D & ... : times"
+        m_amp = re.match(
+            r'^((?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d{1,2}/\d{1,2}'
+            r'(?:\s*&\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d{1,2}/\d{1,2})+))'
+            r':\s*(.+)$',
+            line, re.IGNORECASE
+        )
+        if m_amp:
+            heads = re.findall(
+                r'((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*)\s+(\d{1,2}/\d{1,2})',
+                m_amp.group(1), re.IGNORECASE
+            )
+            times = m_amp.group(2)
+            for day, md in heads:
+                out_lines.append(f'{day} {md}: {times}')
+            continue
+
+        # Pattern B: "Day1 M/D - Day2 M/D: times" (date range, same showtimes each day)
+        m_rng = re.match(
+            r'^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*)\s+(\d{1,2})/(\d{1,2})'
+            r'\s*-\s*'
+            r'((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*)\s+(\d{1,2})/(\d{1,2})'
+            r':\s*(.+)$',
+            line, re.IGNORECASE
+        )
+        if m_rng:
+            now = datetime.now()
+            year = now.year
+            try:
+                d1 = datetime(year, int(m_rng.group(2)), int(m_rng.group(3))).date()
+                d2 = datetime(year, int(m_rng.group(5)), int(m_rng.group(6))).date()
+                # Roll d2 to next year if range crosses year boundary
+                if d2 < d1:
+                    d2 = datetime(year + 1, int(m_rng.group(5)), int(m_rng.group(6))).date()
+            except ValueError:
+                out_lines.append(line)
+                continue
+            times = m_rng.group(7)
+            day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            cur = d1
+            while cur <= d2:
+                out_lines.append(f'{day_names[cur.weekday()]} {cur.month}/{cur.day}: {times}')
+                cur += timedelta(days=1)
+            continue
+
+        out_lines.append(line)
+
+    return '\n'.join(out_lines)
+
+
 def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
     """
     Parse the SHOWTIMES block text from a Circle Cinema detail page.
@@ -1183,6 +1250,10 @@ def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
     """
     now = datetime.now()
     results = []
+
+    # Expand multi-date shorthand ("Fri 5/22 & Sat 5/23: 9:00p" or
+    # "Sun 5/3 - Tue 5/4: 12:00p") into separate Day M/D: lines
+    showtimes_text = _cc_expand_combined_dates(showtimes_text)
 
     # Strip asterisks used for open-caption markers (e.g. "1:00p*")
     showtimes_text = showtimes_text.replace('*', '')
@@ -1427,36 +1498,62 @@ def _cc_parse_homepage_cards(soup, base_url: str) -> list:
             continue
         seen_titles.add(title)
 
-        # Walk UP from the title element to find the card container
-        # that contains h6 metadata (RELEASE DATE, RATING, RUN TIME).
-        # Wix nests deeply, so we go up to 12 levels.
+        # Walk UP from the title element to find the card container.
+        # Wix renders metadata as <div> elements whose text starts with
+        # "RELEASE DATE\n\nVALUE" (label + double-newline + value all in one div).
+        # h6 tags exist as labels but the values are NOT siblings - they're
+        # in standalone divs. So we walk up looking for a container that
+        # holds at least one a[href*='easy-ware-ticketing.com/eventsByMovie']
+        # OR a div whose text starts with 'RELEASE DATE'.
         container = title_el.parent
         card_container = container
-        for _ in range(12):
+        for _ in range(15):
             if not container or container.name in ['body', 'html']:
                 break
-            if container.find('h6'):
+            # Wider container heuristic: contains the ticket link OR has a
+            # div starting with 'RELEASE DATE' OR has h6 (legacy)
+            has_ticket = bool(container.find('a', href=re.compile(r'easy-ware-ticketing\.com/eventsByMovie')))
+            has_release = any(
+                d.get_text('\n', strip=True).upper().startswith('RELEASE DATE')
+                for d in container.find_all('div', recursive=True)[:60]
+            )
+            if has_ticket or has_release or container.find('h6'):
                 card_container = container
-                break
+                if has_ticket and has_release:
+                    break  # ideal — keep walking only if we don't have both
             container = getattr(container, 'parent', None)
         container = card_container
 
-        # Extract h6 label/value pairs (RELEASE DATE → value, RATING → value, etc.)
-        h6_tags = container.find_all('h6') if container else []
-
+        # Extract metadata from divs that render as "LABEL\n\nVALUE".
+        # innerText behavior: <div><h6>RELEASE DATE</h6><span>5/1/26</span></div>
+        # serializes (via BS4 get_text('\n')) to "RELEASE DATE\n5/1/26" or with
+        # extra whitespace nodes "RELEASE DATE\n\n5/1/26". Strip and split.
         release_date = rating = runtime = ''
-        for i, h6 in enumerate(h6_tags):
-            txt = h6.get_text(strip=True).upper().rstrip(':')
-            val = h6_tags[i + 1].get_text(strip=True) if i + 1 < len(h6_tags) else ''
-            val = val.strip('\u200b').strip()
-            if not val or val.upper() in ('RELEASE DATE', 'RATING', 'RUN TIME', 'GENRE', 'N/A', ''):
-                continue
-            if txt == 'RELEASE DATE' and not release_date:
-                release_date = val
-            elif txt == 'RATING' and not rating:
-                rating = val
-            elif 'RUN TIME' in txt and not runtime:
-                runtime = val
+        if container:
+            for d in container.find_all('div', recursive=True):
+                txt = d.get_text('\n', strip=True)
+                if not txt or '\n' not in txt:
+                    continue
+                # Only take divs where the FIRST line is exactly the label.
+                # Avoids matching outer wrappers that contain everything.
+                first_nl = txt.find('\n')
+                head = txt[:first_nl].strip().upper().rstrip(':')
+                tail = txt[first_nl:].strip('\n \t\u200b\u200c\u200d')
+                if not tail:
+                    continue
+                # Take only the first line of the value (avoid swallowing the
+                # rest of the card if this div is a wrapper).
+                tail_first = tail.split('\n', 1)[0].strip('\u200b').strip()
+                if not tail_first or tail_first.upper() in (
+                        'RELEASE DATE', 'RATING', 'RUN TIME', 'GENRE', 'N/A', ''
+                ):
+                    continue
+                if head == 'RELEASE DATE' and not release_date:
+                    release_date = tail_first
+                elif head == 'RATING' and not rating:
+                    rating = tail_first
+                elif 'RUN TIME' in head and not runtime:
+                    runtime = tail_first
 
         # Description — first <p> with meaningful content
         description = ''
@@ -1602,23 +1699,32 @@ async def extract_circle_cinema_events(
             showtimes = _cc_extract_showtimes_from_page(detail_text, year)
 
             if showtimes:
-                # One card per film — next upcoming showtime
-                dt = showtimes[0]
-                print(f"  [CircleCinema] {title}: next showtime {dt.strftime('%m/%d %I:%M%p')}")
-                event = {
-                    'title': title,
-                    'description': full_desc,
-                    'start_time': dt.strftime('%Y-%m-%dT%H:%M:%S'),
-                    'time_estimated': False,
-                    'source_url': source_url,
-                    'venue': 'Circle Cinema',
-                    'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
-                    'image_url': image_url,
-                    'categories': ['Film', 'Arts'],
-                }
-                if ticket_url:
-                    event['ticket_url'] = ticket_url
-                events.append(event)
+                # Emit ONE event per showtime (cap at 25 to avoid runaway for
+                # long-running features). The list comes back in chronological
+                # order from _cc_parse_showtimes_text.
+                emitted_count = 0
+                MAX_PER_FILM = 25
+                for dt in showtimes[:MAX_PER_FILM]:
+                    event = {
+                        'title': title,
+                        'description': full_desc,
+                        'start_time': dt.strftime('%Y-%m-%dT%H:%M:%S'),
+                        'time_estimated': False,
+                        # Per-showtime source_url ensures unique source_url
+                        # constraint in the events table doesn't dedupe them.
+                        # The fragment is harmless to the destination page.
+                        'source_url': f"{source_url}#{dt.strftime('%Y%m%dT%H%M')}",
+                        'venue': 'Circle Cinema',
+                        'venue_address': '10 S. Lewis Ave, Tulsa, OK 74104',
+                        'image_url': image_url,
+                        'categories': ['Film', 'Arts'],
+                    }
+                    if ticket_url:
+                        event['ticket_url'] = ticket_url
+                    events.append(event)
+                    emitted_count += 1
+                print(f"  [CircleCinema] {title}: emitted {emitted_count} showtimes "
+                      f"(first {showtimes[0].strftime('%m/%d %I:%M%p')})")
                 continue
 
         # No detail page or no showtimes found — fall back to release date, time_estimated
