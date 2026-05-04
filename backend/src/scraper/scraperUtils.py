@@ -7,6 +7,7 @@ Shared config, robots.txt checking, URL management, and date/time pattern matchi
 import os
 import re
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -268,30 +269,101 @@ def get_source_priority(url: str, explicit_priority: int = None) -> int:
         return 3
 
 
+# ============================================================================
+# CONTENT HASH (cross-source deduplication)
+# ============================================================================
+# The hash is an MD5 of normalize(title) + 3-hour-time-bucket + normalize(venue).
+# Two events from different sources representing the same real-world event
+# produce the same hash and are deduplicated by the UPSERT in events.rs.
+#
+# Normalization rules:
+#   - title:  lowercase, "and"→"&", punctuation stripped, whitespace collapsed
+#   - venue:  alias-resolved to canonical (via venue_aliases table),
+#             "the " prefix stripped, lowercased, punctuation stripped
+#   - time:   bucketed to 3-hour windows in UTC. Absorbs doors-vs-show times
+#             and 30-90 minute publishing drift between sources.
+# ============================================================================
+
+# Module-level cache for venue alias lookup (alias_lower → parent_venue)
+_venue_alias_map: dict = {}
+_venue_alias_cache_time: float = 0.0
+_VENUE_ALIAS_TTL = 3600  # 1 hour
+
+
+def _load_venue_aliases() -> dict:
+    """Fetch alias → parent_venue map from Supabase, cached 1 hour."""
+    global _venue_alias_map, _venue_alias_cache_time
+    if _venue_alias_map and (time.time() - _venue_alias_cache_time) < _VENUE_ALIAS_TTL:
+        return _venue_alias_map
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_KEY", "")
+    if not supabase_url or not supabase_key:
+        # Silent if creds missing — hash still works, just without alias resolution
+        return _venue_alias_map
+
+    try:
+        resp = httpx.get(
+            f"{supabase_url}/rest/v1/venue_aliases?select=alias,parent_venue",
+            headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        _venue_alias_map = {
+            (row["alias"] or "").lower().strip(): (row["parent_venue"] or "").strip()
+            for row in resp.json()
+            if row.get("alias") and row.get("parent_venue")
+        }
+        _venue_alias_cache_time = time.time()
+        print(f"[ContentHash] Loaded {len(_venue_alias_map)} venue aliases")
+    except Exception as e:
+        print(f"[ContentHash] Failed to load venue aliases: {e}")
+
+    return _venue_alias_map
+
+
 def make_content_hash(title: str, start_time: str, venue: str = '') -> str:
     """
-    Generate a stable fingerprint for an event based on title + date/hour + venue.
-    Two events from different sources that represent the same real-world event
+    Generate a stable fingerprint for an event based on title + 3hr-time-bucket + venue.
+    Two events from different sources representing the same real-world event
     will produce the same hash and be deduplicated by the UPSERT.
     """
     import hashlib
     from dateutil import parser as date_parser
+    from datetime import timezone as _tz
 
     def _norm(s: str) -> str:
         s = (s or '').lower().strip()
-        s = re.sub(r'[^a-z0-9 ]', '', s)   # strip punctuation / special chars
-        s = re.sub(r'\band\b', '&', s)      # normalise "and" → "&"
-        s = re.sub(r'\s+', ' ', s)          # collapse whitespace
+        s = re.sub(r'\band\b', ' & ', s)         # "and" → "&" BEFORE punctuation strip
+        s = re.sub(r'[^a-z0-9& ]', '', s)         # strip punctuation, keep '&'
+        s = re.sub(r'\s+', ' ', s)                # collapse whitespace
         return s.strip()
 
-    # Round to date + hour only — absorbs minor time discrepancies between sources
+    def _norm_venue(v: str) -> str:
+        """Resolve aliases to canonical, strip 'the ' prefix, then normalize."""
+        if not v:
+            return ''
+        raw = v.lower().strip()
+        aliases = _load_venue_aliases()
+        if raw in aliases:
+            raw = aliases[raw].lower().strip()
+        # Drop leading "the " so "The Hunt Club" and "Hunt Club" collide
+        raw = re.sub(r'^the\s+', '', raw)
+        return _norm(raw)
+
+    # 3-hour time bucketing — absorbs doors-vs-show times and minor drift.
+    BUCKET_HOURS = 3
     try:
         dt = date_parser.parse(str(start_time), fuzzy=True)
-        time_part = dt.strftime('%Y-%m-%d-%H')
+        # Normalize to UTC for consistent bucketing across sources
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(_tz.utc).replace(tzinfo=None)
+        bucket = dt.hour // BUCKET_HOURS
+        time_part = f"{dt.strftime('%Y-%m-%d')}-{bucket}"
     except Exception:
         time_part = str(start_time or '')[:10]  # fallback: just YYYY-MM-DD
 
-    key = f"{_norm(title)}|{time_part}|{_norm(venue)}"
+    key = f"{_norm(title)}|{time_part}|{_norm_venue(venue)}"
     return hashlib.md5(key.encode()).hexdigest()
 
 
