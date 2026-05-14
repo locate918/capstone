@@ -1085,22 +1085,10 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
     all_normalized = []
     chunk_size = 10
     failed_chunks = 0
-    consecutive_failures = 0
-    MAX_RETRIES = 5
-    MAX_CONSECUTIVE_FAILURES = 3  # Abort early if Gemini is completely down
-    total_chunks = (len(events) + chunk_size - 1) // chunk_size
+    MAX_RETRIES = 4
 
     for i in range(0, len(events), chunk_size):
         chunk = events[i:i + chunk_size]
-        chunk_num = i // chunk_size + 1
-
-        # Abort early if Gemini has failed too many times in a row
-        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-            remaining = total_chunks - chunk_num + 1
-            print(f"[Normalize] Aborting: {consecutive_failures} consecutive failures. "
-                  f"Skipping remaining {remaining} chunk(s).")
-            failed_chunks += remaining
-            break
 
         # Strip blank start_time so Gemini infers from title/description
         # rather than receiving an empty string that fails Pydantic validation
@@ -1130,18 +1118,16 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
                     data = resp.json()
                     normalized = data.get("events", [])
                     if normalized:
-                        print(f"[Normalize] Chunk {chunk_num}/{total_chunks}: {len(chunk)} raw → {len(normalized)} normalized")
+                        print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
                         all_normalized.extend(normalized)
-                        consecutive_failures = 0  # Reset on success
                     else:
-                        print(f"[Normalize] Chunk {chunk_num}/{total_chunks}: Got empty result, skipping chunk")
+                        print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
                         failed_chunks += 1
                     success = True
                     break
 
                 elif resp.status_code in [500, 503]:
-                    # Longer backoff: 10s, 20s, 40s, 80s, 160s
-                    wait = 10 * (2 ** attempt)
+                    wait = 5 * (2 ** attempt)  # 5s, 10s, 20s, 40s
                     print(f"[Normalize] Gemini overloaded (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait}s...")
                     time.sleep(wait)
 
@@ -1161,21 +1147,14 @@ def normalize_batch(events: list, source_url: str = "", source_name: str = "") -
                 break
 
         if not success:
-            print(f"[Normalize] Chunk {chunk_num}/{total_chunks}: All {MAX_RETRIES} retries failed, skipping")
+            print(f"[Normalize] Chunk {i // chunk_size + 1}: All {MAX_RETRIES} retries failed, skipping")
             failed_chunks += 1
-            consecutive_failures += 1
 
-        # Longer delay between chunks to avoid hammering Gemini
-        # Increase delay after failures to give the API more recovery time
-        if consecutive_failures > 0:
-            time.sleep(8)
-        else:
-            time.sleep(4)
+        # Small delay between chunks to avoid hammering Gemini
+        time.sleep(2)
 
     if failed_chunks:
-        print(f"[Normalize] {failed_chunks}/{total_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")
-    else:
-        print(f"[Normalize] All {total_chunks} chunks succeeded — {len(all_normalized)} events normalized")
+        print(f"[Normalize] {failed_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")
 
     return all_normalized
 
@@ -1343,9 +1322,7 @@ def register_routes(app):
 
         # Allow cron requests authenticated via CRON_SECRET header or query param
         # Works regardless of IP (Railway cron, external triggers, etc.)
-        cron_paths = ('/cron-scrape', '/scrape-all', '/scrape-source')
-        if request.path in cron_paths:
-            print(f"[AUTH] Cron-path request: {request.path!r}")
+        if request.path in ('/cron-scrape', '/scrape-all'):
             cron_token = (
                     request.headers.get('X-Cron-Secret') or
                     request.args.get('secret') or
@@ -1873,7 +1850,15 @@ def register_routes(app):
             }
 
         try:
-            result = asyncio.run(asyncScraper.scrape_one_standalone(entry))
+            # Create a new event loop (same pattern as /cron-scrape)
+            # This avoids conflicts with gevent's event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(asyncScraper.scrape_one_standalone(entry))
+            finally:
+                loop.close()
+
             return jsonify({
                 'url':          result['url'],
                 'name':         result['name'],
