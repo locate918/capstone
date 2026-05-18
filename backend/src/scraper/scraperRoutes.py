@@ -62,6 +62,18 @@ from scraperExtractors import (
     extract_badass_renees_events,
     extract_rocklahoma_events,
     extract_tulsa_oktoberfest_events,
+    extract_rhp_events,
+    extract_loonybin_events,
+    extract_bricktown_comedy_events,
+    extract_carneyfest_events,
+    extract_magic_city_books_events,
+    extract_spotlight_theater_events,
+    extract_tulsamayfest_events,
+    extract_living_arts_events,
+    extract_riverparks_events,
+    extract_route66_village_events,
+    extract_maggies_events,
+    extract_church_studio_events,
     extract_events_universal,
     fetch_with_httpx,
     fetch_with_playwright,
@@ -1634,6 +1646,90 @@ def register_routes(app):
                     print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
 
             if not events:
+                _rhpevents_ev, _rhpevents_det = asyncio.run(extract_rhp_events(html, source_name, url, future_only))
+                if _rhpevents_det and _rhpevents_ev:
+                    events = _rhpevents_ev
+                    methods.append(f"RHPEvents ({len(events)})")
+                    print(f"[RHPEvents] SUCCESS: {len(events)} events")
+
+            if not events:
+                _loonybintulsa_ev, _loonybintulsa_det = asyncio.run(extract_loonybin_events(html, source_name, url, future_only))
+                if _loonybintulsa_det and _loonybintulsa_ev:
+                    events = _loonybintulsa_ev
+                    methods.append(f"LoonybinTulsa ({len(events)})")
+                    print(f"[LoonybinTulsa] SUCCESS: {len(events)} events")
+
+            if not events:
+                _bricktowncomedy_ev, _bricktowncomedy_det = asyncio.run(extract_bricktown_comedy_events(html, source_name, url, future_only))
+                if _bricktowncomedy_det and _bricktowncomedy_ev:
+                    events = _bricktowncomedy_ev
+                    methods.append(f"BricktownComedy ({len(events)})")
+                    print(f"[BricktownComedy] SUCCESS: {len(events)} events")
+
+            if not events:
+                _carneyfest_ev, _carneyfest_det = asyncio.run(extract_carneyfest_events(html, source_name, url, future_only))
+                if _carneyfest_det and _carneyfest_ev:
+                    events = _carneyfest_ev
+                    methods.append(f"CarneyFest ({len(events)})")
+                    print(f"[CarneyFest] SUCCESS: {len(events)} events")
+
+            if not events:
+                _magiccitybooks_ev, _magiccitybooks_det = asyncio.run(extract_magic_city_books_events(html, source_name, url, future_only))
+                if _magiccitybooks_det and _magiccitybooks_ev:
+                    events = _magiccitybooks_ev
+                    methods.append(f"MagicCityBooks ({len(events)})")
+                    print(f"[MagicCityBooks] SUCCESS: {len(events)} events")
+
+            if not events:
+                _spotlighttheatre_ev, _spotlighttheatre_det = asyncio.run(extract_spotlight_theater_events(html, source_name, url, future_only))
+                if _spotlighttheatre_det and _spotlighttheatre_ev:
+                    events = _spotlighttheatre_ev
+                    methods.append(f"SpotlightTheatre ({len(events)})")
+                    print(f"[SpotlightTheatre] SUCCESS: {len(events)} events")
+
+            if not events:
+                _tulsamayfest_ev, _tulsamayfest_det = asyncio.run(extract_tulsamayfest_events(html, source_name, url, future_only))
+                if _tulsamayfest_det and _tulsamayfest_ev:
+                    events = _tulsamayfest_ev
+                    methods.append(f"TulsaMayfest ({len(events)})")
+                    print(f"[TulsaMayfest] SUCCESS: {len(events)} events")
+
+            if not events:
+                _livingarts_ev, _livingarts_det = asyncio.run(extract_living_arts_events(html, source_name, url, future_only))
+                if _livingarts_det and _livingarts_ev:
+                    events = _livingarts_ev
+                    methods.append(f"LivingArts ({len(events)})")
+                    print(f"[LivingArts] SUCCESS: {len(events)} events")
+
+            if not events:
+                _riverparks_ev, _riverparks_det = asyncio.run(extract_riverparks_events(html, source_name, url, future_only))
+                if _riverparks_det and _riverparks_ev:
+                    events = _riverparks_ev
+                    methods.append(f"RiverParks ({len(events)})")
+                    print(f"[RiverParks] SUCCESS: {len(events)} events")
+
+            if not events:
+                _route66village_ev, _route66village_det = asyncio.run(extract_route66_village_events(html, source_name, url, future_only))
+                if _route66village_det and _route66village_ev:
+                    events = _route66village_ev
+                    methods.append(f"Route66Village ({len(events)})")
+                    print(f"[Route66Village] SUCCESS: {len(events)} events")
+
+            if not events:
+                _maggies_ev, _maggies_det = asyncio.run(extract_maggies_events(html, source_name, url, future_only))
+                if _maggies_det and _maggies_ev:
+                    events = _maggies_ev
+                    methods.append(f"Maggies ({len(events)})")
+                    print(f"[Maggies] SUCCESS: {len(events)} events")
+
+            if not events:
+                _churchstudio_ev, _churchstudio_det = asyncio.run(extract_church_studio_events(html, source_name, url, future_only))
+                if _churchstudio_det and _churchstudio_ev:
+                    events = _churchstudio_ev
+                    methods.append(f"ChurchStudio ({len(events)})")
+                    print(f"[ChurchStudio] SUCCESS: {len(events)} events")
+
+            if not events:
                 events = extract_events_universal(html, url, source_name)
 
                 if events and '_extraction_methods' in events[0]:
@@ -1850,15 +1946,7 @@ def register_routes(app):
             }
 
         try:
-            # Create a new event loop (same pattern as /cron-scrape)
-            # This avoids conflicts with gevent's event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(asyncScraper.scrape_one_standalone(entry))
-            finally:
-                loop.close()
-
+            result = asyncio.run(asyncScraper.scrape_one_standalone(entry))
             return jsonify({
                 'url':          result['url'],
                 'name':         result['name'],

@@ -120,6 +120,10 @@ pub struct ListQuery {
 /// Returns all upcoming events, sorted by start time.
 /// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
+/// FIX: Uses DISTINCT ON (e.id) to prevent row multiplication from the
+/// venue_aliases JOIN, then re-sorts in an outer query for display order.
+/// Added e.id as final ORDER BY tiebreaker for deterministic pagination.
+///
 /// # Endpoint
 /// `GET /api/events`
 /// `GET /api/events?limit=500`
@@ -131,23 +135,29 @@ async fn list_events(
 
     let events = sqlx::query_as::<_, Event>(
         r#"
-        SELECT
-            e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
-            e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
-            e.created_at, e.updated_at,
-            v.website      AS venue_website,
-            v.latitude     AS venue_latitude,
-            v.longitude    AS venue_longitude,
-            v.venue_priority AS venue_priority
-        FROM events e
-        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-            COALESCE(va.parent_venue, e.venue)
-        ))
-        WHERE e.start_time >= NOW()
-        ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(v.venue_priority, 3) ASC, e.start_time ASC
+        SELECT * FROM (
+            SELECT DISTINCT ON (e.id)
+                e.id, e.title, e.description, e.venue, e.venue_address, e.location,
+                e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+                e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+                e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
+                e.created_at, e.updated_at,
+                v.website      AS venue_website,
+                v.latitude     AS venue_latitude,
+                v.longitude    AS venue_longitude,
+                v.venue_priority AS venue_priority
+            FROM events e
+            LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
+            LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+                COALESCE(va.parent_venue, e.venue)
+            ))
+            WHERE e.start_time >= NOW()
+            ORDER BY e.id
+        ) AS deduped
+        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC,
+                 COALESCE(venue_priority, 3) ASC,
+                 start_time ASC,
+                 id ASC
         LIMIT $1
         "#
     )
@@ -177,7 +187,7 @@ async fn get_event(
 ) -> Result<Json<Event>, StatusCode> {
     let event = sqlx::query_as::<_, Event>(
         r#"
-        SELECT
+        SELECT DISTINCT ON (e.id)
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
@@ -193,6 +203,7 @@ async fn get_event(
             COALESCE(va.parent_venue, e.venue)
         ))
         WHERE e.id = $1
+        ORDER BY e.id
         "#
     )
         .bind(id)
@@ -367,7 +378,7 @@ async fn create_event(
     // Then fetch the event with venue data JOIN
     let event = sqlx::query_as::<_, Event>(
         r#"
-        SELECT
+        SELECT DISTINCT ON (e.id)
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
             e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
@@ -383,6 +394,7 @@ async fn create_event(
             COALESCE(va.parent_venue, e.venue)
         ))
         WHERE e.source_url = $1 OR e.content_hash = $2
+        ORDER BY e.id
         LIMIT 1
         "#
     )
@@ -444,6 +456,9 @@ pub struct SearchQuery {
 
 /// Advanced search with multiple filters.
 /// Includes venue website and coordinates from venues table via LEFT JOIN.
+///
+/// FIX: Inner query uses DISTINCT ON (e.id) instead of DISTINCT ON (e.source_url)
+/// to prevent JOIN multiplication. Added id ASC as final sort tiebreaker.
 ///
 /// # Endpoint
 /// `GET /api/events/search?q=jazz&outdoor=true&limit=20`
@@ -516,9 +531,11 @@ async fn search_events(
 
     let where_clause = conditions.join(" AND ");
 
+    // Inner query: deduplicate by event id to prevent JOIN multiplication,
+    // then outer query re-sorts for display order.
     let query = format!(
         r#"
-        SELECT DISTINCT ON (e.source_url)
+        SELECT DISTINCT ON (e.id)
                 e.id, e.title, e.description, e.venue, e.venue_address, e.location,
                 e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
@@ -530,24 +547,27 @@ async fn search_events(
                 v.venue_priority AS venue_priority
             FROM events e
             LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-            COALESCE(va.parent_venue, e.venue)
-        ))
+            LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
+                COALESCE(va.parent_venue, e.venue)
+            ))
             WHERE {}
-            ORDER BY e.source_url, e.updated_at DESC, e.start_time ASC
-        LIMIT ${} OFFSET ${}
+            ORDER BY e.id
         "#,
-        where_clause, bind_index, bind_index + 1
+        where_clause
     );
 
     // Wrap the dedup query so we can re-sort the deduplicated results
-    // by venue_priority first, then chronologically.
+    // by venue_priority first, then chronologically, with id as stable tiebreaker.
     let query = format!(
         r#"
         SELECT * FROM ({}) AS deduped
-        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC, COALESCE(venue_priority, 3) ASC, start_time ASC
+        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC,
+                 COALESCE(venue_priority, 3) ASC,
+                 start_time ASC,
+                 id ASC
+        LIMIT ${} OFFSET ${}
         "#,
-        query
+        query, bind_index, bind_index + 1
     );
 
     // Build and execute query with bindings
