@@ -1,632 +1,575 @@
 """
-Locate918 Async Scraper
-=======================
-Sequential scraping engine with per-venue normalization.
+Locate918 Scraper - Direct API Extractors
+==========================================
+Extractors for venues that expose direct JSON APIs:
+  - EventCalendarApp (Guthrie Green, Fly Loft, LowDown)
+  - Timely (Starlite Bar)
+  - BOK Center (custom AJAX API)
 
-REWRITE: Replaced concurrent asyncio.gather with sequential processing.
-  - Scrapes one venue at a time
-  - Normalizes immediately after extraction (Gemini gets dedicated time)
-  - Submits to backend before moving to next venue
-  - Logs a per-venue report as it goes
-  - Configurable delay between venues to avoid Gemini rate limits
-
-This fixes:
-  1. Gemini overload from parallel normalization requests
-  2. Duplicate events from normalization fallback to raw data
-  3. Railway cron crashes (new /cron-scrape endpoint returns JSON, not SSE)
+FIX: BOK Center multi-day events (e.g., "Mar 6-7") now preserved correctly.
 """
 
-import asyncio
-import json
-import queue
 import re
-import threading
-import time
-import traceback
+import json
+import asyncio
 from datetime import datetime
-from pathlib import Path
+from urllib.parse import urlparse, urljoin
+import httpx
+from bs4 import BeautifulSoup
 
-# ── Light imports only at module level ───────────────────────────────────────
 from scraperUtils import (
-    OUTPUT_DIR,
-    BACKEND_URL,
-    check_robots_txt,
-    resolve_source_name,
+    HEADERS,
+    COMBINED_DATE_PATTERN,
+    COMBINED_TIME_PATTERN,
+    extract_date_from_text,
+    extract_time_from_text,
+    text_has_date,
 )
 
-# ── Sequential pacing ────────────────────────────────────────────────────────
-# Delay between venues (seconds) — gives Gemini breathing room
-VENUE_DELAY = 3
-# Delay after a normalization failure before retrying next venue
-NORM_FAIL_DELAY = 10
 
-# ── Status persistence ────────────────────────────────────────────────────────
-STATUS_FILE = OUTPUT_DIR / "scrape_status.json"
-_status_lock = threading.Lock()
+# ============================================================================
+# EVENTCALENDARAPP
+# ============================================================================
 
-
-def load_status() -> dict:
-    try:
-        return json.loads(STATUS_FILE.read_text()) if STATUS_FILE.exists() else {}
-    except Exception:
-        return {}
+KNOWN_EVENTCALENDARAPP_VENUES = {
+    'guthriegreen.com': {'id': '11692', 'widgetUuid': 'dcafff1d-f2a8-4799-9a6b-a5ad3e3a6ff2'},
+    'www.guthriegreen.com': {'id': '11692', 'widgetUuid': 'dcafff1d-f2a8-4799-9a6b-a5ad3e3a6ff2'},
+}
 
 
-def save_status(status: dict) -> None:
-    with _status_lock:
+def detect_eventcalendarapp(html: str, url: str = '') -> dict | None:
+    if url:
         try:
-            STATUS_FILE.write_text(json.dumps(status, indent=2))
-        except Exception as e:
-            print(f"[Status] Write failed: {e}")
-
-
-# ── Lazy extractor loader ─────────────────────────────────────────────────────
-_extractors = None
-
-def _get_extractors():
-    """Import scraperExtractors on first call, then cache."""
-    global _extractors
-    if _extractors is None:
-        from scraperExtractors import (
-            extract_eventcalendarapp,
-            extract_timely,
-            extract_bok_center,
-            extract_circle_cinema_events,
-            extract_expo_square_events,
-            extract_eventbrite_api_events,
-            extract_simpleview_events,
-            extract_sitewrench_events,
-            extract_recdesk_events,
-            extract_ticketleap_events,
-            extract_libnet_events,
-            extract_philbrook_events,
-            extract_tulsapac_events,
-            extract_roosterdays_events,
-            extract_tulsabrunchfest_events,
-            extract_okeq_events,
-            extract_flywheel_events,
-            extract_arvest_events,
-            extract_tulsatough_events,
-            extract_gradient_events,
-            extract_tulsafarmersmarket_events,
-            extract_okcastle_events,
-            extract_broken_arrow_events,
-            extract_tulsazoo_events,
-            extract_hardrock_tulsa_events,
-            extract_gypsy_events,
-            extract_badass_renees_events,
-            extract_rocklahoma_events,
-            extract_tulsa_oktoberfest_events,
-            extract_rhp_events,
-            extract_events_universal,
-            fetch_with_httpx,
-            fetch_with_playwright,
-        )
-        _extractors = {
-            'chain': [
-                (extract_eventcalendarapp,          "EventCalendarApp API"),
-                (extract_timely,                    "Timely API"),
-                (extract_bok_center,                "BOK Center API"),
-                (extract_circle_cinema_events,      "Circle Cinema"),
-                (extract_expo_square_events,        "Expo Square API"),
-                (extract_eventbrite_api_events,     "Eventbrite API"),
-                (extract_simpleview_events,         "Simpleview API"),
-                (extract_sitewrench_events,         "SiteWrench API"),
-                (extract_recdesk_events,            "RecDesk API"),
-                (extract_ticketleap_events,         "TicketLeap"),
-                (extract_libnet_events,             "LibNet API"),
-                (extract_philbrook_events,          "Philbrook AJAX"),
-                (extract_tulsapac_events,           "TulsaPAC API"),
-                (extract_roosterdays_events,        "RoosterDays"),
-                (extract_tulsabrunchfest_events,    "TulsaBrunchFest"),
-                (extract_okeq_events,               "OKEQ"),
-                (extract_flywheel_events,           "Flywheel"),
-                (extract_arvest_events,             "Arvest"),
-                (extract_tulsatough_events,         "TulsaTough"),
-                (extract_gradient_events,           "Gradient"),
-                (extract_tulsafarmersmarket_events, "TFM"),
-                (extract_okcastle_events,           "OKCastle"),
-                (extract_broken_arrow_events,       "BrokenArrow"),
-                (extract_tulsazoo_events,           "TulsaZoo"),
-                (extract_hardrock_tulsa_events,     "HardRockTulsa"),
-                (extract_gypsy_events,              "Gypsy"),
-                (extract_badass_renees_events,      "BadAssRenees"),
-                (extract_rocklahoma_events,         "Rocklahoma"),
-                (extract_tulsa_oktoberfest_events,  "TulsaOktoberfest"),
-                (extract_rhp_events,                "RHPEvents"),
-            ],
-            'universal':       extract_events_universal,
-            'fetch_httpx':     fetch_with_httpx,
-            'fetch_playwright': fetch_with_playwright,
-        }
-    return _extractors
-
-
-# ── Future date filter ────────────────────────────────────────────────────────
-
-def _apply_future_filter(events: list) -> list:
-    from dateutil import parser as _dp
-    now = datetime.now()
-    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    filtered = []
-    for ev in events:
-        date_str = (ev.get('date') or ev.get('date_start') or ev.get('start_time') or '')
-        if not date_str:
-            filtered.append(ev)
-            continue
-        try:
-            dt = _dp.parse(str(date_str), fuzzy=True).replace(tzinfo=None)
-            if dt < cutoff:
-                days_past = (cutoff - dt).days
-                if days_past > 270:
-                    dt = dt.replace(year=dt.year + 1)
-                    ev['date'] = dt.strftime('%b %d, %Y')
-                    if dt >= cutoff:
-                        filtered.append(ev)
-                else:
-                    end_str = (ev.get('end_date') or ev.get('end_time') or ev.get('date_end') or '')
-                    if end_str:
-                        try:
-                            end_dt = _dp.parse(str(end_str), fuzzy=True).replace(tzinfo=None)
-                            if end_dt >= cutoff:
-                                filtered.append(ev)
-                                continue
-                        except Exception:
-                            pass
-            else:
-                filtered.append(ev)
-        except Exception:
-            filtered.append(ev)
-    return filtered
-
-
-# ── Core extraction chain ─────────────────────────────────────────────────────
-
-async def run_extraction_chain(html: str, name: str, url: str,
-                               future_only: bool = True) -> tuple:
-    ext = _get_extractors()
-    events: list = []
-    methods: list = []
-
-    for fn, label in ext['chain']:
-        if events:
-            break
-        try:
-            evs, detected = await fn(html, name, url, future_only)
-            if detected and evs:
-                events = evs
-                methods.append(f"{label} ({len(evs)})")
-                print(f"[{label}] {name}: {len(evs)} events")
-        except Exception as e:
-            print(f"[{label}] {name}: {e}")
-
-    if not events:
-        univ = ext['universal'](html, url, name)
-        if univ:
-            if '_extraction_methods' in univ[0]:
-                methods = univ[0]['_extraction_methods']
-                for e in univ:
-                    e.pop('_extraction_methods', None)
-            events = univ
-
-    if future_only and events:
-        events = _apply_future_filter(events)
-
-    return events, methods
-
-
-# ── DB pipeline (single venue) ───────────────────────────────────────────────
-
-def _post_events_to_db(events: list, url: str, name: str,
-                       source_priority: int = None) -> tuple:
-    """
-    Normalize then post events for ONE venue. Returns (db_saved, norm_ok).
-    Sequential design means Gemini only handles one venue at a time.
-    """
-    import httpx as _httpx
-    try:
-        from scraperRoutes import normalize_batch, transform_event_for_backend
-    except ImportError as e:
-        print(f"[DB] Import error: {e}")
-        return 0, False
-
-    print(f"[DB] Normalizing {len(events)} events for {name}...")
-    normalized = normalize_batch(events, source_url=url, source_name=name)
-    normalization_succeeded = bool(normalized)
-
-    if normalization_succeeded:
-        print(f"[DB] ✓ Normalized {len(events)} → {len(normalized)} for {name}")
-    else:
-        print(f"[DB] ⚠ Normalization failed for {name}, using raw fallback")
-
-    to_post = normalized if normalized else events
-    saved = 0
-    errors = 0
-    for ev in to_post:
-        try:
-            xf = transform_event_for_backend(ev, source_priority=source_priority)
-            # Synthetic unique source_url — prevents all events collapsing onto
-            # one row when the extractor (e.g. Timely) returns no per-event URL.
-            if not xf.get('source_url'):
-                import hashlib as _hl
-                slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
-                uid  = _hl.md5(slug.encode()).hexdigest()[:8]
-                xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
-            if not xf.get('source_name'):
-                xf['source_name'] = name
-            # Always use the admin-approved saved_urls name as canonical venue.
-            xf['venue'] = name
-            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
-            if resp.status_code in [200, 201]:
-                saved += 1
-            else:
-                errors += 1
-        except Exception as e:
-            errors += 1
-            print(f"[DB] {name}: {e}")
-
-    print(f"[DB] {name}: {saved}/{len(to_post)} saved to DB ({errors} errors)")
-    return saved, normalization_succeeded
-
-
-# ── Single source scraper ─────────────────────────────────────────────────────
-
-async def scrape_one(entry: dict,
-                     sem_pw: asyncio.Semaphore = None,
-                     sem_http: asyncio.Semaphore = None) -> dict:
-    """Scrape a single venue. Semaphores are optional for sequential mode."""
-    url    = entry.get('url', '')
-    name   = resolve_source_name(url, entry.get('name', 'unknown'))
-    use_pw = entry.get('use_playwright', entry.get('playwright', True))
-    prio   = entry.get('priority', entry.get('venue_priority'))
-
-    result = {
-        'url':          url,
-        'name':         name,
-        'use_playwright': use_pw,
-        'status':       'error',
-        'event_count':  0,
-        'events':       [],
-        'methods':      [],
-        'last_scraped': datetime.now().isoformat(),
-        'error':        None,
-        'error_report': None,
-        'db_saved':     0,
-        'norm_failed':  False,
-    }
-
-    try:
-        robots = check_robots_txt(url)
-        if not robots['allowed']:
-            result['error'] = 'Blocked by robots.txt'
-            return result
-
-        ext = _get_extractors()
-
-        # Use semaphore if provided (GUI mode), otherwise just fetch
-        if use_pw:
-            if sem_pw:
-                async with sem_pw:
-                    html = await ext['fetch_playwright'](url)
-            else:
-                html = await ext['fetch_playwright'](url)
-        else:
-            if sem_http:
-                async with sem_http:
-                    html = await ext['fetch_httpx'](url)
-            else:
-                html = await ext['fetch_httpx'](url)
-
-        events, methods = await run_extraction_chain(html, name, url)
-        result.update({
-            'events':      events,
-            'methods':     methods,
-            'event_count': len(events),
-            'status':      'working' if events else 'empty',
-        })
-
-        if events:
-            # Save JSON backup
-            ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe = re.sub(r'[^\w\-]', '_', name)
-            (OUTPUT_DIR / f"{safe}_{ts}.json").write_text(
-                json.dumps(events, indent=2), encoding='utf-8'
-            )
-
-            # Normalize + submit to DB (synchronous — one venue at a time)
-            loop = asyncio.get_event_loop()
-            db_saved, norm_ok = await loop.run_in_executor(
-                None, _post_events_to_db, events, url, name, prio
-            )
-            result['db_saved'] = db_saved
-            result['norm_failed'] = not norm_ok
-
-    except Exception as exc:
-        tb = traceback.format_exc()
-        result['error'] = str(exc)
-        try:
-            ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe = re.sub(r'[^\w\-]', '_', name)
-            rname = f"error_{safe}_{ts}.json"
-            (OUTPUT_DIR / rname).write_text(json.dumps({
-                'url':       url,
-                'name':      name,
-                'error':     str(exc),
-                'traceback': tb,
-                'timestamp': result['last_scraped'],
-            }, indent=2), encoding='utf-8')
-            result['error_report'] = rname
-        except Exception:
+            domain = urlparse(url).netloc.lower()
+            if domain in KNOWN_EVENTCALENDARAPP_VENUES:
+                print(f"[EventCalendarApp] Known venue: {domain}")
+                return KNOWN_EVENTCALENDARAPP_VENUES[domain]
+        except:
             pass
 
-    return result
+    patterns = [
+        re.compile(r'eventcalendarapp\.com[^"\']*[?&]id=(\d+)[^"\']*widgetUuid=([a-f0-9-]+)', re.IGNORECASE),
+        re.compile(r'eventcalendarapp\.com[^"\']*widgetUuid=([a-f0-9-]+)[^"\']*[?&]id=(\d+)', re.IGNORECASE),
+        re.compile(r'api\.eventcalendarapp\.com/events\?id=(\d+)[^"\']*widgetUuid=([a-f0-9-]+)', re.IGNORECASE),
+    ]
+
+    for i, pattern in enumerate(patterns):
+        match = pattern.search(html)
+        if match:
+            if i == 1:
+                return {'id': match.group(2), 'widgetUuid': match.group(1)}
+            return {'id': match.group(1), 'widgetUuid': match.group(2)}
+
+    id_only = re.compile(r'eventcalendarapp\.com[^"\']*[?&]id=(\d+)', re.IGNORECASE)
+    match = id_only.search(html)
+    if match:
+        uuid_match = re.search(r'widgetUuid[=:]["\']?([a-f0-9-]{36})', html, re.IGNORECASE)
+        return {'id': match.group(1), 'widgetUuid': uuid_match.group(1) if uuid_match else None}
+
+    return None
 
 
-async def scrape_one_standalone(entry: dict) -> dict:
-    """Standalone single-venue scrape (no semaphores)."""
-    result = await scrape_one(entry)
+async def fetch_eventcalendarapp_api(calendar_id: str, widget_uuid: str = None, max_pages: int = 50) -> list:
+    all_events = []
+    page = 1
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        while page <= max_pages:
+            url = f"https://api.eventcalendarapp.com/events?id={calendar_id}&page={page}"
+            if widget_uuid:
+                url += f"&widgetUuid={widget_uuid}"
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                events = data.get('events', [])
+                if not events:
+                    break
+                all_events.extend(events)
+                pages = data.get('pages', {})
+                if page >= pages.get('total', 1):
+                    break
+                page += 1
+            except Exception as e:
+                print(f"EventCalendarApp API error page {page}: {e}")
+                break
+    return all_events
 
-    status = load_status()
-    status[entry.get('url', '')] = {
-        'name':         result['name'],
-        'last_scraped': result['last_scraped'],
-        'status':       result['status'],
-        'event_count':  result['event_count'],
-        'methods':      result['methods'],
-        'error':        result['error'],
-        'error_report': result['error_report'],
-    }
-    save_status(status)
-    return result
+
+def parse_eventcalendarapp_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
+    events = []
+    seen = set()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    for raw in raw_events:
+        title = raw.get('summary', '').strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+
+        start = raw.get('timezoneStart', '')
+        end = raw.get('timezoneEnd', '')
+
+        if future_only and start:
+            try:
+                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                if start_dt < today:
+                    continue
+            except:
+                pass
+
+        date_str = ''
+        if start:
+            try:
+                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
+                if end:
+                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
+                    if dt.date() == end_dt.date():
+                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+            except:
+                date_str = start
+
+        location = raw.get('location', {})
+        venue = location.get('description', '') if isinstance(location, dict) else ''
+        if not venue:
+            venue = source_name
+
+        desc = raw.get('shortDescription', '') or raw.get('description', '')
+        if desc:
+            desc = re.sub(r'<[^>]+>', ' ', desc)
+            desc = re.sub(r'\s+', ' ', desc).strip()[:200]
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'end_date': end,
+            'venue': venue,
+            'description': desc,
+            'source_url': raw.get('url', ''),
+            'tickets_url': raw.get('ticketsLink', ''),
+            'image_url': raw.get('image', '') or raw.get('thumbnail', ''),
+            'source': source_name,
+            'featured': raw.get('featured', False),
+        })
+
+    return events
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SEQUENTIAL FULL RUN  (replaces concurrent scrape_all_prioritized)
-# ══════════════════════════════════════════════════════════════════════════════
+async def extract_eventcalendarapp(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    params = detect_eventcalendarapp(html, url)
+    if not params:
+        return [], False
 
-async def scrape_all_sequential(saved: list, q: queue.Queue = None) -> dict:
-    """
-    Scrape all venues ONE AT A TIME in priority order.
+    print(f"[EventCalendarApp] Detected calendar ID: {params['id']}")
+    raw_events = await fetch_eventcalendarapp_api(params['id'], params.get('widgetUuid'))
+    print(f"[EventCalendarApp] Fetched {len(raw_events)} total events from API")
+    events = parse_eventcalendarapp_events(raw_events, source_name, future_only)
+    if future_only:
+        print(f"[EventCalendarApp] {len(events)} upcoming events after date filter")
+    return events, True
 
-    Pipeline per venue:
-      1. Fetch HTML
-      2. Extract events
-      3. Normalize via Gemini (dedicated, no contention)
-      4. Submit to backend
-      5. Log result
-      6. Wait VENUE_DELAY seconds before next venue
 
-    Returns a summary report dict (useful for /cron-scrape JSON response).
-    """
-    tiers: dict = {1: [], 2: [], 3: []}
-    for entry in saved:
-        p = entry.get('priority', entry.get('venue_priority', 3)) or 3
-        tiers[min(max(int(p), 1), 3)].append(entry)
+# ============================================================================
+# TIMELY
+# ============================================================================
 
-    total          = len(saved)
-    status_data    = load_status()
-    completed      = 0
-    total_events   = 0
-    total_saved_db = 0
-    norm_failures  = 0
-    errors         = []
-    venue_reports  = []
+KNOWN_TIMELY_VENUES = {
+    'thestarlitebar.com': {'id': '54755961'},
+    'www.thestarlitebar.com': {'id': '54755961'},
+}
 
-    def _emit(msg):
-        """Send to SSE queue if available, otherwise just print."""
-        if q:
-            q.put(msg)
-        print(f"[Scraper] {msg.get('type', '')}: {msg.get('name', msg.get('total_sources', ''))}")
 
-    _emit({
-        'type': 'start',
-        'total_sources': total,
-        'p1': len(tiers[1]),
-        'p2': len(tiers[2]),
-        'p3': len(tiers[3]),
-    })
+def detect_timely(html: str, url: str = '') -> dict | None:
+    if url:
+        try:
+            domain = urlparse(url).netloc.lower()
+            if domain in KNOWN_TIMELY_VENUES:
+                print(f"[Timely] Known venue: {domain}")
+                return KNOWN_TIMELY_VENUES[domain]
+        except:
+            pass
 
-    start_time = datetime.now()
+    for pattern in [
+        re.compile(r'data-calendar-id[=:]["\']?(\d+)', re.IGNORECASE),
+        re.compile(r'events\.timely\.fun/(?:api/calendars/)?(\d+)', re.IGNORECASE),
+        re.compile(r'timelyapp\.time\.ly/[^/]*/calendars/(\d+)', re.IGNORECASE),
+    ]:
+        match = pattern.search(html)
+        if match:
+            return {'id': match.group(1)}
 
-    for tier_num in [1, 2, 3]:
-        tier = tiers[tier_num]
-        if not tier:
+    return None
+
+
+async def fetch_timely_api(calendar_id: str, referer_url: str = '', max_pages: int = 10) -> list:
+    import time
+    all_events = []
+    page = 1
+    start_timestamp = int(time.time())
+
+    headers = dict(HEADERS)
+    if referer_url:
+        headers['Referer'] = referer_url
+        headers['Origin'] = referer_url.rstrip('/')
+
+    async with httpx.AsyncClient(headers=headers, timeout=30) as client:
+        while page <= max_pages:
+            url = (
+                f"https://events.timely.fun/api/calendars/{calendar_id}/events"
+                f"?group_by_date=1&timezone=America%2FChicago&view=agenda"
+                f"&start_date_utc={start_timestamp}&per_page=30&page={page}"
+            )
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+                items = data.get('data', {}).get('items', [])
+                if not items:
+                    break
+                for item in items:
+                    all_events.extend(item.get('events', []))
+                total = data.get('data', {}).get('total', 0)
+                if len(all_events) >= total:
+                    break
+                page += 1
+            except Exception as e:
+                print(f"Timely API error page {page}: {e}")
+                break
+
+    return all_events
+
+
+def parse_timely_events(raw_events: list, source_name: str, future_only: bool = True) -> list:
+    events = []
+    seen = set()
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    for raw in raw_events:
+        title = raw.get('title', '').strip()
+        if not title or title in seen:
+            continue
+        seen.add(title)
+
+        start = raw.get('start_datetime', '')
+        end = raw.get('end_datetime', '')
+
+        if future_only and start:
+            try:
+                start_dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                if start_dt < today:
+                    continue
+            except:
+                pass
+
+        date_str = ''
+        if start:
+            try:
+                dt = datetime.fromisoformat(start.replace('Z', '').split('+')[0])
+                date_str = dt.strftime('%b %d, %Y @ %I:%M %p').replace(' 0', ' ')
+                if end:
+                    end_dt = datetime.fromisoformat(end.replace('Z', '').split('+')[0])
+                    if dt.date() == end_dt.date():
+                        date_str += f" - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+            except:
+                date_str = start
+
+        venue_data = raw.get('venue', {})
+        venue = venue_data.get('name', '') if isinstance(venue_data, dict) else ''
+        if not venue:
+            venue = source_name
+
+        desc = raw.get('description', '') or raw.get('excerpt', '')
+        if desc:
+            desc = re.sub(r'<[^>]+>', ' ', desc)
+            desc = re.sub(r'\s+', ' ', desc).strip()[:200]
+
+        image = raw.get('featured_image', {})
+        image_url = image.get('url', '') if isinstance(image, dict) else (image if isinstance(image, str) else '')
+
+        events.append({
+            'title': title,
+            'date': date_str,
+            'end_date': end,
+            'venue': venue,
+            'description': desc,
+            'source_url': raw.get('url', '') or raw.get('canonical_url', ''),
+            'tickets_url': raw.get('ticket_url', '') or raw.get('custom_ticket_url', ''),
+            'image_url': image_url,
+            'source': source_name,
+        })
+
+    return events
+
+
+def clean_timely_title(title: str) -> str:
+    if not title or len(title) < 20:
+        return title
+    matches = list(re.finditer(r'[a-z][A-Z]', title))
+    if matches:
+        potential_title = title[:matches[0].start() + 1]
+        if len(potential_title) >= 10 or potential_title.count(' ') >= 2:
+            return potential_title.strip()
+    words = title.split()
+    if len(words) >= 2:
+        seen_words = {}
+        for i, word in enumerate(words):
+            wl = word.lower()
+            if wl in seen_words and i > 1:
+                return ' '.join(words[:seen_words[wl]]).strip()
+            seen_words[wl] = i
+    if len(title) > 50 and title.count(' ') < 5:
+        if ' - ' in title:
+            parts = title.split(' - ')
+            if len(parts[0]) >= 10:
+                return parts[0].strip()
+        truncated = title[:50]
+        last_space = truncated.rfind(' ')
+        if last_space > 20:
+            return truncated[:last_space].strip()
+    return title
+
+
+def extract_timely_from_html(soup, base_url: str, source_name: str) -> list:
+    events = []
+    seen = set()
+
+    containers = []
+    for sel in ['.timely-event', '[data-event-id]', '.timely-calendar .event',
+                '.tc-event', '.timely-agenda-event', '.agenda-event']:
+        containers.extend(soup.select(sel))
+
+    if not containers:
+        for group in soup.select('[class*="agenda"], [class*="event-list"]'):
+            containers.extend(group.select('a[href*="event"], div[class*="event"], li'))
+
+    for container in containers:
+        title_el = (
+                container.select_one('.timely-title, .event-title, [class*="title"]:not([class*="subtitle"])') or
+                container.select_one('h1, h2, h3, h4')
+        )
+        if not title_el:
+            link_el = container.select_one('a[href]')
+            if link_el:
+                title_el = link_el
+        if not title_el:
             continue
 
-        _emit({'type': 'tier_start', 'tier': tier_num, 'count': len(tier)})
+        title = title_el.get_text(strip=True)
+        if title and len(title) > 30:
+            mid = len(title) // 2
+            if title[:mid].strip() == title[mid:].strip():
+                title = title[:mid].strip()
 
-        # ── SEQUENTIAL: one venue at a time ──────────────────────────────
-        for entry in tier:
-            url  = entry.get('url', '')
-            name = resolve_source_name(url, entry.get('name', ''))
+        if not title or len(title) < 3 or title in seen:
+            continue
+        skip_words = ['read full', 'more', 'view all', 'click here', 'get a timely', 'powered by', 'buy tickets']
+        if any(s in title.lower() for s in skip_words):
+            continue
+        if len(title) > 50 and title.count(' ') < 3:
+            continue
 
-            _emit({
-                'type': 'source_start',
-                'name': name,
-                'url':  url,
-                'tier': tier_num,
-            })
+        title = clean_timely_title(title)
+        if not title or len(title) < 3:
+            continue
+        seen.add(title)
 
-            # Scrape this single venue (fetch → extract → normalize → submit)
-            result = await scrape_one(entry)
-            completed += 1
+        date_el = container.select_one('.timely-date, .event-date, time, [class*="date"]:not([class*="update"])')
+        date_str = ''
+        if date_el:
+            date_str = date_el.get('datetime', '')
+            if not date_str:
+                dt_text = date_el.get_text(strip=True)
+                dm = extract_date_from_text(dt_text)
+                tm = extract_time_from_text(dt_text)
+                if dm:
+                    date_str = f"{dm} @ {tm}" if tm else dm
+                elif tm:
+                    date_str = tm
 
-            total_events   += result['event_count']
-            total_saved_db += result['db_saved']
+        if not date_str:
+            ct = container.get_text(' ', strip=True)
+            date_str = extract_date_from_text(ct) or ''
+            ts = extract_time_from_text(ct)
+            if ts:
+                date_str = f"{date_str} @ {ts}" if date_str else ts
 
-            if result.get('norm_failed'):
-                norm_failures += 1
-            if result.get('error'):
-                errors.append({'name': name, 'error': result['error']})
+        link = ''
+        le = container if container.name == 'a' else container.select_one('a[href]')
+        if le:
+            href = le.get('href', '')
+            if href and not href.startswith('#') and 'javascript:' not in href:
+                link = urljoin(base_url, href)
 
-            # Build per-venue report
-            venue_report = {
-                'name':         result['name'],
-                'url':          url,
-                'tier':         tier_num,
-                'status':       result['status'],
-                'event_count':  result['event_count'],
-                'db_saved':     result['db_saved'],
-                'norm_failed':  result.get('norm_failed', False),
-                'methods':      result['methods'],
-                'error':        result['error'],
-            }
-            venue_reports.append(venue_report)
+        events.append({
+            'title': title, 'date': date_str, 'source_url': link,
+            'source': source_name, 'venue': source_name,
+        })
 
-            # Update persistent status
-            status_data[url] = {
-                'name':         result['name'],
-                'last_scraped': result['last_scraped'],
-                'status':       result['status'],
-                'event_count':  result['event_count'],
-                'methods':      result['methods'],
-                'error':        result['error'],
-                'error_report': result['error_report'],
-                'norm_failed':  result.get('norm_failed', False),
-            }
-            save_status(status_data)
+    return events
 
-            _emit({
-                'type':         'source_done',
-                'name':         result['name'],
-                'url':          url,
-                'tier':         tier_num,
-                'status':       result['status'],
-                'event_count':  result['event_count'],
-                'methods':      result['methods'],
-                'db_saved':     result['db_saved'],
-                'error':        result['error'],
-                'error_report': result['error_report'],
-                'completed':    completed,
-                'total':        total,
-            })
 
-            # ── Pacing delay ─────────────────────────────────────────────
-            if result.get('norm_failed'):
-                # Extra delay after norm failure so Gemini can recover
-                print(f"[Pacing] Norm failed for {name}, waiting {NORM_FAIL_DELAY}s...")
-                await asyncio.sleep(NORM_FAIL_DELAY)
-            else:
-                await asyncio.sleep(VENUE_DELAY)
+async def extract_timely(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
+    params = detect_timely(html, url)
+    if not params:
+        return [], False
 
-    # ── Normalization retry pass ─────────────────────────────────────────────
-    retry_venues = [r for r in venue_reports if r.get('norm_failed') and r['event_count'] > 0]
+    print(f"[Timely] Detected calendar ID: {params['id']}")
+    raw_events = await fetch_timely_api(params['id'], referer_url=url)
 
-    if retry_venues:
-        print(f"\n[NormRetry] Retrying {len(retry_venues)} venue(s) after 30s cooldown...")
-        _emit({'type': 'norm_retry_start', 'count': len(retry_venues)})
-        await asyncio.sleep(30)
+    if raw_events:
+        print(f"[Timely] Fetched {len(raw_events)} total events from API")
+        events = parse_timely_events(raw_events, source_name, future_only)
+        if future_only:
+            print(f"[Timely] {len(events)} upcoming events after date filter")
+        return events, True
 
-        try:
-            from scraperRoutes import normalize_batch, transform_event_for_backend
-            import httpx as _httpx
+    print(f"[Timely] API returned 0 events, trying HTML extraction...")
+    soup = BeautifulSoup(html, 'html.parser')
+    events = extract_timely_from_html(soup, url, source_name)
+    print(f"[Timely] Found {len(events)} events from HTML")
+    return events, True
 
-            for vr in retry_venues:
-                url  = vr['url']
-                name = vr['name']
-                sdata = status_data.get(url, {})
-                # Reload events from the saved JSON file
-                events = sdata.get('events', [])
-                if not events:
-                    # Try to find the most recent JSON file for this venue
-                    safe = re.sub(r'[^\w\-]', '_', name)
-                    json_files = sorted(OUTPUT_DIR.glob(f"{safe}_*.json"), reverse=True)
-                    if json_files:
-                        try:
-                            events = json.loads(json_files[0].read_text())
-                        except Exception:
-                            pass
 
-                if not events:
-                    print(f"[NormRetry] {name}: no events to retry")
-                    continue
+# ============================================================================
+# BOK CENTER
+# ============================================================================
 
-                prio = next(
-                    (e.get('priority', e.get('venue_priority'))
-                     for e in saved if e.get('url') == url),
-                    None
-                )
+KNOWN_BOK_VENUES = {
+    'bokcenter.com': True,
+    'www.bokcenter.com': True,
+}
 
-                print(f"[NormRetry] Retrying: {name} ({len(events)} events)")
-                normalized = normalize_batch(events, source_url=url, source_name=name)
-                if normalized:
-                    retry_saved = 0
-                    for ev in normalized:
-                        try:
-                            xf = transform_event_for_backend(ev, source_priority=prio)
-                            if not xf.get('source_url'):
-                                import hashlib as _hl
-                                slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
-                                uid  = _hl.md5(slug.encode()).hexdigest()[:8]
-                                xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
-                            if not xf.get('source_name'): xf['source_name'] = name
-                            xf['venue'] = name
-                            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
-                            if resp.status_code in [200, 201]:
-                                retry_saved += 1
-                                total_saved_db += 1
-                        except Exception as e:
-                            print(f"[NormRetry] {name}: {e}")
-                    print(f"[NormRetry] {name}: {retry_saved}/{len(normalized)} saved")
-                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': retry_saved})
-                else:
-                    print(f"[NormRetry] {name}: still failing")
-                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': 0})
 
-                # Delay between retries too
-                await asyncio.sleep(VENUE_DELAY)
+async def fetch_bok_center_events(max_pages: int = 20) -> list:
+    all_events = []
+    offset = 0
+    per_page = 6
 
-        except Exception as e:
-            print(f"[NormRetry] Error: {e}")
+    async with httpx.AsyncClient(headers=HEADERS, timeout=30) as client:
+        while offset < max_pages * per_page:
+            url = f"https://www.bokcenter.com/events/events_ajax/{offset}?category=0&venue=0&team=0&exclude=&per_page={per_page}&came_from_page=event-list-page"
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                raw_text = resp.text
+                try:
+                    html = json.loads(raw_text)
+                except:
+                    html = raw_text
 
-    elapsed = (datetime.now() - start_time).total_seconds()
+                if not html or len(html.strip()) < 50:
+                    break
 
-    summary = {
-        'type':              'complete',
-        'total_sources':     total,
-        'sources_scraped':   completed,
-        'total_events':      total_events,
-        'total_saved':       total_saved_db,
-        'norm_failures':     norm_failures,
-        'error_count':       len(errors),
-        'errors':            errors[:20],  # Cap error list
-        'venues':            venue_reports,
-        'elapsed_seconds':   round(elapsed, 1),
-        'timestamp':         datetime.now().isoformat(),
-    }
+                soup = BeautifulSoup(html, 'html.parser')
+                titles = soup.select('h3 a')
+                if not titles:
+                    titles = soup.select('a[href*="/events/detail/"]')
+                if not titles:
+                    break
 
-    _emit(summary)
-    if q:
-        q.put(None)  # Signal SSE stream to close
+                for title_link in titles:
+                    title = title_link.get_text(strip=True)
+                    href = title_link.get('href', '')
+                    if not title or not href or '/events/detail/' not in href:
+                        continue
 
-    # Save summary report
+                    container = title_link.parent
+                    date_str = ''
+                    for _ in range(8):
+                        if container is None:
+                            break
+                        spans = container.find_all('span', recursive=True)
+                        span_texts = [s.get_text(strip=True) for s in spans]
+                        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                        if any(m in ' '.join(span_texts) for m in months):
+                            date_str = re.sub(r'\s+', ' ', ' '.join(span_texts)).strip()
+                            break
+                        container = container.parent
+
+                    full_url = href if href.startswith('http') else f"https://www.bokcenter.com{href}"
+                    all_events.append({'title': title, 'date': date_str, 'source_url': full_url})
+
+                offset += per_page
+            except Exception as e:
+                print(f"BOK Center API error at offset {offset}: {e}")
+                break
+
+    return all_events
+
+
+def _parse_bok_multi_day_date(date_str: str) -> tuple:
+    """FIX: Parse multi-day date strings like 'Mar 6-7'. Returns (start, end)."""
+    multi_day = re.search(
+        r'([A-Za-z]+)\s+(\d{1,2})\s*[-\u2013]\s*(\d{1,2})(?:,?\s*(\d{4}))?',
+        date_str
+    )
+    if multi_day:
+        month = multi_day.group(1)
+        start_day = multi_day.group(2)
+        end_day = multi_day.group(3)
+        year = multi_day.group(4) or str(datetime.now().year)
+        return f"{month} {start_day}, {year}", f"{month} {end_day}, {year}"
+    return date_str, ''
+
+
+async def extract_bok_center(html: str, source_name: str, url: str = '', future_only: bool = True) -> tuple[list, bool]:
     try:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        (OUTPUT_DIR / f"scrape_report_{ts}.json").write_text(
-            json.dumps(summary, indent=2), encoding='utf-8'
-        )
-    except Exception:
-        pass
+        domain = urlparse(url).netloc.lower()
+        if domain not in KNOWN_BOK_VENUES:
+            return [], False
+    except:
+        return [], False
 
-    return summary
+    print(f"[BOK Center] Detected BOK Center site")
+    raw_events = await fetch_bok_center_events()
+    print(f"[BOK Center] Fetched {len(raw_events)} events from API")
 
+    seen = set()
+    events = []
+    for event in raw_events:
+        url_key = event.get('source_url', '')
+        if url_key in seen:
+            continue
+        seen.add(url_key)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# LEGACY COMPAT: scrape_all_prioritized wraps sequential with SSE queue
-# ══════════════════════════════════════════════════════════════════════════════
+        date_str = event.get('date', '')
+        if date_str:
+            date_str = re.sub(r'\s+', ' ', date_str).strip()
 
-async def scrape_all_prioritized(saved: list, q: queue.Queue) -> None:
-    """SSE-compatible wrapper. Used by /scrape-all GUI endpoint."""
-    await scrape_all_sequential(saved, q=q)
+            year_match = re.search(r'\d{4}', date_str)
+            if year_match:
+                date_str = date_str[:year_match.end()]
 
+            # Deduplicate repeated day/month names
+            for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+                if date_str.count(day) >= 2:
+                    first_idx = date_str.find(day)
+                    second_idx = date_str.find(day, first_idx + 1)
+                    if second_idx > first_idx:
+                        date_str = date_str[second_idx:]
+                    break
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CRON ENTRY POINT: returns summary dict, no SSE
-# ══════════════════════════════════════════════════════════════════════════════
+            for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'June', 'July']:
+                if date_str.count(month) >= 2:
+                    first_idx = date_str.find(month)
+                    second_idx = date_str.find(month, first_idx + 1)
+                    if second_idx > first_idx:
+                        date_str = date_str[second_idx:]
+                    break
 
-async def scrape_all_cron(saved: list) -> dict:
-    """
-    Entry point for /cron-scrape. Runs sequentially, returns JSON summary.
-    No queue, no SSE, no threading — just scrape and report.
-    """
-    return await scrape_all_sequential(saved, q=None)
+            date_str = re.sub(r',(\S)', r', \1', date_str)
+            date_str = re.sub(r'([A-Za-z])(\d)', r'\1 \2', date_str)
+            date_str = re.sub(r'\s+', ' ', date_str).strip()
+            date_str = re.sub(r'\s*On Sale.*$', '', date_str, flags=re.IGNORECASE)
+
+            # FIX: Parse multi-day dates and preserve end date
+            start_date, end_date = _parse_bok_multi_day_date(date_str)
+            event['date'] = date_str.strip()
+            if end_date:
+                event['end_date'] = end_date
+
+        event['source'] = source_name
+        event['venue'] = 'BOK Center'
+        events.append(event)
+
+    return events, True
