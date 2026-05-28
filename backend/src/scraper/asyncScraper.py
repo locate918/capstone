@@ -242,53 +242,97 @@ async def run_extraction_chain(html: str, name: str, url: str,
 def _post_events_to_db(events: list, url: str, name: str,
                        source_priority: int = None) -> tuple:
     """
-    Normalize then post events for ONE venue. Returns (db_saved, norm_ok).
-    Sequential design means Gemini only handles one venue at a time.
+    Build and post events for ONE venue using the deterministic pipeline — NO LLM:
+      transform (field mapping) -> date_parser (stage 3) -> field_extractor
+      (stage 4) -> venue_resolver (stage 2) -> event_validator (stage 6) -> POST.
+
+    Replaces the old Gemini normalize_batch step, which made the cron fragile
+    (a timeout dropped the whole venue's batch). Returns (db_saved, ok).
     """
+    import hashlib as _hl
     import httpx as _httpx
     try:
-        from scraperRoutes import normalize_batch, transform_event_for_backend
+        from scraperRoutes import transform_event_for_backend
+        from scraperUtils import make_content_hash
+        import venue_resolver
+        import date_parser
+        import field_extractor
+        import event_validator
     except ImportError as e:
         print(f"[DB] Import error: {e}")
         return 0, False
 
-    print(f"[DB] Normalizing {len(events)} events for {name}...")
-    normalized = normalize_batch(events, source_url=url, source_name=name)
-    normalization_succeeded = bool(normalized)
-
-    if normalization_succeeded:
-        print(f"[DB] ✓ Normalized {len(events)} → {len(normalized)} for {name}")
-    else:
-        print(f"[DB] ⚠ Normalization failed for {name}, using raw fallback")
-
-    to_post = normalized if normalized else events
     saved = 0
     errors = 0
-    for ev in to_post:
+    rejected = 0
+    for ev in events:
         try:
+            # transform still owns field mapping: source_url, prices, location,
+            # image, source_priority, canonical_url. We override the rest below.
             xf = transform_event_for_backend(ev, source_priority=source_priority)
+
             # Synthetic unique source_url — prevents all events collapsing onto
             # one row when the extractor (e.g. Timely) returns no per-event URL.
             if not xf.get('source_url'):
-                import hashlib as _hl
                 slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
                 uid  = _hl.md5(slug.encode()).hexdigest()[:8]
                 xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
             if not xf.get('source_name'):
                 xf['source_name'] = name
-            # Always use the admin-approved saved_urls name as canonical venue.
+            # Canonical venue = admin-approved saved_urls name.
             xf['venue'] = name
+
+            # Stage 3 — deterministic dates (overrides transform; NO NOW+1day fabrication).
+            start_iso, end_iso, time_est = date_parser.parse_event_dates(
+                ev.get('start_time') or ev.get('startDate') or ev.get('date') or ev.get('start_date'),
+                ev.get('end_time') or ev.get('endDate') or ev.get('end_date'),
+            )
+            if start_iso:
+                xf['start_time'] = start_iso
+                xf['time_estimated'] = time_est
+                if end_iso:
+                    xf['end_time'] = end_iso
+                else:
+                    xf.pop('end_time', None)
+            else:
+                xf.pop('start_time', None)  # no parseable date -> validator rejects below
+
+            # Stage 4 — deterministic description / categories / flags (was the LLM's job).
+            xf['description'] = field_extractor.clean_description(
+                xf.get('description') or ev.get('description'))
+            xf['categories'] = field_extractor.categorize(
+                xf.get('title', ''), xf.get('description') or '', ev.get('categories'))
+            xf['outdoor'], xf['family_friendly'] = field_extractor.infer_flags(
+                xf.get('title', ''), xf.get('description') or '', xf.get('venue', ''))
+
+            # Stage 2 — venue identity (heuristic resolver; backend also resolves as fallback).
+            xf['venue_id'] = venue_resolver.resolve(xf.get('venue'), source_name=name)
+
+            # content_hash kept (drop deferred to Phase 9); recompute from final venue/time.
+            if xf.get('start_time'):
+                xf['content_hash'] = make_content_hash(
+                    xf.get('title', ''), xf.get('start_time', ''), xf.get('venue', ''))
+
+            # Stage 6 — validation gate: reject with reason codes instead of posting garbage.
+            verdict = event_validator.validate_event(xf)
+            if not verdict['valid']:
+                rejected += 1
+                print(f"[DB] {name}: rejected '{verdict['title']}' — {', '.join(verdict['reasons'])}")
+                continue
+
             resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
-            if resp.status_code in [200, 201]:
+            if resp.status_code in (200, 201):
                 saved += 1
             else:
                 errors += 1
+                print(f"[DB] {name}: POST {resp.status_code} {resp.text[:160]}")
         except Exception as e:
             errors += 1
             print(f"[DB] {name}: {e}")
 
-    print(f"[DB] {name}: {saved}/{len(to_post)} saved to DB ({errors} errors)")
-    return saved, normalization_succeeded
+    print(f"[DB] {name}: {saved}/{len(events)} saved ({rejected} rejected, {errors} errors)")
+    # Deterministic pipeline has no LLM failure mode, so never request a retry.
+    return saved, True
 
 
 # ── Single source scraper ─────────────────────────────────────────────────────
