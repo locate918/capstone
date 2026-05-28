@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from app.models.schemas import NormalizedEvent, GeminiChatResponse
+from app.models.schemas import NormalizedEvent
 from app.tools.definitions import gemini_tools
 
 load_dotenv()
@@ -172,18 +172,23 @@ async def generate_chat_response(
        - DO NOT say "There are no restaurant events." Restaurants are businesses, not events.
     
     RESPONSE FORMATTING:
-    - **Tone**: Friendly, enthusiastic, and knowledgeable. Like a friend who knows all the cool spots.
-    - **Event Limit**: Strictly limit your response to a maximum of 5 events.
-    - **Event Formatting**: ALWAYS format each event using this exact Markdown structure (use ### for title and - for details):
+    - **Tone**: Friendly, enthusiastic, and knowledgeable — like a local friend who knows the scene.
+      Vary your wording every turn. Do NOT reuse an opening or sign-off you already used earlier in
+      this conversation, and never re-introduce yourself after your first message.
+    - **Match the question**: Answer what was actually asked. A quick question gets a quick answer —
+      not every reply needs an event list. It's good to ask a clarifying question, sketch an
+      itinerary, or just recommend a place or two when that's what fits.
+    - **When listing events**: include at most 5, and format each one with this Markdown structure:
       ### ✨ [Event Title](Source URL)
       - 📍 **Venue**: [Venue Name](Venue URL)
       - ⏰ **Time**: Time of event
       - 💰 **Price**: Price
       - 📝 Description
-    - **No Events Found**: If the search returns nothing, try a broader search before giving up.
-      If still nothing, suggest specific *evergreen* local activities relevant to their query 
-      (e.g., for music -> Mercury Lounge or Cain's; for art -> Philbrook or First Friday).
-    - **Closing**: End with a helpful follow-up question (e.g., "Want me to find bars nearby?", "Need a dinner spot close to the venue?", or "Want to see what's happening tomorrow instead?").
+    - **No Events Found**: Try a broader search first. If there's genuinely nothing, suggest a couple
+      of relevant local options that fit their intent — and vary these, don't fall back to the same
+      few names every time.
+    - **Closing**: Usually offer a natural next step, but phrase it differently each time and only
+      when it genuinely helps. Don't tack on a formulaic question when the conversation doesn't call for it.
     """
 
     client = get_client()
@@ -199,6 +204,7 @@ async def generate_chat_response(
                 config=types.GenerateContentConfig(
                     tools=[gemini_tools],
                     system_instruction=system_instruction,
+                    temperature=0.85,
                 ),
                 history=history
             )
@@ -264,51 +270,15 @@ async def generate_chat_response(
         else:
             break
 
-    # After all tools are finished, request the FINAL response in structured format
+    # Use Tully's natural reply. The chat already has the tool results in context
+    # and the system prompt specifies the event markdown format, so we do NOT
+    # re-generate through a fixed {opening, events, closing} schema — that second
+    # pass flattened every reply into the same shape and made him repetitive.
     yield json.dumps({"status": "Finishing up..."})
-    if not response.function_calls:
-        try:
-            final_history = chat.get_history()
-            response = await client.aio.models.generate_content(
-                model='gemini-2.0-flash',  # Use flash for structured output
-                contents=final_history,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=GeminiChatResponse
-                )
-            )
-        except Exception as e:
-            print(f"Error requesting structured response: {e}")
-            pass
-
     try:
-        structured_response = response.parsed
-        if not structured_response:
-            text_response = response.text or "I checked the events but couldn't generate a response."
-        else:
-            # Format the structured response into the desired Markdown
-            formatted_parts = []
-            if structured_response.opening:
-                formatted_parts.append(structured_response.opening)
-
-            for event in structured_response.events[:5]:
-                emoji = event.emoji or "✨"
-                venue_url = event.venue_url or '#Source'
-                event_markdown = (
-                    f"### {emoji} [{event.title}]({event.source_url})\n"
-                    f"- 📍 **Venue**: [{event.venue_name}]({venue_url})\n"
-                    f"- ⏰ **Time**: {event.display_time}\n"
-                    f"- 💰 **Price**: {event.price}\n"
-                    f"- 📝 {event.description}"
-                )
-                formatted_parts.append(event_markdown)
-
-            if structured_response.closing:
-                formatted_parts.append(structured_response.closing)
-
-            text_response = "\n\n".join(formatted_parts)
-
+        text_response = (response.text or "").strip()
+        if not text_response:
+            text_response = "I dug through the events but couldn't pull a clear answer together — mind rephrasing that?"
     except Exception as e:
         print(f"Gemini Response Error: {e}")
         text_response = "I'm having trouble formulating a response right now."

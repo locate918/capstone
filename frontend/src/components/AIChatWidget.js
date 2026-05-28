@@ -57,8 +57,11 @@ const AIChatWidget = ({ userId: authenticatedUserId = null }) => {
     setInputValue("");
     setIsTyping(true);
 
-    // Prepare conversation history for the backend
-    const conversationHistory = [...messages, userMessage].map(msg => ({
+    // Prepare conversation history for the backend.
+    // Drop the canned welcome (messages[0]) so Tully doesn't parrot it back, and
+    // do NOT append the current message — the backend sends it via send_message,
+    // so including it here would deliver it twice.
+    const conversationHistory = messages.slice(1).map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.text }]
     }));
