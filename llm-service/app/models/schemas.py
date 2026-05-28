@@ -40,6 +40,9 @@ class NormalizedEvent(BaseModel):
     title: str
     venue: str
     venue_address: Optional[str] = None
+    # Integer venue identity assigned at ingestion by the scraper's venue_resolver
+    # (pipeline stage 2). Passes through the LLM untouched; None when unresolved.
+    venue_id: Optional[int] = None
     source_url: Optional[str] = None
     source_name: Optional[str] = None
     start_time: datetime

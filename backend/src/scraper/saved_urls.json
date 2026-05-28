@@ -32,7 +32,7 @@
     "name": "Gathering Place",
     "playwright": true,
     "priority": 1,
-    "venue_priority": 2
+    "venue_priority": 1
   },
   {
     "url": "https://cca.sandspringschamber.org/EvtListingMainSearch.aspx?class=B",
@@ -355,13 +355,6 @@
     "playwright": true,
     "priority": 2,
     "venue_priority": 2
-  },
-  {
-    "url": "https://www.gatheringplace.org/parkcalendar?cal-305818-endDate=2026-03-31&cal-305818-page=1&cal-305818-startDate=2026-03-01",
-    "name": "Gathering Place",
-    "playwright": true,
-    "priority": 1,
-    "venue_priority": 1
   },
   {
     "url": "https://thetulsaartsdistrict.org/events/",
