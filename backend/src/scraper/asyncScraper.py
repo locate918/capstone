@@ -575,75 +575,8 @@ async def scrape_all_sequential(saved: list, q: queue.Queue = None) -> dict:
             else:
                 await asyncio.sleep(VENUE_DELAY)
 
-    # ── Normalization retry pass ─────────────────────────────────────────────
-    retry_venues = [r for r in venue_reports if r.get('norm_failed') and r['event_count'] > 0]
-
-    if retry_venues:
-        print(f"\n[NormRetry] Retrying {len(retry_venues)} venue(s) after 30s cooldown...")
-        _emit({'type': 'norm_retry_start', 'count': len(retry_venues)})
-        await asyncio.sleep(30)
-
-        try:
-            from scraperRoutes import normalize_batch, transform_event_for_backend
-            import httpx as _httpx
-
-            for vr in retry_venues:
-                url  = vr['url']
-                name = vr['name']
-                sdata = status_data.get(url, {})
-                # Reload events from the saved JSON file
-                events = sdata.get('events', [])
-                if not events:
-                    # Try to find the most recent JSON file for this venue
-                    safe = re.sub(r'[^\w\-]', '_', name)
-                    json_files = sorted(OUTPUT_DIR.glob(f"{safe}_*.json"), reverse=True)
-                    if json_files:
-                        try:
-                            events = json.loads(json_files[0].read_text())
-                        except Exception:
-                            pass
-
-                if not events:
-                    print(f"[NormRetry] {name}: no events to retry")
-                    continue
-
-                prio = next(
-                    (e.get('priority', e.get('venue_priority'))
-                     for e in saved if e.get('url') == url),
-                    None
-                )
-
-                print(f"[NormRetry] Retrying: {name} ({len(events)} events)")
-                normalized = normalize_batch(events, source_url=url, source_name=name)
-                if normalized:
-                    retry_saved = 0
-                    for ev in normalized:
-                        try:
-                            xf = transform_event_for_backend(ev, source_priority=prio)
-                            if not xf.get('source_url'):
-                                import hashlib as _hl
-                                slug = f"{url}|{xf.get('title','').lower().strip()}|{xf.get('start_time','')}"
-                                uid  = _hl.md5(slug.encode()).hexdigest()[:8]
-                                xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
-                            if not xf.get('source_name'): xf['source_name'] = name
-                            xf['venue'] = name
-                            resp = _httpx.post(f"{BACKEND_URL}/api/events", json=xf, timeout=10)
-                            if resp.status_code in [200, 201]:
-                                retry_saved += 1
-                                total_saved_db += 1
-                        except Exception as e:
-                            print(f"[NormRetry] {name}: {e}")
-                    print(f"[NormRetry] {name}: {retry_saved}/{len(normalized)} saved")
-                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': retry_saved})
-                else:
-                    print(f"[NormRetry] {name}: still failing")
-                    _emit({'type': 'norm_retry_done', 'name': name, 'saved': 0})
-
-                # Delay between retries too
-                await asyncio.sleep(VENUE_DELAY)
-
-        except Exception as e:
-            print(f"[NormRetry] Error: {e}")
+    # (Normalization retry pass removed — the deterministic pipeline in
+    # _post_events_to_db has no LLM failure mode, so norm_failed is never set.)
 
     elapsed = (datetime.now() - start_time).total_seconds()
 

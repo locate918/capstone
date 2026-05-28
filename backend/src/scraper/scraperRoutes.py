@@ -19,8 +19,6 @@ from scraperUtils import (
     OUTPUT_DIR,
     SAVED_URLS_FILE,
     BACKEND_URL,
-    LLM_SERVICE_URL,
-    HEADERS,
     GOOGLE_PLACES_API_KEY,
     check_robots_txt,
     load_saved_urls,
@@ -1082,95 +1080,6 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
     return transformed
 
 
-# ============================================================================
-# LLM NORMALIZATION (Gemini via LLM Service on :8001)
-# ============================================================================
-
-def normalize_batch(events: list, source_url: str = "", source_name: str = "") -> list:
-    """
-    Send a batch of scraped events through the LLM normalization endpoint.
-    Retries on 503 (Gemini overload) with exponential backoff.
-    Chunks into groups of 10 to stay within token limits.
-    """
-    import time
-
-    all_normalized = []
-    chunk_size = 10
-    failed_chunks = 0
-    MAX_RETRIES = 4
-
-    for i in range(0, len(events), chunk_size):
-        chunk = events[i:i + chunk_size]
-
-        # Strip blank start_time so Gemini infers from title/description
-        # rather than receiving an empty string that fails Pydantic validation
-        clean_chunk = []
-        for ev in chunk:
-            ev_copy = dict(ev)
-            if not ev_copy.get('start_time'):
-                ev_copy.pop('start_time', None)
-            clean_chunk.append(ev_copy)
-
-        payload = {
-            "raw_content": json.dumps(clean_chunk),
-            "source_url": source_url,
-            "content_type": "json"
-        }
-
-        success = False
-        for attempt in range(MAX_RETRIES):
-            try:
-                resp = httpx.post(
-                    f"{LLM_SERVICE_URL}/api/normalize",
-                    json=payload,
-                    timeout=120
-                )
-
-                if resp.status_code == 200:
-                    data = resp.json()
-                    normalized = data.get("events", [])
-                    if normalized:
-                        print(f"[Normalize] Chunk {i // chunk_size + 1}: {len(chunk)} raw → {len(normalized)} normalized")
-                        all_normalized.extend(normalized)
-                    else:
-                        print(f"[Normalize] Chunk {i // chunk_size + 1}: Got empty result, skipping chunk")
-                        failed_chunks += 1
-                    success = True
-                    break
-
-                elif resp.status_code in [500, 503]:
-                    wait = 5 * (2 ** attempt)  # 5s, 10s, 20s, 40s
-                    print(f"[Normalize] Gemini overloaded (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait}s...")
-                    time.sleep(wait)
-
-                else:
-                    print(f"[Normalize] API returned {resp.status_code}: {resp.text[:200]}")
-                    failed_chunks += 1
-                    success = True
-                    break
-
-            except httpx.ConnectError:
-                print(f"[Normalize] ⚠ LLM service not running at {LLM_SERVICE_URL} — using fallback")
-                return []
-            except Exception as e:
-                print(f"[Normalize] Error: {e}")
-                failed_chunks += 1
-                success = True
-                break
-
-        if not success:
-            print(f"[Normalize] Chunk {i // chunk_size + 1}: All {MAX_RETRIES} retries failed, skipping")
-            failed_chunks += 1
-
-        # Small delay between chunks to avoid hammering Gemini
-        time.sleep(2)
-
-    if failed_chunks:
-        print(f"[Normalize] {failed_chunks} chunk(s) failed — {len(all_normalized)} events normalized total")
-
-    return all_normalized
-
-
 def _geocode_venue(venue_name: str, city: str = "Tulsa, OK") -> tuple:
     """
     Quick synchronous geocode via Google Places Text Search.
@@ -1975,318 +1884,6 @@ def register_routes(app):
 
     # ── old sequential generate() was here — replaced by asyncScraper ──
 
-    def _dead_generate():
-        total = len(saved)
-        yield f"data: {json.dumps({'type': 'start', 'total_sources': total})}\n\n"
-
-        total_events = 0
-        total_saved = 0
-        sources_scraped = 0
-
-        for i, entry in enumerate(saved):
-            url = entry.get('url', '')
-            name = entry.get('name', 'unknown')
-            use_pw = entry.get('use_playwright', True)
-
-            # Resolve canonical venue name from URL
-            name = resolve_source_name(url, name)
-
-            yield f"data: {json.dumps({'type': 'source_start', 'name': name, 'index': i})}\n\n"
-
-            try:
-                # Check robots.txt
-                robots_result = check_robots_txt(url)
-                if not robots_result['allowed']:
-                    yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': f'Blocked by robots.txt'})}\n\n"
-                    continue
-
-                # Fetch
-                if use_pw:
-                    html = asyncio.run(fetch_with_playwright(url))
-                else:
-                    html = asyncio.run(fetch_with_httpx(url))
-
-                # Extract - same chain as /scrape
-                methods = []
-                events = []
-
-                eca_events, eca_detected = asyncio.run(extract_eventcalendarapp(html, name, url, True))
-                if eca_detected and eca_events:
-                    events = eca_events
-                    methods.append(f"EventCalendarApp API ({len(events)})")
-
-                if not events:
-                    timely_events, timely_detected = asyncio.run(extract_timely(html, name, url, True))
-                    if timely_detected and timely_events:
-                        events = timely_events
-                        methods.append(f"Timely API ({len(events)})")
-
-                if not events:
-                    bok_events, bok_detected = asyncio.run(extract_bok_center(html, name, url, True))
-                    if bok_detected and bok_events:
-                        events = bok_events
-                        methods.append(f"BOK Center API ({len(events)})")
-
-                if not events:
-                    cc_events, cc_detected = asyncio.run(extract_circle_cinema_events(html, name, url, True))
-                    if cc_detected and cc_events:
-                        events = cc_events
-                        methods.append(f"Circle Cinema ({len(events)})")
-
-                if not events:
-                    expo_events, expo_detected = asyncio.run(extract_expo_square_events(html, name, url, True))
-                    if expo_detected and expo_events:
-                        events = expo_events
-                        methods.append(f"Expo Square API ({len(events)})")
-
-                if not events:
-                    eb_events, eb_detected = asyncio.run(extract_eventbrite_api_events(html, name, url, True))
-                    if eb_detected and eb_events:
-                        events = eb_events
-                        methods.append(f"Eventbrite API ({len(events)})")
-
-                if not events:
-                    sv_events, sv_detected = asyncio.run(extract_simpleview_events(html, name, url, True))
-                    if sv_detected and sv_events:
-                        events = sv_events
-                        methods.append(f"Simpleview API ({len(events)})")
-
-                if not events:
-                    sw_events, sw_detected = asyncio.run(extract_sitewrench_events(html, name, url, True))
-                    if sw_detected and sw_events:
-                        events = sw_events
-                        methods.append(f"SiteWrench API ({len(events)})")
-
-                if not events:
-                    rd_events, rd_detected = asyncio.run(extract_recdesk_events(html, name, url, True))
-                    if rd_detected and rd_events:
-                        events = rd_events
-                        methods.append(f"RecDesk API ({len(events)})")
-
-                if not events:
-                    tl_events, tl_detected = asyncio.run(extract_ticketleap_events(html, name, url, True))
-                    if tl_detected and tl_events:
-                        events = tl_events
-                        methods.append(f"TicketLeap ({len(events)})")
-
-                if not events:
-                    ln_events, ln_detected = asyncio.run(extract_libnet_events(html, name, url, True))
-                    if ln_detected and ln_events:
-                        events = ln_events
-                        methods.append(f"LibNet API ({len(events)})")
-                        print(f"[LibNet] SUCCESS: {len(events)} events via API")
-
-                if not events:
-                    pb_events, pb_detected = asyncio.run(extract_philbrook_events(html, name, url, True))
-                    if pb_detected and pb_events:
-                        events = pb_events
-                        methods.append(f"Philbrook AJAX ({len(events)})")
-                        print(f"[Philbrook] SUCCESS: {len(events)} events via admin-ajax")
-
-                if not events:
-                    tpac_events, tpac_detected = asyncio.run(extract_tulsapac_events(html, name, url, True))
-                    if tpac_detected and tpac_events:
-                        events = tpac_events
-                        methods.append(f"TulsaPAC API ({len(events)})")
-                        print(f"[TulsaPAC] SUCCESS: {len(events)} productions via TM API")
-
-                if not events:
-                    rd_ev, rd_detected = asyncio.run(extract_roosterdays_events(html, name, url, True))
-                    if rd_detected and rd_ev:
-                        events = rd_ev
-                        methods.append(f"RoosterDays ({len(events)})")
-                        print(f"[RoosterDays] SUCCESS: {len(events)} event")
-
-                if not events:
-                    tbf_ev, tbf_detected = asyncio.run(extract_tulsabrunchfest_events(html, name, url, True))
-                    if tbf_detected and tbf_ev:
-                        events = tbf_ev
-                        methods.append(f"TulsaBrunchFest ({len(events)})")
-                        print(f"[TulsaBrunchFest] SUCCESS: {len(events)} event")
-
-                if not events:
-                    okeq_ev, okeq_detected = asyncio.run(extract_okeq_events(html, name, url, True))
-                    if okeq_detected and okeq_ev:
-                        events = okeq_ev
-                        methods.append(f"OKEQ ({len(events)})")
-                        print(f"[OKEQ] SUCCESS: {len(events)} events")
-
-                if not events:
-                    flywheel_ev, flywheel_detected = asyncio.run(extract_flywheel_events(html, name, url, True))
-                    if flywheel_detected and flywheel_ev:
-                        events = flywheel_ev
-                        methods.append(f"Flywheel ({len(events)})")
-                        print(f"[Flywheel] SUCCESS: {len(events)} events")
-
-                if not events:
-                    arvest_ev, arvest_detected = asyncio.run(extract_arvest_events(html, name, url, True))
-                    if arvest_detected and arvest_ev:
-                        events = arvest_ev
-                        methods.append(f"Arvest ({len(events)})")
-                        print(f"[Arvest] SUCCESS: {len(events)} events")
-
-                if not events:
-                    tt_ev, tt_detected = asyncio.run(extract_tulsatough_events(html, name, url, True))
-                    if tt_detected and tt_ev:
-                        events = tt_ev
-                        methods.append(f"TulsaTough ({len(events)})")
-                        print(f"[TulsaTough] SUCCESS: {len(events)} events")
-
-                if not events:
-                    gradient_ev, gradient_detected = asyncio.run(extract_gradient_events(html, name, url, True))
-                    if gradient_detected and gradient_ev:
-                        events = gradient_ev
-                        methods.append(f"Gradient ({len(events)})")
-                        print(f"[Gradient] SUCCESS: {len(events)} events")
-
-                if not events:
-                    tfm_ev, tfm_detected = asyncio.run(extract_tulsafarmersmarket_events(html, name, url, True))
-                    if tfm_detected and tfm_ev:
-                        events = tfm_ev
-                        methods.append(f"TFM ({len(events)})")
-                        print(f"[TFM] SUCCESS: {len(events)} events")
-
-                if not events:
-                    okcastle_ev, okcastle_detected = asyncio.run(extract_okcastle_events(html, name, url, True))
-                    if okcastle_detected and okcastle_ev:
-                        events = okcastle_ev
-                        methods.append(f"OKCastle ({len(events)})")
-                        print(f"[OKCastle] SUCCESS: {len(events)} events")
-
-                if not events:
-                    ba_ev, ba_detected = asyncio.run(extract_broken_arrow_events(html, name, url, True))
-                    if ba_detected and ba_ev:
-                        events = ba_ev
-                        methods.append(f"BrokenArrow ({len(events)})")
-                        print(f"[BrokenArrow] SUCCESS: {len(events)} events")
-
-                if not events:
-                    zoo_ev, zoo_detected = asyncio.run(extract_tulsazoo_events(html, name, url, True))
-                    if zoo_detected and zoo_ev:
-                        events = zoo_ev
-                        methods.append(f"TulsaZoo ({len(events)})")
-                        print(f"[TulsaZoo] SUCCESS: {len(events)} events")
-
-                if not events:
-                    hr_ev, hr_detected = asyncio.run(extract_hardrock_tulsa_events(html, name, url, True))
-                    if hr_detected and hr_ev:
-                        events = hr_ev
-                        methods.append(f"HardRockTulsa ({len(events)})")
-                        print(f"[HardRockTulsa] SUCCESS: {len(events)} events")
-
-                if not events:
-                    gypsy_ev, gypsy_detected = asyncio.run(extract_gypsy_events(html, name, url, True))
-                    if gypsy_detected and gypsy_ev:
-                        events = gypsy_ev
-                        methods.append(f"Gypsy ({len(events)})")
-                        print(f"[Gypsy] SUCCESS: {len(events)} events")
-
-                if not events:
-                    bar_ev, bar_detected = asyncio.run(extract_badass_renees_events(html, name, url, True))
-                    if bar_detected and bar_ev:
-                        events = bar_ev
-                        methods.append(f"BadAssRenees ({len(events)})")
-                        print(f"[BadAssRenees] SUCCESS: {len(events)} events")
-
-                if not events:
-                    rl_ev, rl_detected = asyncio.run(extract_rocklahoma_events(html, name, url, True))
-                    if rl_detected and rl_ev:
-                        events = rl_ev
-                        methods.append(f"Rocklahoma ({len(events)})")
-                        print(f"[Rocklahoma] SUCCESS: {len(events)} events")
-
-                if not events:
-                    ok_ev, ok_detected = asyncio.run(extract_tulsa_oktoberfest_events(html, name, url, True))
-                    if ok_detected and ok_ev:
-                        events = ok_ev
-                        methods.append(f"TulsaOktoberfest ({len(events)})")
-                        print(f"[TulsaOktoberfest] SUCCESS: {len(events)} events")
-
-                if not events:
-                    events = extract_events_universal(html, url, name)
-                    if events and '_extraction_methods' in events[0]:
-                        methods = events[0]['_extraction_methods']
-                        for e in events:
-                            e.pop('_extraction_methods', None)
-
-                # Future filter
-                if events:
-                    from dateutil import parser as date_parser
-                    now = datetime.now()
-                    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                    filtered = []
-                    for ev in events:
-                        date_str = ev.get('date', '') or ev.get('date_start', '') or ev.get('start_time', '')
-                        if not date_str:
-                            filtered.append(ev)
-                            continue
-                        try:
-                            dt = date_parser.parse(str(date_str), fuzzy=True)
-                            dt = dt.replace(tzinfo=None)
-                            if dt < cutoff:
-                                days_past = (cutoff - dt).days
-                                if days_past > 270:
-                                    dt = dt.replace(year=dt.year + 1)
-                                    ev['date'] = dt.strftime('%b %d, %Y')
-                                    if dt >= cutoff:
-                                        filtered.append(ev)
-                            else:
-                                filtered.append(ev)
-                        except:
-                            filtered.append(ev)
-                    events = filtered
-
-                yield f"data: {json.dumps({'type': 'source_scraped', 'name': name, 'index': i, 'count': len(events), 'methods': methods})}\n\n"
-
-                # Save JSON to disk (backup)
-                saved_count = 0
-                if events:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    safe_name = re.sub(r'[^\w\-]', '_', name)
-                    filename = f"{safe_name}_{timestamp}.json"
-                    (OUTPUT_DIR / filename).write_text(json.dumps(events, indent=2), encoding='utf-8')
-
-                    # --- Normalize via LLM service then POST to backend ---
-                    normalized = normalize_batch(events, source_url=url, source_name=name)
-                    events_to_post = normalized if normalized else events
-
-                    db_saved = 0
-                    for ev in events_to_post:
-                        try:
-                            transformed = transform_event_for_backend(ev, source_priority=source.get('priority'))
-                            # Ensure source fields are set
-                            if not transformed.get('source_url'):
-                                transformed['source_url'] = url
-                            if not transformed.get('source_name'):
-                                transformed['source_name'] = name
-                            resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
-                            if resp.status_code in [200, 201]:
-                                db_saved += 1
-                            else:
-                                print(f"[ScrapeAll DB] Rejected: {resp.status_code} - {resp.text[:100]}")
-                        except Exception as db_err:
-                            print(f"[ScrapeAll DB] Error: {db_err}")
-
-                    saved_count = db_saved
-                    norm_tag = "normalized" if normalized else "fallback"
-                    print(f"[ScrapeAll DB] {name}: {db_saved}/{len(events_to_post)} saved ({norm_tag})")
-
-                total_events += len(events)
-                total_saved += saved_count
-                sources_scraped += 1
-
-                yield f"data: {json.dumps({'type': 'source_done', 'name': name, 'index': i, 'saved': saved_count, 'count': len(events)})}\n\n"
-
-                print(f"[ScrapeAll] {i+1}/{total} {name}: {len(events)} events {methods}")
-
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                yield f"data: {json.dumps({'type': 'source_error', 'name': name, 'index': i, 'error': str(e)})}\n\n"
-
-        yield f"data: {json.dumps({'type': 'complete', 'total_events': total_events, 'total_saved': total_saved, 'sources_scraped': sources_scraped, 'total_sources': total})}\n\n"
-
-
     @app.route('/save', methods=['POST'])
     def save():
         data = request.json
@@ -2306,49 +1903,33 @@ def register_routes(app):
         """
         Send events to database via Rust backend.
 
-        Pipeline:
-          1. Normalize all events through Gemini (LLM service on :8001)
-          2. Transform normalized events to backend schema
-          3. POST each event to Rust backend on :3000
-          4. Falls back to basic transform if LLM service is unavailable
+        Deterministic pipeline (NO LLM): register/enrich venues, then run each
+        event through transform -> date_parser -> field_extractor ->
+        venue_resolver -> event_validator -> POST via the shared
+        asyncScraper._post_events_to_db (same path the cron run uses).
         """
-        import concurrent.futures
-
         data = request.json
         events = data.get('events', [])
 
         if not events:
             return jsonify({"saved": 0, "total": 0})
 
-        print(f"[DB] Processing {len(events)} events...")
+        print(f"[DB] Processing {len(events)} events (deterministic pipeline, no LLM)...")
 
-        # --- Step 1: Normalize through Gemini FIRST ---
-        # This must happen before venue registration so we register
-        # canonical names ("The Shrine") not raw names ("shrine").
         source_url = events[0].get('source_url', '') if events else ''
         source_name = events[0].get('source', '') or events[0].get('source_name', '') if events else ''
 
-        normalized_events = normalize_batch(events, source_url, source_name)
-
-        use_normalized = len(normalized_events) > 0
-        if use_normalized:
-            print(f"[DB] ✓ Normalized {len(events)} → {len(normalized_events)} events via Gemini")
-            events_to_save = normalized_events
-        else:
-            print(f"[DB] ⚠ Normalization unavailable, using basic transform fallback")
-            events_to_save = events
-
-        # --- Step 2: Collect, register, and auto-enrich venues ---
+        # --- Step 1: Collect, register, and auto-enrich venues ---
         # Only register venues from priority=1 sources (direct venue scrapers).
         # Aggregators (priority 2-3) produce wildly inconsistent venue strings
         # (sub-rooms, addresses, people's names) that pollute the venues table
         # and break the JOIN used for map coordinates and venue_priority.
-        source_priority_int = int(events_to_save[0].get('source_priority', 3)) if events_to_save else 3
+        source_priority_int = int(events[0].get('source_priority', 3)) if events else 3
         should_register_venues = (source_priority_int == 1)
 
         venues_to_save = {}
         if should_register_venues:
-            for event in events_to_save:
+            for event in events:
                 venue_name = event.get('venue', '').strip()
                 if venue_name and venue_name.lower() not in ['tba', 'tbd', 'online', 'online event', 'virtual', '']:
                     venue_key = venue_name.lower()
@@ -2418,43 +1999,21 @@ def register_routes(app):
 
             print(f"[DB] Venues: {len(venues_to_save)} registered, {venues_with_websites} with websites, {venues_enriched} enriched via Google")
 
-        # --- Step 3: Transform and send to Rust backend ---
-        def post_event(event):
-            try:
-                transformed = transform_event_for_backend(event)
-                # Synthetic unique source_url so events from venues without
-                # per-event permalinks don't all collapse onto one DB row.
-                if not transformed.get('source_url'):
-                    slug = (
-                        f"{source_url}|"
-                        f"{transformed.get('title','').lower().strip()}|"
-                        f"{transformed.get('start_time','')}"
-                    )
-                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
-                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
-                if not transformed.get('source_name'):
-                    transformed['source_name'] = source_name
-                # Canonical venue name from the scrape source
-                if source_name:
-                    transformed['venue'] = source_name
-                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
-                if resp.status_code not in [200, 201]:
-                    print(f"[DB] Rejected: {resp.status_code} - {resp.text[:100]}")
-                return resp.status_code in [200, 201]
-            except Exception as e:
-                print(f"[DB] Error: {e}")
-                return False
+        # --- Step 2: Deterministic transform + POST (shared cron pipeline) ---
+        # transform -> date_parser -> field_extractor -> venue_resolver ->
+        # event_validator -> POST. No LLM, no NOW+1day date fabrication.
+        import asyncScraper
+        post_name = source_name or resolve_source_name(source_url, '')
+        saved, _ok = asyncScraper._post_events_to_db(
+            events, source_url, post_name, source_priority_int
+        )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(post_event, events_to_save))
-
-        saved = sum(results)
-        print(f"[DB] Complete: {saved}/{len(events_to_save)} saved (normalized: {use_normalized})")
+        print(f"[DB] Complete: {saved}/{len(events)} saved (deterministic)")
 
         return jsonify({
             "saved": saved,
-            "total": len(events_to_save),
-            "normalized": use_normalized,
+            "total": len(events),
+            "normalized": False,
             "venues_registered": len(venues_to_save),
             "venues_with_websites": venues_with_websites,
             "venues_enriched": venues_enriched
@@ -2462,9 +2021,7 @@ def register_routes(app):
 
     @app.route('/upload-all-to-database', methods=['POST'])
     def upload_all_to_database():
-        """Read all saved JSON files and send events to database concurrently."""
-        import concurrent.futures
-
+        """Read all saved JSON files and send events to the database (deterministic, no LLM)."""
         total_events = 0
         total_saved = 0
         files_processed = 0
@@ -2488,51 +2045,23 @@ def register_routes(app):
         total_events = len(all_events)
         print(f"[Upload] {total_events} events from {files_processed} files")
 
-        # Normalize through Gemini before sending to database
+        # Deterministic transform + POST via the shared cron pipeline (no LLM).
         source_url = all_events[0].get('source_url', '') if all_events else ''
         source_name = all_events[0].get('source', '') or all_events[0].get('source_name', '') if all_events else ''
-        normalized = normalize_batch(all_events, source_url, source_name)
 
-        use_normalized = len(normalized) > 0
-        if use_normalized:
-            print(f"[Upload] ✓ Normalized {total_events} → {len(normalized)} events via Gemini")
-            events_to_post = normalized
-        else:
-            print(f"[Upload] ⚠ Normalization unavailable, using basic transform fallback")
-            events_to_post = all_events
+        import asyncScraper
+        post_name = source_name or resolve_source_name(source_url, '')
+        total_saved, _ok = asyncScraper._post_events_to_db(
+            all_events, source_url, post_name, None
+        )
 
-        def post_event(event):
-            try:
-                transformed = transform_event_for_backend(event)
-                if not transformed.get('source_url'):
-                    slug = (
-                        f"{source_url}|"
-                        f"{transformed.get('title','').lower().strip()}|"
-                        f"{transformed.get('start_time','')}"
-                    )
-                    uid = hashlib.md5(slug.encode()).hexdigest()[:8]
-                    transformed['source_url'] = f"{source_url.rstrip('/')}#event-{uid}"
-                if not transformed.get('source_name'):
-                    transformed['source_name'] = source_name
-                if source_name:
-                    transformed['venue'] = source_name
-                resp = httpx.post(f"{BACKEND_URL}/api/events", json=transformed, timeout=5)
-                return resp.status_code in [200, 201]
-            except Exception as e:
-                print(f"[Upload] Error: {e}")
-                return False
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            results = list(executor.map(post_event, events_to_post))
-
-        total_saved = sum(results)
-        print(f"[Upload] Complete: {total_saved}/{len(events_to_post)} saved (normalized: {use_normalized})")
+        print(f"[Upload] Complete: {total_saved}/{len(all_events)} saved (deterministic)")
 
         return jsonify({
             "files_processed": files_processed,
             "total_events": total_events,
             "saved": total_saved,
-            "normalized": use_normalized,
+            "normalized": False,
             "errors": errors
         })
 
