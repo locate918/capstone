@@ -202,6 +202,11 @@ pub struct UserPreference {
 pub struct CreateUserPreference {
     pub category: String,
     pub weight: f64,
+    /// How to apply `weight` on an existing row:
+    /// - `"add"`  — accumulate the value as a delta (used by interaction scoring)
+    /// - `"set"` / omitted — replace with the absolute value (onboarding / profile-edit)
+    #[serde(default)]
+    pub op: Option<String>,
 }
 
 // =============================================================================

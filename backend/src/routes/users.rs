@@ -732,17 +732,29 @@ async fn add_my_preference(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let result = sqlx::query_as::<_, UserPreference>(
+    // Decide how to apply the incoming weight on conflict.
+    // - "add": accumulate as a delta (interaction scoring) — existing + incoming.
+    // - "set"/omitted: replace with the absolute value (onboarding / profile-edit).
+    // Either way the result is clamped to the [-5, 5] preference scale.
+    let accumulate = payload.op.as_deref() == Some("add");
+    let weight_expr = if accumulate {
+        "GREATEST(-5.0, LEAST(5.0, user_preferences.weight + EXCLUDED.weight))"
+    } else {
+        "GREATEST(-5.0, LEAST(5.0, EXCLUDED.weight))"
+    };
+    let upsert_sql = format!(
         r#"
         INSERT INTO user_preferences (id, user_id, category, weight, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $5)
         ON CONFLICT (user_id, category)
-        DO UPDATE SET 
-            weight = EXCLUDED.weight,
+        DO UPDATE SET
+            weight = {weight_expr},
             updated_at = EXCLUDED.updated_at
         RETURNING id, user_id, category, weight, created_at, updated_at
-        "#,
-    )
+        "#
+    );
+
+    let result = sqlx::query_as::<_, UserPreference>(&upsert_sql)
         .bind(&id)
         .bind(auth.user_id)
         .bind(&payload.category)

@@ -154,6 +154,10 @@ async def execute_search_events(args: dict, user_profile=None):
         args["start_after"] = args.pop("start_date")
     if "end_date" in args:
         args["start_before"] = args.pop("end_date")
+    # Backend's SearchQuery field is `max_price`, not `price_max` — without this
+    # remap the price ceiling is silently ignored.
+    if "price_max" in args:
+        args["max_price"] = args.pop("price_max")
 
     # Filter out null values to keep the query clean
     params = {k: v for k, v in args.items() if v is not None}

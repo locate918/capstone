@@ -99,7 +99,10 @@ async def log_interaction_and_update_preferences(request: InteractionRequest, au
             for category, score in updated_preferences.items():
                 preference_payload = {
                     "category": category,
-                    "weight": score
+                    "weight": score,
+                    # Accumulate this delta onto the existing weight (vs. onboarding/
+                    # profile-edit which send absolute values and omit op -> "set").
+                    "op": "add",
                 }
                 print(f"DEBUG: ...sending payload: {preference_payload}")
                 response = await client.post(

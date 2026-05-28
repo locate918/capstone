@@ -97,6 +97,16 @@ async def search_intent(request: SearchRequest, authorization: str = Header(None
         if params.get("end_date") and len(str(params["end_date"])) == 10:
             params["end_date"] = f"{params['end_date']}T23:59:59Z"
 
+        # Remap LLM param names to the Rust backend's SearchQuery field names.
+        # Without this the date/price filters are silently dropped (the backend
+        # ignores unknown query params), so "this weekend" / "under $30" wouldn't filter.
+        if params.get("start_date") is not None:
+            params["start_after"] = params.pop("start_date")
+        if params.get("end_date") is not None:
+            params["start_before"] = params.pop("end_date")
+        if params.get("price_max") is not None:
+            params["max_price"] = params.pop("price_max")
+
         # 3. Query the Rust Backend
         clean_params = {k: v for k, v in params.items() if v is not None}
         events = []
