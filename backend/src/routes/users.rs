@@ -110,7 +110,7 @@ async fn get_saved_events(
         r#"
         SELECT
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+            e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
@@ -120,7 +120,7 @@ async fn get_saved_events(
             v.venue_priority AS venue_priority
         FROM user_saved_events se
         JOIN events e ON se.event_id = e.id
-        LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+        LEFT JOIN venues v ON e.venue_id = v.venue_id
         WHERE se.user_id = $1
           AND e.start_time >= NOW()
         ORDER BY se.created_at DESC
@@ -442,7 +442,7 @@ async fn get_my_recommendations(
         WITH scored_events AS (
             SELECT
                 e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-                e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+                e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                 e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
                 e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
                 e.created_at, e.updated_at,
@@ -453,7 +453,7 @@ async fn get_my_recommendations(
                 -- Only sum weights for preferences where categories match
                 COALESCE(SUM(up.weight), 0) AS total_score
             FROM events e
-            LEFT JOIN venues v ON LOWER(TRIM(e.venue)) = LOWER(TRIM(v.name))
+            LEFT JOIN venues v ON e.venue_id = v.venue_id
             -- IMPORTANT: Only join preferences that have matching categories
             LEFT JOIN user_preferences up ON up.user_id = $1
                 AND e.categories IS NOT NULL
@@ -464,7 +464,7 @@ async fn get_my_recommendations(
             WHERE e.start_time >= NOW()
               AND e.start_time < NOW() + INTERVAL '60 days'
             GROUP BY e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-                     e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+                     e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
                      e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
                      e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
                      e.created_at, e.updated_at,

@@ -42,6 +42,8 @@ pub struct Event {
     pub venue: Option<String>,
     pub venue_address: Option<String>,
     pub location: Option<String>,
+    /// Integer FK to venues.venue_id, assigned at ingestion (pipeline stage 2).
+    pub venue_id: Option<i32>,
     pub source_url: String,
     pub source_name: Option<String>,
     pub start_time: DateTime<Utc>,
@@ -75,6 +77,9 @@ pub struct CreateEvent {
     pub venue: Option<String>,
     pub venue_address: Option<String>,
     pub location: Option<String>,
+    /// Optional: scraper-resolved venue_id. If omitted, the backend resolves it
+    /// from venue_alias_lookup on insert.
+    pub venue_id: Option<i32>,
     pub source_url: String,
     pub source_name: Option<String>,
     pub start_time: DateTime<Utc>,
@@ -135,29 +140,23 @@ async fn list_events(
 
     let events = sqlx::query_as::<_, Event>(
         r#"
-        SELECT * FROM (
-            SELECT DISTINCT ON (e.id)
-                e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-                e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
-                e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-                e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
-                e.created_at, e.updated_at,
-                v.website      AS venue_website,
-                v.latitude     AS venue_latitude,
-                v.longitude    AS venue_longitude,
-                v.venue_priority AS venue_priority
-            FROM events e
-            LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-            LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-                COALESCE(va.parent_venue, e.venue)
-            ))
-            WHERE e.start_time >= NOW()
-            ORDER BY e.id
-        ) AS deduped
-        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC,
-                 COALESCE(venue_priority, 3) ASC,
-                 start_time ASC,
-                 id ASC
+        SELECT
+            e.id, e.title, e.description, e.venue, e.venue_address, e.location,
+            e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+            e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
+            e.created_at, e.updated_at,
+            v.website      AS venue_website,
+            v.latitude     AS venue_latitude,
+            v.longitude    AS venue_longitude,
+            v.venue_priority AS venue_priority
+        FROM events e
+        LEFT JOIN venues v ON e.venue_id = v.venue_id
+        WHERE e.start_time >= NOW()
+        ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC,
+                 COALESCE(v.venue_priority, 3) ASC,
+                 e.start_time ASC,
+                 e.id ASC
         LIMIT $1
         "#
     )
@@ -187,9 +186,9 @@ async fn get_event(
 ) -> Result<Json<Event>, StatusCode> {
     let event = sqlx::query_as::<_, Event>(
         r#"
-        SELECT DISTINCT ON (e.id)
+        SELECT
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+            e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
@@ -198,12 +197,8 @@ async fn get_event(
             v.longitude    AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-            COALESCE(va.parent_venue, e.venue)
-        ))
+        LEFT JOIN venues v ON e.venue_id = v.venue_id
         WHERE e.id = $1
-        ORDER BY e.id
         "#
     )
         .bind(id)
@@ -254,11 +249,15 @@ async fn create_event(
             source_url, source_name, start_time, end_time, categories,
             price_min, price_max, outdoor, family_friendly, image_url,
             time_estimated, content_hash, source_priority, canonical_url,
-            created_at, updated_at
+            venue_id, created_at, updated_at
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            -- venue_id: use the scraper-supplied value, else resolve the venue
+            -- text against venue_alias_lookup (exact, normalized) server-side.
+            COALESCE($21, (SELECT venue_id FROM venue_alias_lookup WHERE alias_text = LOWER(TRIM($4)))),
+            $22, $23
         )
         ON CONFLICT (source_url) DO UPDATE SET
             title          = EXCLUDED.title,
@@ -288,6 +287,7 @@ async fn create_event(
                                THEN EXCLUDED.canonical_url
                                ELSE COALESCE(events.canonical_url, EXCLUDED.canonical_url)
                              END,
+            venue_id       = COALESCE(EXCLUDED.venue_id, events.venue_id),
             updated_at     = NOW()
         "#
     )
@@ -311,6 +311,7 @@ async fn create_event(
         .bind(&payload.content_hash)
         .bind(&priority)
         .bind(&payload.canonical_url)
+        .bind(&payload.venue_id)
         .bind(&now)
         .bind(&now)
         .execute(&pool)
@@ -378,9 +379,9 @@ async fn create_event(
     // Then fetch the event with venue data JOIN
     let event = sqlx::query_as::<_, Event>(
         r#"
-        SELECT DISTINCT ON (e.id)
+        SELECT
             e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-            e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+            e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
             e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
             e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
             e.created_at, e.updated_at,
@@ -389,10 +390,7 @@ async fn create_event(
             v.longitude      AS venue_longitude,
             v.venue_priority AS venue_priority
         FROM events e
-        LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-        LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-            COALESCE(va.parent_venue, e.venue)
-        ))
+        LEFT JOIN venues v ON e.venue_id = v.venue_id
         WHERE e.source_url = $1 OR e.content_hash = $2
         ORDER BY e.id
         LIMIT 1
@@ -533,41 +531,30 @@ async fn search_events(
 
     // Inner query: deduplicate by event id to prevent JOIN multiplication,
     // then outer query re-sorts for display order.
+    // Single query — the venue_id FK JOIN is 1:1, so no DISTINCT ON / dedup
+    // wrapper is needed (the old text JOIN through venue_aliases could multiply rows).
     let query = format!(
         r#"
-        SELECT DISTINCT ON (e.id)
-                e.id, e.title, e.description, e.venue, e.venue_address, e.location,
-                e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
-                e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
-                e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
-                e.created_at, e.updated_at,
-                v.website        AS venue_website,
-                v.latitude       AS venue_latitude,
-                v.longitude      AS venue_longitude,
-                v.venue_priority AS venue_priority
-            FROM events e
-            LEFT JOIN venue_aliases va ON LOWER(TRIM(e.venue)) = LOWER(TRIM(va.alias))
-            LEFT JOIN venues v ON LOWER(TRIM(v.name)) = LOWER(TRIM(
-                COALESCE(va.parent_venue, e.venue)
-            ))
-            WHERE {}
-            ORDER BY e.id
-        "#,
-        where_clause
-    );
-
-    // Wrap the dedup query so we can re-sort the deduplicated results
-    // by venue_priority first, then chronologically, with id as stable tiebreaker.
-    let query = format!(
-        r#"
-        SELECT * FROM ({}) AS deduped
-        ORDER BY DATE_TRUNC('day', start_time AT TIME ZONE 'America/Chicago') ASC,
-                 COALESCE(venue_priority, 3) ASC,
-                 start_time ASC,
-                 id ASC
+        SELECT
+            e.id, e.title, e.description, e.venue, e.venue_address, e.location,
+            e.venue_id, e.source_url, e.source_name, e.start_time, e.end_time, e.categories,
+            e.price_min, e.price_max, e.outdoor, e.family_friendly, e.image_url,
+            e.time_estimated, e.content_hash, e.source_priority, e.canonical_url,
+            e.created_at, e.updated_at,
+            v.website        AS venue_website,
+            v.latitude       AS venue_latitude,
+            v.longitude      AS venue_longitude,
+            v.venue_priority AS venue_priority
+        FROM events e
+        LEFT JOIN venues v ON e.venue_id = v.venue_id
+        WHERE {}
+        ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC,
+                 COALESCE(v.venue_priority, 3) ASC,
+                 e.start_time ASC,
+                 e.id ASC
         LIMIT ${} OFFSET ${}
         "#,
-        query, bind_index, bind_index + 1
+        where_clause, bind_index, bind_index + 1
     );
 
     // Build and execute query with bindings
