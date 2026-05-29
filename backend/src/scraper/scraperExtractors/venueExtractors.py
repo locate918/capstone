@@ -529,11 +529,16 @@ async def extract_loonybin_events(
         show_url  = a_tag['href'] if a_tag and a_tag.get('href') else _LB_SOURCE_URL
         image_url = img.get('data-src') or img.get('src') or '' if img else ''
 
-        # ── Year inference: bump year on month rollover ───────────────────────
+        # ── Year inference: bump year only on a genuine year-end wrap ─────────
+        # The listing is forward-chronological, but recurring events (Open Mic,
+        # Trivia) are sometimes listed slightly out of order, causing small
+        # month dips (e.g. Jun→May). Bumping on ANY decrease misreads those as
+        # a new year and stamps the whole rest of the list a year ahead. Only a
+        # large backward jump (Dec/Nov → Jan/Feb) is a real wrap.
         start_md = _lb_parse_month_day(date_text.split(' - ')[0])
         if start_md:
             curr_month = start_md[0]
-            if prev_month > 0 and curr_month < prev_month:
+            if prev_month > 0 and prev_month - curr_month >= 6:
                 work_year += 1
             prev_month = curr_month
 
@@ -546,6 +551,12 @@ async def extract_loonybin_events(
         # ── Future filter ─────────────────────────────────────────────────────
         check_dt = end_dt or start_dt
         if future_only and check_dt.date() < today.date():
+            continue
+
+        # ── Horizon cap: a comedy club never books >~14 months out, so any date
+        # past that is a year-inference artifact — drop it defensively.
+        if check_dt.date() > today.date() + timedelta(days=420):
+            print(f"[LoonybinTulsa] Skipping (beyond horizon): {title!r} — {check_dt.date()}")
             continue
 
         # ── Dedup ─────────────────────────────────────────────────────────────
