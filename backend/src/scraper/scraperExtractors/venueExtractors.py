@@ -526,7 +526,11 @@ async def extract_loonybin_events(
 
         a_tag  = card.select_one('a')
         img    = card.select_one('img')
-        show_url  = a_tag['href'] if a_tag and a_tag.get('href') else _LB_SOURCE_URL
+        # Resolve to an absolute URL — the page serves relative hrefs
+        # (/ShowDetails/…). Storing them raw makes source_url non-canonical
+        # (breaks as a ticket link) and, worse, breaks the upsert key: a later
+        # scrape that changes URL form can't match, so it duplicates the event.
+        show_url  = urljoin(_LB_SOURCE_URL, a_tag['href']) if a_tag and a_tag.get('href') else _LB_SOURCE_URL
         image_url = img.get('data-src') or img.get('src') or '' if img else ''
 
         # ── Year inference: bump year only on a genuine year-end wrap ─────────
