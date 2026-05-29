@@ -70,6 +70,7 @@ def parse_datetime(date_str: Optional[str]) -> Optional[datetime]:
 def parse_event_dates(
     start_raw: Optional[str],
     end_raw: Optional[str] = None,
+    default_hour: int = 19,
 ) -> Tuple[Optional[str], Optional[str], bool]:
     """
     Resolve an event's start/end into ISO-8601 UTC strings.
@@ -80,12 +81,27 @@ def parse_event_dates(
       - ``end_iso`` is None when absent/unparseable (end time is optional).
       - ``time_estimated`` is True when a start date was found but no explicit
         clock time accompanied it.
+
+    When the source carries a date but no clock time, dateutil defaults the
+    missing time to midnight, which surfaces in the UI as a misleading
+    "12:00 AM". Instead we stamp a sensible default hour (``default_hour``,
+    Tulsa local — 7 PM, matching the previous LLM's generic fallback) so undated
+    events sort and display reasonably. ``time_estimated`` stays True so the UI
+    can still flag the time as a guess.
     """
     start_dt = parse_datetime(start_raw)
     if start_dt is None:
         return None, None, False
 
     time_estimated = not _has_explicit_time(str(start_raw))
+    if time_estimated:
+        # Re-stamp the (Tulsa-local) date at the default hour, then back to UTC.
+        # Build from a naive local datetime so pytz handles DST correctly.
+        local_date = start_dt.astimezone(TULSA_TZ).date()
+        local_naive = datetime(
+            local_date.year, local_date.month, local_date.day, default_hour, 0, 0
+        )
+        start_dt = TULSA_TZ.localize(local_naive).astimezone(pytz.utc)
 
     end_dt = parse_datetime(end_raw)
     end_iso = end_dt.isoformat() if end_dt else None
