@@ -1737,13 +1737,15 @@ async def extract_circle_cinema_events(
                 mo, dy, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
                 if yr < 100: yr += 2000
                 try:
-                    start_time = datetime(yr, mo, dy, 0, 0).strftime('%Y-%m-%dT%H:%M:%S')
+                    # Date-only fallback (no showtime); emit a bare date so
+                    # date_parser stamps 7 PM Tulsa instead of a day-early midnight.
+                    start_time = datetime(yr, mo, dy).strftime('%Y-%m-%d')
                 except ValueError:
                     pass
             if not start_time:
                 for fmt in ('%b %d, %Y', '%B %d, %Y', '%b %d %Y'):
                     try:
-                        start_time = datetime.strptime(release_date.strip(), fmt).strftime('%Y-%m-%dT%H:%M:%S')
+                        start_time = datetime.strptime(release_date.strip(), fmt).strftime('%Y-%m-%d')
                         break
                     except ValueError:
                         continue

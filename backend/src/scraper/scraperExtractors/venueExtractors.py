@@ -560,8 +560,11 @@ async def extract_loonybin_events(
 
         events.append({
             'title':           title,
-            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
-            'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S') if end_dt else '',
+            # Date-only source (no showtime on the listing). Emit a bare date so
+            # date_parser treats the time as estimated and stamps 7 PM Tulsa,
+            # rather than a spurious midnight that renders a day early in Central.
+            'start_time':      start_dt.strftime('%Y-%m-%d'),
+            'end_time':        end_dt.strftime('%Y-%m-%d') if end_dt else '',
             'venue':           _LB_VENUE,
             'venue_address':   _LB_ADDR,
             'description':     desc,
@@ -1092,7 +1095,9 @@ async def extract_church_studio_events(
 
         events.append({
             'title':           title,
-            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+            # Date-only source (no showtime); emit a bare date so date_parser
+            # stamps 7 PM Tulsa instead of a day-early midnight.
+            'start_time':      start_dt.strftime('%Y-%m-%d'),
             'end_time':        '',
             'venue':           _CS_VENUE,
             'venue_address':   _CS_ADDR,
@@ -1400,7 +1405,9 @@ async def extract_route66_village_events(
 
         events.append({
             'title':           title_part,
-            'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+            # Date-only source (no showtime); emit a bare date so date_parser
+            # stamps 7 PM Tulsa instead of a day-early midnight.
+            'start_time':      start_dt.strftime('%Y-%m-%d'),
             'end_time':        '',
             'venue':           _R66_VENUE,
             'venue_address':   _R66_ADDR,
@@ -1685,7 +1692,10 @@ async def extract_living_arts_events(
 
             events.append({
                 'title':           title,
-                'start_time':      start_dt.strftime('%Y-%m-%dT%H:%M:%S'),
+                # Date-only source (no showtime); emit a bare date so date_parser
+                # stamps 7 PM Tulsa instead of a day-early midnight. end_dt keeps
+                # its explicit 23:59 (end-of-day) and is left as a timestamp.
+                'start_time':      start_dt.strftime('%Y-%m-%d'),
                 'end_time':        end_dt.strftime('%Y-%m-%dT%H:%M:%S')
                 if end_dt and end_dt != start_dt else '',
                 'venue':           _LA_VENUE,

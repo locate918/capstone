@@ -45,9 +45,20 @@ def _has_explicit_time(date_str: str) -> bool:
         b = _dateutil_parser.parse(date_str, fuzzy=True, default=_PROBE_B)
     except (ValueError, OverflowError, TypeError):
         return False
+    a_t = (a.hour, a.minute, a.second)
+    b_t = (b.hour, b.minute, b.second)
+    # Exact midnight from BOTH probes means the string pins 00:00:00 (either a
+    # date-only source whose extractor fabricated a "T00:00:00", or a literal
+    # midnight). Treat it as estimated: events in this dataset don't start at
+    # exactly midnight, and a literal midnight renders a day early once
+    # converted to Tulsa local (UTC-5/-6). Stamping the default hour keeps the
+    # calendar date correct. (No time token → b echoes _PROBE_B, not midnight,
+    # so that case falls through to the comparison below and stays estimated.)
+    if a_t == (0, 0, 0) and b_t == (0, 0, 0):
+        return False
     # If no time token was present, each parse just echoes its default's time.
-    return (a.hour, a.minute, a.second) != (_PROBE_A.hour, _PROBE_A.minute, _PROBE_A.second) \
-        or (b.hour, b.minute, b.second) != (_PROBE_B.hour, _PROBE_B.minute, _PROBE_B.second)
+    return a_t != (_PROBE_A.hour, _PROBE_A.minute, _PROBE_A.second) \
+        or b_t != (_PROBE_B.hour, _PROBE_B.minute, _PROBE_B.second)
 
 
 def _to_utc(dt: datetime) -> datetime:
