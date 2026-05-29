@@ -34,29 +34,46 @@ CANONICAL_CATEGORIES = [
 
 # Keyword signals per canonical category. Matched as whole words (case-insensitive).
 CATEGORY_KEYWORDS: Dict[str, List[str]] = {
-    "Music": ["concert", "live music", "live band", "band", "dj", "open mic",
-              "acoustic", "singer", "songwriter", "gig", "tour", "album"],
+    # Genre words + "in concert"/"tribute" added so listing blurbs that name a
+    # genre ("country and rock", "indie pop") get caught instead of falling through.
+    "Music": ["concert", "live music", "live band", "band", "dj", "dj set",
+              "open mic", "acoustic", "singer", "songwriter", "gig", "tour",
+              "album", "in concert", "tribute", "headliner", "headlining",
+              "rock", "country", "jazz", "blues", "folk", "indie", "metal",
+              "punk", "hip hop", "rap", "r&b", "soul", "funk", "reggae", "bluegrass"],
     "Comedy": ["comedy", "comedian", "stand-up", "standup", "improv", "open mic comedy"],
-    "Arts & Theater": ["theater", "theatre", "ballet", "dance", "opera", "symphony",
+    # Dropped "play"/"musical"/"dance" — they mis-tagged concerts as theater.
+    # Real theater is covered by the specific terms below (a stage musical still
+    # hits "theater"/"broadway"/"performing arts").
+    "Arts & Theater": ["theater", "theatre", "ballet", "opera", "symphony",
                        "orchestra", "exhibit", "exhibition", "gallery", "drag",
-                       "circus", "play", "musical", "art show", "performing arts"],
+                       "circus", "art show", "performing arts", "theatrical",
+                       "drama", "broadway", "choreography", "dance performance",
+                       "stage production"],
     "Festival": ["festival", "fest", "celebration", "carnival"],
     "Film": ["film", "movie", "screening", "cinema", "documentary", "premiere"],
     "Food & Drink": ["food", "tasting", "cooking class", "brewery", "wine", "beer",
                      "cocktail", "brunch", "food truck", "farmers market", "dinner",
                      "culinary", "happy hour", "whiskey", "distillery"],
+    # "party" -> "dance party" (bare "party" matched watch/release/birthday parties).
     "Nightlife": ["nightlife", "club night", "dj night", "21+", "late night",
-                  "late-night", "party", "bar crawl", "trivia", "karaoke"],
-    "Sports & Fitness": ["race", "run", "marathon", "5k", "cycling", "bike ride",
-                         "yoga", "fitness", "tournament", "league", "workout", "game"],
+                  "late-night", "dance party", "bar crawl", "trivia", "karaoke"],
+    # "game" dropped (matched "video game", "board game"); specific sports added.
+    "Sports & Fitness": ["run", "marathon", "5k", "10k", "cycling", "bike ride",
+                         "yoga", "fitness", "tournament", "league", "workout",
+                         "hockey", "football", "basketball", "baseball", "soccer",
+                         "wrestling", "boxing", "mma", "fight night", "rodeo",
+                         "roller derby", "esports"],
     "Family": ["kids", "children", "all ages", "all-ages", "family", "storytime",
                "family-friendly", "toddler"],
     "Educational": ["lecture", "workshop", "seminar", "class", "library", "book",
                     "author", "talk", "panel", "museum program", "reading"],
     "Nature & Outdoors": ["hike", "hiking", "nature walk", "trail", "garden",
                           "park", "outdoor", "open air", "wildlife"],
+    # bare "drive" -> specific charity drives (matched "test drive", "scenic drive").
     "Community": ["nonprofit", "fundraiser", "volunteer", "neighborhood", "market",
-                  "vendor", "tradeshow", "community", "fair", "drive"],
+                  "vendor", "tradeshow", "community", "fair", "food drive",
+                  "toy drive", "blood drive"],
 }
 
 # Raw source tags (from extractors) -> canonical category.
