@@ -308,10 +308,13 @@ def _post_events_to_db(events: list, url: str, name: str,
             # Stage 2 — venue identity (heuristic resolver; backend also resolves as fallback).
             xf['venue_id'] = venue_resolver.resolve(xf.get('venue'), source_name=name)
 
-            # content_hash kept (drop deferred to Phase 9); recompute from final venue/time.
+            # content_hash kept (drop deferred to Phase 9); recompute from final
+            # venue/time. Use the resolved integer venue_id (stable across sources)
+            # so venue-name variation can't split duplicates into separate rows.
             if xf.get('start_time'):
                 xf['content_hash'] = make_content_hash(
-                    xf.get('title', ''), xf.get('start_time', ''), xf.get('venue', ''))
+                    xf.get('title', ''), xf.get('start_time', ''),
+                    xf.get('venue', ''), venue_id=xf.get('venue_id'))
 
             # Stage 6 — validation gate: reject with reason codes instead of posting garbage.
             verdict = event_validator.validate_event(xf)

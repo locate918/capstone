@@ -322,11 +322,17 @@ def _load_venue_aliases() -> dict:
     return _venue_alias_map
 
 
-def make_content_hash(title: str, start_time: str, venue: str = '') -> str:
+def make_content_hash(title: str, start_time: str, venue: str = '', venue_id=None) -> str:
     """
     Generate a stable fingerprint for an event based on title + 3hr-time-bucket + venue.
     Two events from different sources representing the same real-world event
     will produce the same hash and be deduplicated by the UPSERT.
+
+    When ``venue_id`` (the resolved integer venue identity) is supplied, it is
+    used for the venue component instead of the fuzzy venue string. This makes
+    the hash robust to venue-name variation across sources — two listings that
+    resolve to the same venue collide and dedupe even if they spell the venue
+    differently (a previous source of slipped-through duplicates).
     """
     import hashlib
     from dateutil import parser as date_parser
@@ -363,7 +369,8 @@ def make_content_hash(title: str, start_time: str, venue: str = '') -> str:
     except Exception:
         time_part = str(start_time or '')[:10]  # fallback: just YYYY-MM-DD
 
-    key = f"{_norm(title)}|{time_part}|{_norm_venue(venue)}"
+    venue_key = f"vid{venue_id}" if venue_id is not None else _norm_venue(venue)
+    key = f"{_norm(title)}|{time_part}|{venue_key}"
     return hashlib.md5(key.encode()).hexdigest()
 
 
