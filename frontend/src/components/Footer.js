@@ -1,7 +1,7 @@
 /**
  * Footer Component
  * ================
- * Sticky footer with copyright, beta disclaimer, and contact button.
+ * Sticky footer with copyright and contact button.
  */
 
 import React, { useState, useEffect } from 'react';
