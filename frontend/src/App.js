@@ -37,6 +37,8 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Sparkles, Loader2, Map as MapIcon, List, Compass, ChevronLeft, ChevronRight, Calendar, LayoutGrid, Filter, X, Building2, MapPin, Clock, Heart } from 'lucide-react';
 import { fetchEvents, fetchRecommendedEvents, fetchSavedEvents, smartSearch, recordInteraction, updateUserPreferences, addUserPreference } from './services/api';
+import { trackClick } from './services/analytics';
+import CookieConsent from './components/CookieConsent';
 import { useAuth } from './context/AuthContext';
 
 // Components
@@ -777,6 +779,12 @@ export default function App() {
                 eventCategories: event.categories
             });
         }
+        // Venue-traffic analytics (all visitors): event-detail view.
+        trackClick({
+            clickType: 'event_detail',
+            eventId: event.id,
+            venueId: event.venue_id,
+        });
     };
 
     const handleEventClosing = () => {
@@ -862,6 +870,9 @@ export default function App() {
                 onComplete={handleOnboardingComplete}
                 user={user}
             />
+
+            {/* ===== COOKIE / ANALYTICS DISCLOSURE ===== */}
+            <CookieConsent />
 
             {/* ===== VENUE SELECTOR MODAL ===== */}
             <VenueSelectorModal

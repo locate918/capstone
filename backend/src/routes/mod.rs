@@ -37,6 +37,7 @@
 // Each submodule handles a specific resource/feature area.
 // The actual route handlers are defined in these files.
 
+mod analytics; // Lightweight click analytics (venue traffic)
 mod chat; // LLM-powered natural language chat (Ben - AI Engineer)
 pub mod events; // Event-related endpoints (CRUD + search)
 mod users; // User management, preferences, and interactions
@@ -101,6 +102,12 @@ pub fn create_routes() -> Router<PgPool> {
         // so we can link to original sources instead of aggregators.
         // Owner: Will (Coordinator/Backend Lead)
         .nest("/venues", venues::routes())
+        // ---------------------------------------------------------------------
+        // Analytics Routes
+        // ---------------------------------------------------------------------
+        // Lightweight, anonymous-OK click tracking for venue traffic.
+        // Decoupled from the ML interaction flow under /users.
+        .nest("/analytics", analytics::routes())
 
     // ---------------------------------------------------------------------
     // Chat Routes (Coming Soon)

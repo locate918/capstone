@@ -339,6 +339,7 @@ const transformBackendEvents = (events) => {
         summary: cleanHtml(event.description),
         date_iso: event.start_time,
         location: event.venue || event.location || "TBA",
+        venue_id: event.venue_id ?? null,
         venue_address: event.venue_address,
         venue_website: event.venue_website,
         venue_priority: event.venue_priority ?? 3,

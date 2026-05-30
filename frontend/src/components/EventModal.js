@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { X, Sparkles, Star, ExternalLink, Clock, MapPin, Building2, Heart } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
 import { recordInteraction, saveEvent, unsaveEvent } from "../services/api";
+import { trackClick } from "../services/analytics";
 
 const EventModal = ({ event, onClose, user, isSaved = false, onSaveChange }) => {
     const [expanded, setExpanded] = useState(false);
@@ -315,7 +316,15 @@ const EventModal = ({ event, onClose, user, isSaved = false, onSaveChange }) => 
                             rel="noopener noreferrer"
                             className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
                             style={styles.primaryBg}
-                            onClick={() => logClick('clicked on og post')}
+                            onClick={() => {
+                                logClick('clicked on og post');
+                                trackClick({
+                                    clickType: 'outbound_ticket',
+                                    eventId: event.id,
+                                    venueId: event.venue_id,
+                                    destinationUrl: event.original_url,
+                                });
+                            }}
                         >
                             View Original Listing  <ExternalLink size={16} />
                         </a>
@@ -326,6 +335,13 @@ const EventModal = ({ event, onClose, user, isSaved = false, onSaveChange }) => 
                             rel="noopener noreferrer"
                             className="w-full text-black text-center py-3 sm:py-4 rounded-xl font-bold tracking-wide flex justify-center items-center gap-2 shadow-lg hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all"
                             style={styles.primaryBg}
+                            onClick={() => trackClick({
+                                clickType: 'outbound_venue',
+                                eventId: event.id,
+                                venueId: event.venue_id,
+                                destinationUrl: event.venue_website,
+                                provider: 'venue_direct',
+                            })}
                         >
                             Visit Venue Website  <ExternalLink size={16} />
                         </a>

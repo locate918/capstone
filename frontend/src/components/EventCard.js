@@ -20,6 +20,7 @@ import React, { useState } from 'react';
 import { Calendar, Building2, Heart, Tag } from 'lucide-react';
 import { THEME, styles } from '../styles/theme';
 import { recordInteraction, saveEvent, unsaveEvent } from '../services/api';
+import { trackClick } from '../services/analytics';
 
 const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveChange }) => {
     const [isLoading, setIsLoading] = useState(false);
@@ -58,6 +59,14 @@ const EventCard = ({ event, onClick, index = 0, user, isSaved = false, onSaveCha
         e.stopPropagation(); // Don't trigger card onClick
         logClick('clicked');
         if (event.venue_website) {
+            // Venue-traffic analytics (all visitors, incl. anonymous).
+            trackClick({
+                clickType: 'outbound_venue',
+                eventId: event.id,
+                venueId: event.venue_id,
+                destinationUrl: event.venue_website,
+                provider: 'venue_direct',
+            });
             window.open(event.venue_website, '_blank', 'noopener,noreferrer');
         }
     };
