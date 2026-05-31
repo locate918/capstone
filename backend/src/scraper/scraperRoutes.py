@@ -889,6 +889,40 @@ loadVenues();
 # EVENT TRANSFORMATION
 # ============================================================================
 
+# StubHub renders each event card as one run-together text blob, e.g.
+# "Jun4ThuAlabama8:00 PMTulsa, OK, USThe Cove at River Spirit Casino Resort...See tickets".
+# The generic extractor stores that whole blob as the title. The real event name
+# sits between the "<Mon><day><DayOfWeek>" prefix and the showtime; the hour is
+# constrained to 1-12 so a trailing number in the name (e.g. "...Night 409") is
+# not mistaken for the time.
+_STUBHUB_TITLE_RE = re.compile(
+    r'^[A-Za-z]{3}\d{1,2}[A-Za-z]{3}(.+?)(?:1[0-2]|[1-9]):[0-5]\d\s*[AP]M',
+    re.IGNORECASE,
+)
+
+
+def clean_stubhub_title(raw_title: str, source_url: str) -> str:
+    """Recover the real event name from a StubHub card-text blob.
+
+    Primary: parse the blob (preserves the source's real casing). Fallback:
+    derive the artist slug from the StubHub URL (.../{artist}-{city}-tickets-{date}/).
+    Returns the title unchanged if neither applies (already-clean titles, etc.).
+    """
+    title = (raw_title or '').strip()
+
+    m = _STUBHUB_TITLE_RE.match(title)
+    if m and m.group(1).strip():
+        return m.group(1).strip()
+
+    slug_match = re.search(r'stubhub\.com/(.+?)-tickets-\d', source_url or '')
+    if slug_match:
+        slug = re.sub(r'-[a-z0-9]+$', '', slug_match.group(1))  # drop trailing city token
+        if slug:
+            return slug.replace('-', ' ').title()
+
+    return title
+
+
 def transform_event_for_backend(event: dict, source_priority: int = None) -> dict:
     """
     Transform scraped event to match Rust backend's CreateEvent schema.
@@ -909,6 +943,11 @@ def transform_event_for_backend(event: dict, source_priority: int = None) -> dic
             ''
     )
     transformed['source_url'] = source_url
+
+    # StubHub cards arrive as a single concatenated text blob; recover the real
+    # event name so cards don't show the date/time/venue mash-up.
+    if source_url and 'stubhub.com' in source_url:
+        transformed['title'] = clean_stubhub_title(transformed['title'], source_url)
 
     # --- Priority and canonical URL ---
     # Use explicitly passed priority, then check event dict, then auto-detect from URL
