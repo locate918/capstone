@@ -125,15 +125,16 @@ pub struct ListQuery {
 /// Returns all upcoming events, sorted by start time.
 /// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
-/// Priority note: Circle Cinema (venue_id 48) lists feature films with several
-/// showings per day alongside one-off special screenings. To keep the
-/// "This Week in Tulsa" feed (which shows only priority 1/2 venues) from being
-/// flooded by repeat showtimes, a title with >1 showing on the same day is
-/// treated as a feature film and its returned venue_priority is overridden to 3,
-/// while single-showing special screenings keep the venue's own priority (1/2).
-/// The frontend's P1/P2-only filter then excludes the features from the feed,
-/// while they remain available in the "All Events" / by-venue views. Every
-/// showtime row is still returned by this endpoint.
+/// Priority note: Circle Cinema (venue_id 48) runs multi-day feature films
+/// (several showtimes per day for ~a week) alongside one-off special screenings.
+/// To keep the "This Week in Tulsa" feed (which shows only priority 1/2 venues)
+/// from being flooded by repeat showtimes, a title whose showings span more than
+/// one calendar day is treated as a feature film and its returned venue_priority
+/// is overridden to 3. Special screenings — confined to a single day, even with
+/// a matinee + evening showtime — keep the venue's own priority (1/2). The
+/// frontend's P1/P2-only filter then excludes the features from the feed, while
+/// they remain available in the "All Events" / by-venue views. Every showtime
+/// row is still returned by this endpoint.
 ///
 /// Uses e.id as the final ORDER BY tiebreaker for deterministic pagination.
 ///
@@ -163,10 +164,10 @@ async fn list_events(
                 v.longitude      AS venue_longitude,
                 CASE
                     WHEN e.venue_id = 48
-                         AND COUNT(*) OVER (
-                             PARTITION BY e.venue_id, e.title,
-                                          (e.start_time AT TIME ZONE 'America/Chicago')::date
-                         ) > 1
+                         AND MIN((e.start_time AT TIME ZONE 'America/Chicago')::date)
+                               OVER (PARTITION BY e.venue_id, e.title)
+                             <> MAX((e.start_time AT TIME ZONE 'America/Chicago')::date)
+                               OVER (PARTITION BY e.venue_id, e.title)
                     THEN 3
                     ELSE COALESCE(v.venue_priority, 3)
                 END AS venue_priority
