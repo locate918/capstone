@@ -125,12 +125,15 @@ pub struct ListQuery {
 /// Returns all upcoming events, sorted by start time.
 /// Includes venue website and coordinates from venues table via LEFT JOIN.
 ///
-/// Sort priority note: Circle Cinema (venue_id 48) lists feature films with
-/// several showings per day alongside one-off special screenings. To keep the
-/// feed from being flooded by repeat showtimes, a title with >1 showing on the
-/// same day is treated as a feature film and sorted at priority 3, while
-/// single-showing special screenings keep the venue's own priority (1/2). This
-/// only changes ordering — every showtime row is still returned.
+/// Priority note: Circle Cinema (venue_id 48) lists feature films with several
+/// showings per day alongside one-off special screenings. To keep the
+/// "This Week in Tulsa" feed (which shows only priority 1/2 venues) from being
+/// flooded by repeat showtimes, a title with >1 showing on the same day is
+/// treated as a feature film and its returned venue_priority is overridden to 3,
+/// while single-showing special screenings keep the venue's own priority (1/2).
+/// The frontend's P1/P2-only filter then excludes the features from the feed,
+/// while they remain available in the "All Events" / by-venue views. Every
+/// showtime row is still returned by this endpoint.
 ///
 /// Uses e.id as the final ORDER BY tiebreaker for deterministic pagination.
 ///
@@ -158,7 +161,6 @@ async fn list_events(
                 v.website        AS venue_website,
                 v.latitude       AS venue_latitude,
                 v.longitude      AS venue_longitude,
-                v.venue_priority AS venue_priority,
                 CASE
                     WHEN e.venue_id = 48
                          AND COUNT(*) OVER (
@@ -167,13 +169,13 @@ async fn list_events(
                          ) > 1
                     THEN 3
                     ELSE COALESCE(v.venue_priority, 3)
-                END AS sort_priority
+                END AS venue_priority
             FROM events e
             LEFT JOIN venues v ON e.venue_id = v.venue_id
             WHERE e.start_time >= NOW()
         ) e
         ORDER BY DATE_TRUNC('day', e.start_time AT TIME ZONE 'America/Chicago') ASC,
-                 e.sort_priority ASC,
+                 e.venue_priority ASC,
                  e.start_time ASC,
                  e.id ASC
         LIMIT $1
