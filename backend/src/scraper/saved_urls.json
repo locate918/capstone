@@ -35,13 +35,6 @@
     "venue_priority": 1
   },
   {
-    "url": "https://cca.sandspringschamber.org/EvtListingMainSearch.aspx?class=B",
-    "name": "Sand Springs Chamber",
-    "playwright": true,
-    "priority": 2,
-    "venue_priority": 3
-  },
-  {
     "url": "https://tulsaparks.recdesk.com/Community/Calendar",
     "name": "Tulsa Parks",
     "playwright": true,
