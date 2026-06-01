@@ -1361,6 +1361,26 @@ def _cc_parse_showtimes_text(showtimes_text: str, year: int) -> list:
             except ValueError:
                 continue
 
+    # Collapse near-duplicate showtimes. Detail pages sometimes list a doors /
+    # early-access time right beside the real feature start without a skippable
+    # keyword (e.g. "Tue 6/2: 6:30p, 7:00p"), which would emit two events ~30
+    # min apart. Downstream UTC time-bucketing then fails to merge them because
+    # an evening Tulsa showtime rolls into the next UTC day, so the dupe slips
+    # through to the DB (see Twister 6/2, Puddysticks 6/1). Genuine separate
+    # screenings of one film are always >=2h apart, so collapsing anything
+    # within COLLAPSE_MINUTES is safe. Keep the later time in each tight pair —
+    # the earlier one is the doors/preshow, the later is the feature.
+    COLLAPSE_MINUTES = 60
+    if results:
+        results.sort()
+        collapsed = [results[0]]
+        for dt in results[1:]:
+            if (dt - collapsed[-1]) <= timedelta(minutes=COLLAPSE_MINUTES):
+                collapsed[-1] = dt
+            else:
+                collapsed.append(dt)
+        results = collapsed
+
     return results
 
 
