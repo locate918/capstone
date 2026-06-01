@@ -322,6 +322,30 @@ def _load_venue_aliases() -> dict:
     return _venue_alias_map
 
 
+# Display-name canonicalization for the free-text ``events.venue`` column.
+# The app's Venues tab groups rows on this raw string, so spelling variants for
+# the *same* place spawn phantom venue cards — e.g. the StubHub feed labels The
+# Cove "River Spirit Casino" while every other source says "River Spirit".
+# venue_id resolution already collapses these for dedup; this collapses what the
+# user actually sees. Keyed on the lowercased venue string.
+_VENUE_DISPLAY_CANON = {
+    "river spirit casino": "River Spirit",
+    "river spirit casino resort": "River Spirit",
+    "the cove": "River Spirit",
+    "the cove at river spirit casino resort": "River Spirit",
+}
+
+
+def canonical_venue_display(venue: str) -> str:
+    """Map known venue-name variants to one canonical display string.
+
+    No-op for anything not in the table, so it's safe to apply to every event.
+    """
+    if not venue:
+        return venue
+    return _VENUE_DISPLAY_CANON.get(venue.strip().lower(), venue)
+
+
 def make_content_hash(title: str, start_time: str, venue: str = '', venue_id=None) -> str:
     """
     Generate a stable fingerprint for an event based on title + 3hr-time-bucket + venue.

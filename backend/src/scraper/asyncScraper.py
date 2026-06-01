@@ -253,7 +253,7 @@ def _post_events_to_db(events: list, url: str, name: str,
     import httpx as _httpx
     try:
         from scraperRoutes import transform_event_for_backend
-        from scraperUtils import make_content_hash
+        from scraperUtils import make_content_hash, canonical_venue_display
         import venue_resolver
         import date_parser
         import field_extractor
@@ -279,8 +279,10 @@ def _post_events_to_db(events: list, url: str, name: str,
                 xf['source_url'] = f"{url.rstrip('/')}#event-{uid}"
             if not xf.get('source_name'):
                 xf['source_name'] = name
-            # Canonical venue = admin-approved saved_urls name.
-            xf['venue'] = name
+            # Canonical venue = admin-approved saved_urls name, run through the
+            # display-name canonicalizer so name variants (e.g. "River Spirit
+            # Casino" vs "River Spirit") don't spawn duplicate venue cards.
+            xf['venue'] = canonical_venue_display(name)
 
             # Stage 3 — deterministic dates (overrides transform; NO NOW+1day fabrication).
             start_iso, end_iso, time_est = date_parser.parse_event_dates(

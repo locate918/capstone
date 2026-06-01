@@ -34,10 +34,17 @@ PAST_EVENT = "PAST_EVENT"
 INVALID_PRICE_RANGE = "INVALID_PRICE_RANGE"
 NEGATIVE_PRICE = "NEGATIVE_PRICE"
 MISSING_SOURCE_URL = "MISSING_SOURCE_URL"
+NON_EVENT_URL = "NON_EVENT_URL"
 MISSING_VENUE = "MISSING_VENUE"
 GARBAGE_VENUE = "GARBAGE_VENUE"
 
-_PLACEHOLDER_TITLES = {"untitled event", "untitled", "event", "tbd", "n/a"}
+_PLACEHOLDER_TITLES = {"untitled event", "untitled", "event", "tbd", "n/a",
+                       "email", "e-mail"}
+
+# Link schemes that are page furniture (contact/share links), not events. A
+# generic extractor occasionally grabs one of these as an "event" (e.g. a
+# mailto: contact link surfaced as a null-venue "Email" row).
+_NON_EVENT_URL_SCHEMES = ("mailto:", "tel:", "javascript:", "sms:")
 
 # Allow same-day / recently-started (multi-hour, ongoing) events through; only
 # reject events whose start is more than this far in the past.
@@ -89,8 +96,11 @@ def validate_event(xf: Dict[str, Any], now: Optional[datetime] = None) -> Dict[s
         reasons.append(INVALID_PRICE_RANGE)
 
     # --- Source URL ---
-    if not (xf.get("source_url") or "").strip():
+    source_url = (xf.get("source_url") or "").strip()
+    if not source_url:
         reasons.append(MISSING_SOURCE_URL)
+    elif source_url.lower().startswith(_NON_EVENT_URL_SCHEMES):
+        reasons.append(NON_EVENT_URL)
 
     # --- Venue ---
     venue = (xf.get("venue") or "").strip()
