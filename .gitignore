@@ -39,6 +39,8 @@ npm-debug.log*
 
 # Scraped data output
 backend/src/scraper/scraped_data/
+# Runtime venue-resolution triage log (regenerated each scrape)
+backend/src/scraper/unresolved_venues.json
 
 # Data exports and database dumps
 *.csv
