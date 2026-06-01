@@ -378,7 +378,7 @@ const getLoadingCopy = ({ query, activeTab, selectedVenue }) => {
 
     return {
         title: 'Loading events...',
-        subtitle: 'Retrieving the latest upcoming events from the backend.',
+        subtitle: '',
     };
 };
 
@@ -392,7 +392,7 @@ const DataLoadingOverlay = ({ isVisible, title, subtitle }) => {
                     <Loader2 size={28} className="animate-spin text-[#D4AF37]" />
                 </div>
                 <h2 className="text-2xl font-serif text-white">{title}</h2>
-                <p className="mt-2 text-sm text-slate-300">{subtitle}</p>
+                {subtitle && <p className="mt-2 text-sm text-slate-300">{subtitle}</p>}
             </div>
         </div>
     );
