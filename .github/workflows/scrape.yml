@@ -23,7 +23,7 @@ jobs:
       urls: ${{ steps.read.outputs.urls }}
       count: ${{ steps.read.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: read
         env:
           JOB_TYPE: ${{ github.event.inputs.job_type || 'all' }}
